@@ -56,7 +56,7 @@ A spark is a *proposed direction* derived from two of the user's own ideas. The 
 
 **Swipe/button parity (req: §5.5).** The gesture is a **shortcut for the button, never a separate path**. Both dispatch the identical command with an identical payload; the resulting state is byte-for-byte the same. Buttons are the primary, always-visible affordance and the only accessible path — the deck is fully operable without a gesture. This must hold for ACCEPT, DISMISS, and the undo affordance.
 
-**Decision identity (idempotency).** Every deck decision carries a client-generated **`decision_id`**, unique per user decision. ACCEPT and DISMISS are keyed by `(spark_id, decision_id)` and are **idempotent** on that key: a swipe and a button tap that both fire before the card leaves resolve to **one** decision, and a retry after an interrupted commit creates nothing extra. This is what makes "byte-for-byte the same" (§5.5) and "commits exactly once" (§4.3) true rather than aspirational.
+**Decision identity (idempotency).** Every deck decision carries a client-generated **`decision_id`**, unique per user decision. ACCEPT and DISMISS are keyed by `(spark_id, decision_id)` and are **idempotent** on that key: a swipe and a button tap that both fire before the card leaves resolve to **one** decision, and a retry after an interrupted commit creates nothing extra. **The client persists the `decision_id` and reuses the same one on retry — it must not regenerate it**, or the retry becomes a second decision. This is what makes "byte-for-byte the same" (§5.5) and "commits exactly once" (§4.3) true rather than aspirational (N4).
 
 ### 2.3 Two relations — **lineage** vs **provenance** (they are not the same thing)
 
@@ -79,18 +79,21 @@ The pivot retires the pair-fork (decision **D1**). Lineage stays **single-parent
 A spark instance moves through a small state machine of its own:
 
 ```
-          ┌───────────┐   engine run    ┌───────────┐  shown in deck  ┌───────────┐
-   none → │  PROPOSED │ ──────────────► │  OFFERED  │ ──────────────► │  REVIEWED │
-          └───────────┘                 └───────────┘                 └─────┬─────┘
-                                                                           │
-              ACCEPT → idea created + provenance recorded  ───────────────┘
-              DISMISS → negative signal recorded (pairing suppressed)
+        ┌──────────┐   engine run    ┌──────────┐  shown in deck  ┌──────────┐
+ none → │ PROPOSED │ ──────────────► │ OFFERED  │ ──────────────► │ REVIEWED │
+        └──────────┘                 └────┬─────┘                 └────┬─────┘
+                                         ▲   undo (≤ 1 step)          │
+                                         └───────────────────────────┘
+   terminal outcomes (the card leaves the deck):
+     ACCEPT                → RESOLVED-ACCEPTED   (new root idea + provenance)
+     DISMISS               → RESOLVED-DISMISSED  (negative signal; pairing suppressed)
+     committed seeded save → RESOLVED-INSPIRED   (new root idea + provenance)
 ```
 
 - **PROPOSED → OFFERED:** engine (NFR-P1, asynchronous) produces a candidate offering; it enters the deck.
 - **OFFERED → REVIEWED:** the user ACCEPTs or DISMISSes. The card leaves the deck.
-- **`INSPIRE`** keeps the spark **OFFERED** only while the seeded Capture is open. A **committed** seeded save resolves it (`RESOLVED-INSPIRED`), so the same spark cannot later be ACCEPTed into a **second** root idea (H5). Abandoning Capture returns it to the deck, still OFFERED.
-- **Undo** reverts `REVIEWED → OFFERED` and rolls back that decision's side effects (§5.4).
+- **`INSPIRE`** keeps the spark **OFFERED** only while the seeded Capture is open. A **committed** seeded save resolves it (`RESOLVED-INSPIRED`) — the same terminal class as ACCEPT (new idea + provenance), so the same spark cannot later be ACCEPTed into a **second** root idea (H5). Abandoning Capture returns it to the deck, still OFFERED.
+- **Undo** reverts any of the three resolutions `→ OFFERED` and rolls back that decision's side effects (§5.4).
 
 ---
 
@@ -121,7 +124,7 @@ Every transition: **ID · From → To · trigger · guard · side effects · emp
 | **T01** | launch → **S0** | first run | vault is **empty** | none | — |
 | **T02** | S0 → S0 | **Add idea** (one prompt at a time) | **Hypothesis, Problem, Monetization, and Domain all non-empty** (`PRD.md` §2/§3.1 — *"an idea without a domain cannot take part in a spark"*) | node created; star-chart widens; `domains covered` updates | inline error below each empty field (Destructive) |
 | **T03** | S0 → **S1** | **Skip** | — | — | if vault in **E0** → S1 shows **E0 Cold**; else → **E1 Computing**. *(Deviation: `PRD.md` §3.4.2 / NFR-U1 require onboarding to leave the user spanning multiple domains. Skip is allowed, but it is recorded as a deviation — S1 then shows E0 with the widening CTA.)* |
-| **T04** | S0 → **S1** | **See your sparks** CTA appears | vault **≥ 3 distinct domains** *(the §3.4.2 spread guarantee / §5 target — the CTA only appears once spread is met)* | kick engine run | — |
+| **T04** | S0 → **S1** | **See your sparks** CTA appears | vault **≥ 2 distinct domains** — the `PRD.md` §3.4.2 / NFR-U1 spread requirement (2 domains is the spark floor). `≥ 3` is the `PRD.md` §5 *target*, shown as `x/3` progress, **not** a gate (N1) | kick engine run | — |
 | **T05** | launch → **S1** | return launch | vault was **not** empty | evaluate engine state | E0/E1/E2/E3/E4 per §4.1 |
 
 #### Sparks deck (S1) and Spark Detail (S1b)
@@ -134,7 +137,7 @@ Every transition: **ID · From → To · trigger · guard · side effects · emp
 | **T09** | S1 → **S2 (seeded)** | **INSPIRE** button | — | Capture prefilled with the proposed direction; banner *"Seeded from a spark — make it yours."* Spark stays **OFFERED** until a committed save (T16) or an ABANDON. | abandoning Capture → spark returns to deck, still OFFERED |
 | **T10** | S1 → S1 | **ACCEPT** *(swipe right / brass button)* | — | see §4.3 | — |
 | **T11** | S1 → S1 | **DISMISS** *(swipe left / quiet button)* | — | see §4.3 | — |
-| **T12** | S1 → S1 | **Undo** within window | last decision reversible (§5.4) | roll back last decision; restore card | outside window / after derived-idea edit: undo affordance disappears and a brief **"Undo unavailable"** notice is shown — never silent (L2) |
+| **T12** | S1 → S1 | **Undo** within window | last **resolving** action reversible — ACCEPT, DISMISS, or a committed seeded save (§5.4) | roll back last decision **and its side effects** (retract derived idea + provenance; re-`OFFERED`); restore card | outside window / after derived-idea edit: undo affordance disappears and a brief **"Undo unavailable"** notice is shown — never silent (L2) |
 | **T13** | S1 → **S1 (list)** | **View all** toggle | ≥ 1 unreviewed | switch deck ↔ list | n = 0 → E3 |
 | **T14** | S1 → **E1** | **Recompute** / vault changed | — | engine run | E4 if AI down |
 
@@ -205,10 +208,12 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 - Composed empty state: *"No sparks left — for now."* + **Add idea** + **Fork into a new domain** (the flywheel: a fork widens the vault, which makes the *next* spark possible) + **Recompute**.
 - `Recompute` re-runs the engine (→ E1). Never re-offer a dismissed pairing *unchanged*; a changed vault may re-surface a *different* pairing.
 
-### 5.4 Undo after a swipe — **one step**
-- **Window:** an undo affordance appears after every ACCEPT/DISMISS, for a short time-boxed window (and no longer than until the next decision or leaving the deck).
-- **ACCEPT undo:** retract the derived idea **only if it is still unedited**, clear the acceptance and its provenance, restore the card. If the user has opened/edited the derived idea, undo is unavailable — the idea can still be deleted normally from the Vault (T26).
+### 5.4 Undo after a deck decision — **one step**
+- **Window:** an undo affordance appears after every **resolving** action — ACCEPT, DISMISS, **or a committed seeded INSPIRE save** (T16) — for a short time-boxed window (and no longer than until the next decision or leaving the deck).
+- **ACCEPT undo:** retract the derived idea **only if it is still unedited**, clear the acceptance and its provenance, restore the card.
+- **INSPIRE-save undo** (same class as ACCEPT): retract the seeded idea **only if it is still unedited**, clear its provenance, and **return the spark to `OFFERED`** (un-resolve) — closing the vault-mutating path the H5 fix introduced (N3).
 - **DISMISS undo:** clear the negative signal, restore the card.
+- **Permanence:** once the window closes, or the derived idea has been opened/edited, the resolution is final. In particular, **deleting a derived idea later (T26) does not un-resolve its spark** — it stays `RESOLVED-*`, is not re-offered, and its provenance ref simply dangles (M3). The derived idea can still be deleted from the Vault the normal way (T26).
 - **One step only:** undo reverts the *last* decision; it does not chain.
 - Undo applies equally to the button and the gesture (parity, §2.2).
 
@@ -242,6 +247,8 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 - [ ] Acceptance produces a **root** idea with **provenance**, and lineage stays **single-parent** (§2.3) — closes D1.
 - [ ] Swipe and button paths converge on one command, keyed by a **`decision_id`** so a raced swipe+tap commits **once** (§2.2, §4.3).
 - [ ] A committed **INSPIRE** save resolves its spark (`RESOLVED-INSPIRED`) and blocks a duplicate ACCEPT (§4.3).
+- [ ] **Undo** covers all three resolving paths (ACCEPT / DISMISS / committed seeded save), and resolution is **permanent** once the window closes — deleting a derived idea does not un-resolve its spark (§5.4).
+- [ ] The onboarding exit gates on **≥ 2 domains** (the NFR-U1 requirement); `≥ 3` shows as `x/3` progress, not a gate (T04).
 - [ ] Onboarding capture requires **Domain** and the `See your sparks` CTA gates on **≥ 3 domains** (T02/T04).
 - [ ] No `collision`; no "related ideas"; no circular spinners; no bare empty states.
 
@@ -252,4 +259,6 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 - **2026-10-12 — r1.** Initial draft.
 - **2026-10-12 — r2 (this revision).** Adversarial review by Max (PR #2) + David's routing corrections. Disposition: **all findings accepted and fixed** — H1 (E0 floor is 2 domains, not 3), H2 (S0 domain guard + spread gate), H4 (`decision_id` idempotency), H5 (INSPIRE-save resolves the spark), M1 (E4 > E3 precedence), M2 (fork must widen the domain), M3 (provenance-source delete), M4 (Skip deviation stated), M5 (checklist wording), L1 (iteration is a version, not a lineage edge), L2 (undo-unavailable notice). **H3:** `VISION.md` named in the dependency note but **not owed a rewrite** (its §3/§4/§8.4 govern selection, not a readout; the one contradicting bullet was already rewritten in PR #3). **H6:** reconciled upstream (PR #3 + `6665504`). **L3** (S6 visual spec) routed to the design owner. Open Q3 and Q5 resolved.
 
-*Draft — Ari (AstroLab agent), 2026-10-12. Review: adversarial pass by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
+- **2026-10-12 — r3 (this revision).** Max's re-review of r2: all 11 findings confirmed closed; 3 residuals + 1 nitpick folded in — **N1** (onboarding exit gates on ≥ 2 domains, `x/3` is progress not a gate — T04), **N2** (lifecycle diagram redrawn with the three terminal states incl. `RESOLVED-INSPIRED`), **N3** (§5.4 undo now covers the committed seeded save; resolution permanence and delete-does-not-un-resolve defined; T12 broadened), **N4** (`decision_id` must be persisted and reused on retry, never regenerated).
+
+*Draft — Ari (AstroLab agent), 2026-10-12. Review: two adversarial passes by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
