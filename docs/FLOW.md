@@ -12,9 +12,11 @@
 
 This spec defines **what moves the user**, not how it is rendered. Every transition below is a row in §4 with a **named trigger**, a **destination**, and an **empty / error state**. Screen-level layout and motion belong to `DESIGN.md`.
 
-**Known doc dependency (blocking for merge).** This spec is written against the 2026-10-12 pivot. Two upstream documents still contradict it and are being rewritten in a parallel PR:
+**Known doc dependency (blocking for merge).** This spec is written against the 2026-10-12 pivot. Several upstream documents still contradict it and are owed a rewrite in a parallel PR:
 
 - **`PRD.md` §3.3.2 / §3.3.5** still define the **two-axis model** (domain distance + structural alignment) and *"Keep as is … recorded as a fork of the source pair."* The flow below drops the axes and makes acceptance produce a **root** idea.
+- **`PRD.md` §5 (NSM) / NFR-Q1** still measure *"sparks converted to **forks**."* Under this flow ACCEPT produces a **root** idea and a fork is a separate manual action (T24/T25), so that metric measures something the flow no longer contains — it needs redefining with §3.3.
+- **`VISION.md` §3 ("A Spark Is Distance Plus Alignment") / §4 Pillar 2 (two axes) / §8.4 (non-goal: "optimize for closeness")** contradict the pivot as directly as the PRD. They are owed the same rewrite.
 - **`DESIGN.md` §1 / §4 / §5 / §7** still describe a **light** vertical *feed* and a two-source origin line with a distance readout. The flow below assumes the **Nightfall** dark-canvas deck.
 
 **Until those land, this file describes the intended product, not the current docs.** Reviewer: treat any divergence there as the upstream rewrite being owed, not a defect here.
@@ -42,7 +44,7 @@ A spark is a *proposed direction* derived from two of the user's own ideas. The 
 | **S3** | Vault | §4 | All ideas; domain + lineage filters. |
 | **S4** | Idea Detail | §5 | One idea; lineage chain; provenance when present. |
 | **S5** | Fork | §6 | New node branching from a parent, with mutation delta + a different domain. |
-| **S6** | Iterate | — | In-place refinement of an idea; prior version retained as history. |
+| **S6** | Iterate | — *(no DESIGN.md § — visual spec owed; flag to design owner)* | In-place refinement of an idea; prior version retained as history. |
 
 ### 2.2 The three user actions on a spark
 
@@ -50,9 +52,11 @@ A spark is a *proposed direction* derived from two of the user's own ideas. The 
 | :----- | :------ | :----- | :------------- |
 | **ACCEPT** ("Good") | swipe **right** | brass, 44px | *This idea is good.* Creates a **new root idea**; records its two sources as **provenance**. |
 | **DISMISS** ("Not for me") | swipe **left** | quiet, 44px | *Not for me.* Retained as **negative signal**; the pairing is not re-offered unchanged. |
-| **INSPIRE** ("Use as inspiration") | — *(no swipe axis)* | outline, 44px | Opens **S2 (seeded)**. Does **not** resolve the spark. |
+| **INSPIRE** ("Use as inspiration") | — *(no swipe axis)* | outline, 44px | Opens **S2 (seeded)**. The spark stays **OFFERED** while capture is open; a committed **seeded save** resolves it (**RESOLVED-INSPIRED**) — see §4.3. |
 
 **Swipe/button parity (req: §5.5).** The gesture is a **shortcut for the button, never a separate path**. Both dispatch the identical command with an identical payload; the resulting state is byte-for-byte the same. Buttons are the primary, always-visible affordance and the only accessible path — the deck is fully operable without a gesture. This must hold for ACCEPT, DISMISS, and the undo affordance.
+
+**Decision identity (idempotency).** Every deck decision carries a client-generated **`decision_id`**, unique per user decision. ACCEPT and DISMISS are keyed by `(spark_id, decision_id)` and are **idempotent** on that key: a swipe and a button tap that both fire before the card leaves resolve to **one** decision, and a retry after an interrupted commit creates nothing extra. This is what makes "byte-for-byte the same" (§5.5) and "commits exactly once" (§4.3) true rather than aspirational.
 
 ### 2.3 Two relations — **lineage** vs **provenance** (they are not the same thing)
 
@@ -60,10 +64,12 @@ The pivot retires the pair-fork (decision **D1**). Lineage stays **single-parent
 
 | Relation | Cardinality | Direction | Created by | Surfaced |
 | :------- | :---------- | :-------- | :--------- | :------- |
-| **Lineage** | exactly 0 or 1 parent | idea → parent | **Fork** (new node) and **Iteration** (same node, new version) | "Living Lineage" chain on **S4** |
-| **Provenance** | 0..N sources | spark-derived idea → its source ideas | **ACCEPT**, and **INSPIRE** saves | muted line on **S4** (not the lineage chain) |
+| **Lineage** | exactly 0 or 1 **parent** | idea → parent | **Fork** — a new node that points at one parent | "Living Lineage" chain on **S4** |
+| *(version history)* | N versions of one node | — | **Iteration** — the same node, a new version (no parent edge) | version history on **S4** |
+| **Provenance** | 0..N sources | spark-derived idea → its source ideas | **ACCEPT**, and committed **INSPIRE** saves | muted line on **S4** (not the lineage chain) |
 
 - A **fork** widens the vault into a new domain (`VISION.md` §4 Pillar 3). Its parent is one idea.
+- An **iteration** does not create a lineage edge — it is a new version under the same node (`PRD.md` §3.2.1).
 - An **accepted spark** is a **root** idea (no lineage parent). Its two sources are **provenance** — informational, not ancestry. This is why D1 closes: nothing requires a two-parent node.
 
 ---
@@ -83,7 +89,7 @@ A spark instance moves through a small state machine of its own:
 
 - **PROPOSED → OFFERED:** engine (NFR-P1, asynchronous) produces a candidate offering; it enters the deck.
 - **OFFERED → REVIEWED:** the user ACCEPTs or DISMISSes. The card leaves the deck.
-- **`INSPIRE` does not transition the spark** — the user may open Capture, save, and still judge the card later.
+- **`INSPIRE`** keeps the spark **OFFERED** only while the seeded Capture is open. A **committed** seeded save resolves it (`RESOLVED-INSPIRED`), so the same spark cannot later be ACCEPTed into a **second** root idea (H5). Abandoning Capture returns it to the deck, still OFFERED.
 - **Undo** reverts `REVIEWED → OFFERED` and rolls back that decision's side effects (§5.4).
 
 ---
@@ -94,13 +100,15 @@ A spark instance moves through a small state machine of its own:
 
 | Ref | State | Condition | S1 shows |
 | :-- | :---- | :-------- | :------- |
-| **E0** | **Cold** | vault **under 3 distinct domains** (or < 2 ideas). Sparks need spread: below the floor a pairing either does not exist or lands in the cliché quadrant and is suppressed (`PRD.md` §3.3.3 / §3.4). **≥ 3 distinct domains** is the product target (`PRD.md` §5). | Composed empty state, **not** an error: *"Sparks need breadth."* Progress `domains covered x/3` (mono) + **Add idea** CTA. |
+| **E0** | **Cold** | vault **below the spark floor: fewer than 2 distinct domains** (or < 2 ideas). Every possible pair is same-domain → cliché → suppressed (`PRD.md` §3.3.3), so **no spark is possible**. *(2 distinct domains already makes a spark possible; **≥ 3** is the product target, handled by the nudge below, not by E0.)* | Composed empty state, **not** an error: *"Sparks need breadth."* Progress `domains covered x/3` (mono) + **Add idea** CTA. |
 | **E1** | **Computing** | engine run in flight | Skeletal shimmer **cards** matching deck dimensions; staggered reveal. **No circular spinner** (DESIGN.md §4). Deck remains usable for already-offered sparks. |
 | **E2** | **Ready(n)** | n ≥ 1 unreviewed sparks | Deck: top card. List toggle if n > 1. |
-| **E3** | **Exhausted** | vault eligible, 0 unreviewed, none computing | Composed empty state: *"No sparks left — for now."* CTAs: **Add idea** (S2), **Fork an idea into a new domain** (encourages the flywheel). A **Recompute** affordance. |
+| **E3** | **Exhausted** | vault **at/above the floor** (≥ 2 domains), 0 unreviewed, none computing | Composed empty state: *"No sparks left — for now."* CTAs: **Add idea** (S2), **Fork an idea into a new domain** (encourages the flywheel). A **Recompute** affordance. When the vault holds exactly 2 domains, E3 adds a widening nudge toward the `x/3` target (`PRD.md` §5). |
 | **E4** | **Unavailable** | AI down (NFR-A1) | Quiet, non-blocking state: *"Sparks are paused. Your vault is fully available."* + **Retry**. Already-offered sparks stay reviewable. |
 
-> Axis thresholds are tuning parameters (`PRD.md` §3.3.3), not fixed requirements. The **3-domain** figure is the onboarding activation target (`PRD.md` §5), used here as the Cold→Ready product target; the floor for *any* spark is the 2-domain cliché suppression (`PRD.md` §3.3.3).
+> Axis thresholds are tuning parameters (`PRD.md` §3.3.3), not fixed requirements. **The floor for *any* spark is 2 distinct domains** (`PRD.md` §3.3.3: only *same-domain* pairs are cliché-suppressed) — that is E0's trigger. The **3-domain** figure is the onboarding *target* (`PRD.md` §5): it drives the `x/3` progress readout and the widening nudge, **not** the Cold state.
+>
+> **State precedence: E4 > E3.** A vault that is both Exhausted and Unavailable shows **Unavailable** (the transient cause, with Retry) — never Exhausted (which implies "come back after adding ideas"). **E0 dominates all**: with no domain spread there is no spark to compute, review, or await, so E0 shows regardless of AI state. E1 (Computing) may coexist with E2 — shimmer for in-flight work sits alongside any already-offered cards.
 
 ### 4.2 Transition table
 
@@ -111,9 +119,9 @@ Every transition: **ID · From → To · trigger · guard · side effects · emp
 | ID | From → To | Trigger | Guard | Side effects | Empty / error state |
 | :-- | :-------- | :------ | :---- | :----------- | :------------------ |
 | **T01** | launch → **S0** | first run | vault is **empty** | none | — |
-| **T02** | S0 → S0 | **Add idea** (one prompt at a time) | Hypothesis non-empty | node created; star-chart widens; `domains covered` updates | inline error below field (Destructive) if empty |
-| **T03** | S0 → **S1** | **Skip** | — | — | if vault in **E0** → S1 shows **E0 Cold**; else → **E1 Computing** |
-| **T04** | S0 → **S1** | **See your sparks** CTA appears | vault ≥ 3 distinct domains | kick engine run | — |
+| **T02** | S0 → S0 | **Add idea** (one prompt at a time) | **Hypothesis, Problem, Monetization, and Domain all non-empty** (`PRD.md` §2/§3.1 — *"an idea without a domain cannot take part in a spark"*) | node created; star-chart widens; `domains covered` updates | inline error below each empty field (Destructive) |
+| **T03** | S0 → **S1** | **Skip** | — | — | if vault in **E0** → S1 shows **E0 Cold**; else → **E1 Computing**. *(Deviation: `PRD.md` §3.4.2 / NFR-U1 require onboarding to leave the user spanning multiple domains. Skip is allowed, but it is recorded as a deviation — S1 then shows E0 with the widening CTA.)* |
+| **T04** | S0 → **S1** | **See your sparks** CTA appears | vault **≥ 3 distinct domains** *(the §3.4.2 spread guarantee / §5 target — the CTA only appears once spread is met)* | kick engine run | — |
 | **T05** | launch → **S1** | return launch | vault was **not** empty | evaluate engine state | E0/E1/E2/E3/E4 per §4.1 |
 
 #### Sparks deck (S1) and Spark Detail (S1b)
@@ -123,10 +131,10 @@ Every transition: **ID · From → To · trigger · guard · side effects · emp
 | **T06** | S1 → S1 | open deck | vault eligible, no run in flight | render top offered spark | E0/E3/E4 states per §4.1 |
 | **T07** | **E1 → E2** | engine results arrive *(async, NFR-P1)* | ≥ 1 candidate passes the surface rule | cards enter deck; staggered reveal | 0 pass → **E3 Exhausted** |
 | **T08** | S1 → **S1b** | tap card | — | expand the spark | — |
-| **T09** | S1 → **S2 (seeded)** | **INSPIRE** button | — | Capture prefilled with the proposed direction; banner *"Seeded from a spark — make it yours."* | — |
+| **T09** | S1 → **S2 (seeded)** | **INSPIRE** button | — | Capture prefilled with the proposed direction; banner *"Seeded from a spark — make it yours."* Spark stays **OFFERED** until a committed save (T16) or an ABANDON. | abandoning Capture → spark returns to deck, still OFFERED |
 | **T10** | S1 → S1 | **ACCEPT** *(swipe right / brass button)* | — | see §4.3 | — |
 | **T11** | S1 → S1 | **DISMISS** *(swipe left / quiet button)* | — | see §4.3 | — |
-| **T12** | S1 → S1 | **Undo** within window | last decision reversible (§5.4) | roll back last decision; restore card | undo unavailable (silent) outside window / after edit |
+| **T12** | S1 → S1 | **Undo** within window | last decision reversible (§5.4) | roll back last decision; restore card | outside window / after derived-idea edit: undo affordance disappears and a brief **"Undo unavailable"** notice is shown — never silent (L2) |
 | **T13** | S1 → **S1 (list)** | **View all** toggle | ≥ 1 unreviewed | switch deck ↔ list | n = 0 → E3 |
 | **T14** | S1 → **E1** | **Recompute** / vault changed | — | engine run | E4 if AI down |
 
@@ -135,7 +143,7 @@ Every transition: **ID · From → To · trigger · guard · side effects · emp
 | ID | From → To | Trigger | Guard | Side effects | Empty / error state |
 | :-- | :-------- | :------ | :---- | :----------- | :------------------ |
 | **T15** | any → **S2** | **Add** tab, or INSPIRE | — | open blank / seeded capture | — |
-| **T16** | S2 → origin | **Save to vault** | all mandatory fields valid (`PRD.md` §2; §3.1) | idea created. If **seeded**: root idea + **provenance** = the spark's two sources. Else: plain root idea. | — |
+| **T16** | S2 → origin | **Save to vault** | all mandatory fields valid (`PRD.md` §2; §3.1) | idea created. If **seeded**: root idea + **provenance** = the spark's two sources, **and the source spark is marked `RESOLVED-INSPIRED` (leaves the deck)** so it cannot later be ACCEPTed into a duplicate. Else: plain root idea. | — |
 | **T17** | S2 → S2 | **Save** with invalid/empty mandatory field | — | — | inline errors below fields; CTA blocked; counter toward 280 (`PRD.md` §2) |
 | **T18** | S2 → **E1** | save succeeds | vault crossed the eligibility threshold | invalidate + recompute sparks | — |
 
@@ -147,10 +155,10 @@ Every transition: **ID · From → To · trigger · guard · side effects · emp
 | **T20** | S3 → S3 | filter by domain / lineage | — | list narrows | no match → filtered-empty: *"No ideas in ⟨domain⟩."* |
 | **T21** | S3 → **S4** | tap idea card | — | open detail; render fields, lineage chain, provenance if any | — |
 | **T22** | S4 → **S6** | **Iterate** | — | open in-place editor | — |
-| **T23** | S6 → **S4** | **Save iteration** | Hypothesis non-empty | same node, new version; prior version retained as history (`PRD.md` §3.2.1) | inline error if empty |
+| **T23** | S6 → **S4** | **Save iteration** | all mandatory fields valid (`PRD.md` §2) | same node, new version; prior version retained as history (`PRD.md` §3.2.1); **no lineage edge** | inline error below any empty mandatory field |
 | **T24** | S4 → **S5** | **Fork** | — | open Fork, seeded with parent | — |
-| **T25** | S5 → **S4** | **Create fork** | mutation delta non-empty | **new** node; lineage parent = source; domain defaults **different** (nudge) | inline error if delta empty |
-| **T26** | S4 → **S3** | **Delete idea** | confirmed | node removed/archived; fork children keep their parent reference | if children exist → confirm names the affected forks |
+| **T25** | S5 → **S4** | **Create fork** | mutation delta non-empty **and domain ≠ parent's** (`PRD.md` §1.2 — a fork widens the vault into a new domain; the flywheel depends on it) | **new** node; lineage parent = source; domain defaults **different** | inline error if delta empty; if the chosen domain **equals** the parent's → offer **Iterate** instead (a same-domain branch is a refinement, not a fork) |
+| **T26** | S4 → **S3** | **Delete idea** | confirmed | node removed/archived; fork children keep their parent reference | if the idea is a fork **parent** → confirm names the affected forks; if it is a **provenance source** of a spark-derived idea → confirm names those derived ideas (their provenance keeps a dangling ref) — neither is deleted |
 | **T27** | S4 → S4 | complete a **needs-completion** spark-derived idea | — | fill missing mandatory fields; becomes fully valid | marked *"Needs completion"* until then (see §6 Open Q1) |
 
 #### Global / cross-cutting
@@ -172,7 +180,12 @@ Every transition: **ID · From → To · trigger · guard · side effects · emp
 1. Mark the spark **dismissed**; retain it as **negative signal** so the pairing is not re-offered unchanged (`PRD.md` §3.3.5).
 2. Remove the card; reveal the next. No vault node is created.
 
-Both are **vault operations** and must succeed with AI down (NFR-A1). Both are **idempotent**: if the resolve animation is interrupted, the decision still commits exactly once.
+**INSPIRE** (`Use as inspiration` button only):
+1. Open **S2 (seeded)**. The spark stays **OFFERED**.
+2. If the seeded save is **committed** (T16), the spark is marked `RESOLVED-INSPIRED`, leaves the deck, and **cannot** then be ACCEPTed — closing the duplicate-idea path (H5).
+3. If Capture is abandoned, the spark returns to the deck, still OFFERED.
+
+ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A1). Both are **idempotent** on the client-generated **`decision_id`** (§2.2): a swipe and a button tap that both fire before the card leaves resolve to **one** decision, and a retry after an interrupted commit creates nothing extra — exactly once, not twice (H4).
 
 ---
 
@@ -182,13 +195,13 @@ Both are **vault operations** and must succeed with AI down (NFR-A1). Both are *
 - **First launch, vault empty → S0.** The empty vault *is* the onboarding (`DESIGN.md` §7). Never show a bare *"No ideas yet."*
 - **Returning user, empty (all deleted) → S1 shows E0 Cold**, with an onboarding exit back to S0.
 
-### 5.2 Vault under 3 domains (no sparks possible) — **E0 Cold**
-- Two ideas in the *same* domain land in the cliché quadrant and are **suppressed** (`PRD.md` §3.3.3). Below the eligibility floor there is nothing to surface.
-- S1 renders a **composed** empty state, framed as progress not failure: `domains covered 1/3` (mono) + **Add idea** CTA + a one-line reason (*"Sparks pair distant domains — add ideas from another field."*).
-- This is the same surface as E3 but with a *distinct* message and the domain-progress readout. The engine must **not** present a spinner or an error here.
+### 5.2 Vault below the spark floor (no sparks possible) — **E0 Cold**
+- The **floor is 2 distinct domains** (`PRD.md` §3.3.3). Below it, every possible pair is *same-domain* → cliché → suppressed, so **no spark is possible** — that is the only condition that puts S1 in E0. `≥ 3` domains is the *target* (`PRD.md` §5), not the floor (H1).
+- S1 renders a **composed** empty state, framed as progress not failure: `domains covered x/3` (mono) + **Add idea** CTA + a one-line reason (*"Sparks pair distant domains — add ideas from another field."*).
+- **2 domains is not E0** — a 2-domain vault is eligible and shows sparks if any pair aligns; if none do, that is **E3** (§5.3), with the `x/3` widening nudge. The engine must **not** present a spinner or an error here.
 
 ### 5.3 No sparks left — **E3 Exhausted**
-- Vault eligible, every candidate already reviewed (accepted/dismissed) or suppressed, none computing.
+- Vault **at/above the floor (≥ 2 domains)**, every candidate already reviewed (accepted/dismissed) or suppressed, none computing.
 - Composed empty state: *"No sparks left — for now."* + **Add idea** + **Fork into a new domain** (the flywheel: a fork widens the vault, which makes the *next* spark possible) + **Recompute**.
 - `Recompute` re-runs the engine (→ E1). Never re-offer a dismissed pairing *unchanged*; a changed vault may re-surface a *different* pairing.
 
@@ -215,20 +228,28 @@ Both are **vault operations** and must succeed with AI down (NFR-A1). Both are *
 
 1. **Mandatory fields vs one-tap ACCEPT.** `PRD.md` §2/§3.1 make Hypothesis, Problem, Monetization, and Domain **mandatory**. A one-tap "good" cannot always supply all four. Proposed resolution in §4.3 step 4: prefill what the spark has; mark the rest **needs-completion** with a prompt (T27). Alternative: ACCEPT opens seeded Capture instead of creating immediately — but that breaks the swipe-to-keep gesture. **Needs owner sign-off.**
 2. **Deck vs feed.** This spec assumes the **deck is the default** with **View all** as the escape hatch (David's recommendation; Assaf has not ruled). If Assaf rules for the vertical feed, only §4.1/§4.2 rendering changes — the state machine is unchanged.
-3. **Cold threshold value.** The `3 domains` figure is the activation *target* (`PRD.md` §5); the hard eligibility floor is `2 domains`. Confirm whether E0 triggers at < 2 (no sparks possible) or < 3 (target-led, softer).
-4. **Delete semantics.** Whether deleting an idea with forks **blocks**, **orphans**, or **cascades** is a persistence decision (T26); this spec assumes **orphan-with-warning**.
+3. ~~Cold threshold value.~~ **Resolved by this spec (H1):** E0 triggers at **< 2 distinct domains** (no spark possible); `3 domains` is the target that drives the `x/3` readout and the widening nudge, not E0. Owner may still soften the 3-domain nudge's emphasis.
+4. **Delete semantics.** Whether deleting an idea with forks **blocks**, **orphans**, or **cascades** is a persistence decision (T26); this spec assumes **orphan-with-warning**, and that a deleted **provenance source** leaves a dangling (tolerated) ref on the derived idea.
+5. **Seed metric.** `PRD.md` §5 (NSM) / NFR-Q1 still count *spark→fork*; under this flow the acceptance event is *spark→root idea*. The metric needs redefining alongside §3.3 (H6) — owner call.
 
 ---
 
 ## 7. Verification checklist (for the reviewer)
 
-- [ ] Every transition in §4 has a **named trigger**, a **destination**, and an **empty/error state**.
-- [ ] The six required edge cases are covered: empty vault (§5.1) · under-3-domains (§5.2) · no sparks left (§5.3) · undo (§5.4) · swipe/button parity (§5.5) · AI-unavailable (§5.6).
+- [ ] Every transition in §4 has a **named trigger** and a **destination**, and an **empty/error state wherever the transition can land on one** (some rows are legitimately "—").
+- [ ] The six required edge cases are covered: empty vault (§5.1) · below-floor / no sparks possible (§5.2) · no sparks left (§5.3) · undo (§5.4) · swipe/button parity (§5.5) · AI-unavailable (§5.6).
 - [ ] Vault operations never depend on the Spark (NFR-A1, §5.6).
 - [ ] Acceptance produces a **root** idea with **provenance**, and lineage stays **single-parent** (§2.3) — closes D1.
-- [ ] Swipe and button paths converge on one command (§2.2, §5.5).
+- [ ] Swipe and button paths converge on one command, keyed by a **`decision_id`** so a raced swipe+tap commits **once** (§2.2, §4.3).
+- [ ] A committed **INSPIRE** save resolves its spark (`RESOLVED-INSPIRED`) and blocks a duplicate ACCEPT (§4.3).
+- [ ] Onboarding capture requires **Domain** and the `See your sparks` CTA gates on **≥ 3 domains** (T02/T04).
 - [ ] No `collision`; no "related ideas"; no circular spinners; no bare empty states.
 
 ---
+
+## 8. Revision history
+
+- **2026-10-12 — r1.** Initial draft.
+- **2026-10-12 — r2 (this revision).** Adversarial review by Max (PR #2). Disposition: **all findings accepted and fixed** — H1 (E0 floor is 2 domains, not 3), H2 (S0 domain guard + spread gate), H3 (VISION.md added to the dependency list), H4 (`decision_id` idempotency), H5 (INSPIRE-save resolves the spark), H6 (metric mismatch recorded), M1 (E4 > E3 precedence), M2 (fork must widen the domain), M3 (provenance-source delete), M4 (Skip deviation stated), M5 (checklist wording), L1 (iteration is a version, not a lineage edge), L2 (undo-unavailable notice), L3 (S6 visual spec flagged). Open Q3 resolved; Q5 added.
 
 *Draft — Ari (AstroLab agent), 2026-10-12. Review: adversarial pass by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
