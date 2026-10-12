@@ -44,7 +44,11 @@ colour). Indigo is never an accent; brass is never a surface.
 | **Brass Deep** | `#7E5218` | Brass shadow and pressed states. |
 | **Indigo (structural)** | `#4A55A0` | Atmosphere, depth, and the astrolabe rings — backgrounds only, never a control, never text on a control. |
 | **Outline** | `#39405E` | Outline-button and input borders. |
-| **Destructive** | `#DC2626` | Validation and delete only. Not decorative. |
+| **Nav** | `#0A0C15` | Bottom tab bar surface — one step lighter than canvas. |
+| **Destructive** | `#E5484D` | Validation and delete only. Not decorative. |
+
+**Geometry:** corners are **12px** on cards and buttons (chips are fully rounded). In the Stitch design system this
+should be `ROUND_TWELVE`; the asset currently carries `ROUND_EIGHT`.
 
 **Atmosphere:** a soft brass light pool behind the active surface, plus a cool indigo depth in the opposite
 corner — two low-opacity radial washes. This is the one sanctioned gradient, and it is a *background*.
@@ -65,7 +69,8 @@ large surface fill; indigo on a control.
 
 ## 4. Component Stylings (shadcn, dark)
 
-- **Button.** *default* — brass fill, `#0A0C15` label; *outline* — 1px `#39405E` on transparent; *ghost* —
+- **Button.** *default* — brass fill, `#0A0C15` label (the Stitch asset records this as `on-brass: #0B0B0C`; the two are visually
+  identical near-blacks and either is acceptable); *outline* — 1px `#39405E` on transparent; *ghost* —
   brass-highlight text. **12px radius**, min height 44px, visible pressed state. No glow.
 - **Card.** `#10131F` fill, 1px `#2A3049` border, 12px radius. Borders over shadows — the system ships no
   drop shadows.
