@@ -221,10 +221,23 @@ happens in the **worker**, during a run:
    same-cluster. Two ideas whose every tag resolves to one cluster are **same-domain** → cliché
    (`PRD.md` §3.3.3).
 
-**The `x/3` summary stays AI-free.** `GET /v1/vault/summary` counts **distinct resolved clusters, with each
-unmapped tag counting as its own provisional cluster** — a deterministic count computed from `domain_map`
-alone. It never blocks on the provider; the worker's later normalisation can only *collapse* provisional
-clusters (never split them), so the readout is conservative and monotone (A).
+**The `x/3` summary stays AI-free.** `GET /v1/vault/summary` returns **two** deterministic counts from
+`domain_map` alone: **resolved** clusters (tags present in the shipped seed map) and **provisional** clusters
+(unmapped tags, each its own). It never blocks on the provider, and the worker's later normalisation can only
+*collapse* provisional tags into a cluster — never split one — so **`resolved` is monotone non-decreasing**
+(A).
+
+**The spread gate and `x/3` read `resolved` only (R1).** An unmapped tag is **provisional** and never opens
+the gate: two raw tags that both normalise to one cluster (`#fintech` + `#banking`) would otherwise read as
+"2 domains", open the S0→S1 exit, then collapse — onboarding the user straight into an **E0 Cold** vault, the
+exact class `FLOW.md` **H2** fixed. Gating on `resolved` makes the gate and the post-run `E0` count the
+**same** quantity, so a pass cannot be false.
+
+**S0 domain input is drawn from the shipped taxonomy (R1, option a).** Onboarding capture selects each domain
+from the shipped cluster taxonomy (a picker), so every S0 tag is **resolved** deterministically and the gate
+is reachable with **no run and no AI**. Free-text domain input remains available from **S3 onward**, where a
+provisional cluster is harmless — the vault is already warm and has run once. This changes the S0 input
+contract, so it is logged as a `FLOW.md` §7 spec touch in §12.
 
 No embeddings, no ANN — a small curated table. Domain is "the axis along which distance is measured"
 (`PRD.md` §2), and this measures it deterministically on the vault path.
@@ -326,8 +339,8 @@ HTTP/JSON, bearer-authenticated. Endpoints map 1:1 to `FLOW.md` surfaces; decisi
 
 | Surface (`FLOW.md`) | Endpoint | Notes |
 | :--- | :--- | :--- |
-| **S0** Onboarding | `POST /v1/ideas` · `GET /v1/vault/summary` | capture is **domain-mandatory** (T02) and stores tags **raw** — no AI on this path (§3.2); summary returns `domains covered` from the **deterministic** cluster count (§3.2) |
-| **S0 → S1** exit | — | gate on **≥ 2 domains** (T04); client computes the gate from the summary |
+| **S0** Onboarding | `POST /v1/ideas` · `GET /v1/vault/summary` | capture is **domain-mandatory** (T02); the S0 domain input is a **pick from the shipped taxonomy** so tags resolve deterministically — no AI on this path (§3.2); summary returns `domains covered` = the **resolved** cluster count (§3.2) |
+| **S0 → S1** exit | — | gate on **≥ 2 resolved domains** (T04); client computes the gate from the summary's `resolved` count only (R1) |
 | **S1** Sparks deck | `GET /v1/sparks?state=offered` · `GET /v1/sparks/state` · `GET /v1/sparks/events` (SSE) | `state` = E0–E4 (§4). Deck order = server order. Events stream new offers (N) |
 | **S1b** Spark detail | `GET /v1/sparks/{id}` | direction / claim / what-it-takes / first-step / tags. **No scores, no similarity readout** |
 | **decision** | `POST /v1/sparks/{id}/decision` `{decision_id, kind: ACCEPT\|DISMISS}` | idempotent on `(spark_id, decision_id)`; returns the created idea id for ACCEPT |
@@ -359,7 +372,9 @@ contradiction, since FLOW §5.4 already requires the capability.)*
 - **Domain-mandatory capture** (`FLOW.md` T02; `PRD.md` §2): `POST /v1/ideas` rejects an idea with no domain.
   An idea without a domain cannot take part in a spark, so allowing one would silently defeat the bootstrap.
 - **Spread gate** (`FLOW.md` T04; `PRD.md` §3.4.2 / NFR-U1): the onboarding exit is available at **≥ 2
-  distinct domains** (the spark floor, §3.2); `≥ 3` is shown as `x/3` **progress**, not a gate.
+  distinct *resolved* domains** (the spark floor, §3.2), with S0 domain input drawn from the shipped taxonomy
+  so the count is deterministic and AI-free; `≥ 3` is shown as `x/3` **progress**, not a gate. A provisional
+  (unmapped) tag never counts toward the gate — see R1, §3.2.
 - **No synthetic seeds, no note import** (`PRD.md` §3.4.3): neither the engine nor the API generates ideas
   on the user's behalf.
 
@@ -434,7 +449,7 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
 | **D1** Durability/Portability | No idea lost; open export | SQLite + WAL; `GET /v1/export` JSON (§8) | **Backup→wipe→restore** + **export round-trip** tests |
 | **PRIV1** Privacy | No training; no third-party transmission beyond a requested op | Operation-scoped payloads; zero-retention/no-training adapter config; no telemetry (§5) | **Data-flow audit** (grep the boundary; assert one call site per operation) + **vendor-contract audit** |
 | **Q1** Quality | Spark quality instrumented (acceptance proxy) | `decision` records kind + whether the accepted idea landed in a **new domain** (§3.5, §5 metrics) | **Instrumentation test** + reporting query over `decision` |
-| **U1** Usability | New user onboards spanning domains | Domain-mandatory capture + `≥ 2`-domain spread gate with `x/3` progress (§7) | **Onboarding completion test** (assert ≥ 2 distinct domains at exit) |
+| **U1** Usability | New user onboards spanning domains | Domain-mandatory capture (S0 picks from the shipped taxonomy) + `≥ 2`-**resolved**-domain spread gate with `x/3` progress (§3.2, §7) | **Onboarding completion test** (assert ≥ 2 distinct **resolved** domains at exit; and assert `E0` is not Cold on the first run) |
 
 ---
 
@@ -456,6 +471,10 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
    user to polish** at the right moments. The spec needs the prompt stated, not just the exclusion. A
    `FLOW.md` edit, not an architecture change; tracked here so it rides one clean spec change after this loop
    closes.
+6. **FLOW §7 — S0 domain input contract (R1).** Closing R1 makes the S0 domain input a **pick from the shipped
+   taxonomy** (so the `≥ 2` gate counts resolved clusters deterministically), while free-text domain input
+   stays from **S3 onward**. `FLOW.md` T02/§7 should state the picker at onboarding. A `FLOW.md` edit, tracked
+   here alongside item 5 so both spec touches land together.
 
 ---
 
@@ -476,5 +495,11 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
 - **2026-10-12 — r2.1.** Residual **K** prose fix: dropped the stale `UNIQUE(spark_id, id)` phrase in §2.3 so
   the prose matches the schema (PK on `id` is the idempotency key). Logged the Q1 FLOW §4.3/T27 polish-prompt
   follow-up (§12.5).
+- **2026-10-12 — r3.** Review round 2 residual **R1** closed (option a): **§3.2** now returns **resolved** and
+  **provisional** cluster counts and the spread gate / `x/3` read **`resolved` only** — a provisional tag never
+  opens the gate, so the gate and the post-run `E0` count are the same quantity and a false pass is
+  impossible. **S0 domain input is a pick from the shipped taxonomy** (deterministic, AI-free; free-text from
+  S3 on). Aligned **§6** (S0 row, S0→S1 exit), **§7** (spread gate) and **§11** (U1 verification: ≥ 2 distinct
+  *resolved* domains, and E0 not Cold on first run). Added the `FLOW.md` §7 spec touch (§12.6).
 
 *Draft — Ari (AstroLab agent), 2026-10-12. Review: adversarial passes by Max. Branch `docs/architecture`.*
