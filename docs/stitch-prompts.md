@@ -22,7 +22,7 @@ Screen-generation prompts for **Google Stitch** (or the hand-built SVG pipeline)
 ## §0 — Global Style (project context)
 
 > **Astrolab** — a thinking instrument for ideas. **Nightfall: dark, mobile-first, shadcn-based.** Single
-> column, 16px gutters, safe-area aware. 12px corners on cards and buttons.
+> column, 16px gutters, safe-area aware. 8px corners on cards, buttons and inputs (chips are fully rounded).
 >
 > **Surfaces:** canvas `#080A12` · card `#10131F` · raised `#1E2336` · hairline `#2A3049` · outline `#39405E`.
 > **Text:** ink `#EAEDF7` · muted `#A9B0C8` · dim `#7C87A3` · faint `#5C6684`.
@@ -35,7 +35,7 @@ Screen-generation prompts for **Google Stitch** (or the hand-built SVG pipeline)
 >
 > **Type:** Geist (display + body); JetBrains Mono (domain tags, idea ids, counters, section labels).
 >
-> **Components:** shadcn — Buttons (default brass / outline / ghost), Card (`#10131F`, 1px `#2A3049`, 12px),
+> **Components:** shadcn — Buttons (default brass / outline / ghost), Card (`#10131F`, 1px `#2A3049`, 8px),
 > Badge (rounded-full domain chips), Input (label above in mono, error below), bottom tab bar, sticky action
 > bar, skeletal loaders (no spinners).
 >

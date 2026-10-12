@@ -57,12 +57,17 @@ out at ~60s and return copies of existing screens. Sources and 2x PNGs live with
 | §6 | Fork |
 | §7 | Onboarding — star chart |
 
+**Do not treat the asset's `namedColors` as canonical.** Stitch regenerates the palette from seeds, so the asset
+carries tones nobody chose (e.g. `secondary #bbc3ff`, `outline #9d8e7f`, `surface #0f141a`). `DESIGN.md` §2 is the
+source of truth; the asset will only ever be "close, Stitch-generated".
+
 **Stitch-side actions still pending (need the Stitch UI / an editable asset):**
 
 - Project `designTheme` still says **"Collide"** — every regeneration drifts until it is corrected.
 - The v3 design system swapped the mono label font for **Public Sans** (banned — must be `JETBRAINS_MONO`).
 - Color mode is still **LIGHT**; Nightfall needs **DARK** (or at least a dark custom palette).
-- Roundness is `ROUND_EIGHT`; cards and buttons are **12px** in Nightfall (`ROUND_TWELVE`).
+- ~~Roundness~~ — **resolved:** the asset is pinned at `ROUND_EIGHT` (a `ROUND_TWELVE` write is accepted by the
+  dry run, applied, then reverted server-side), so the screens and `DESIGN.md` use **8px** too.
 
 ---
 

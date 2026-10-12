@@ -47,8 +47,9 @@ colour). Indigo is never an accent; brass is never a surface.
 | **Nav** | `#0A0C15` | Bottom tab bar surface — one step lighter than canvas. |
 | **Destructive** | `#E5484D` | Validation and delete only. Not decorative. |
 
-**Geometry:** corners are **12px** on cards and buttons (chips are fully rounded). In the Stitch design system this
-should be `ROUND_TWELVE`; the asset currently carries `ROUND_EIGHT`.
+**Geometry:** corners are **8px** on cards, buttons and inputs; chips are fully rounded. The Stitch asset is pinned at
+`ROUND_EIGHT` — `ROUND_TWELVE` was tried twice and silently reverted server-side — so **8px is the system value
+in both places**.
 
 **Atmosphere:** a soft brass light pool behind the active surface, plus a cool indigo depth in the opposite
 corner — two low-opacity radial washes. This is the one sanctioned gradient, and it is a *background*.
@@ -71,8 +72,8 @@ large surface fill; indigo on a control.
 
 - **Button.** *default* — brass fill, `#0A0C15` label (the Stitch asset records this as `on-brass: #0B0B0C`; the two are visually
   identical near-blacks and either is acceptable); *outline* — 1px `#39405E` on transparent; *ghost* —
-  brass-highlight text. **12px radius**, min height 44px, visible pressed state. No glow.
-- **Card.** `#10131F` fill, 1px `#2A3049` border, 12px radius. Borders over shadows — the system ships no
+  brass-highlight text. **8px radius**, min height 44px, visible pressed state. No glow.
+- **Card.** `#10131F` fill, 1px `#2A3049` border, 8px radius. Borders over shadows — the system ships no
   drop shadows.
 - **Badge / chip.** Domain tags as rounded-full chips: `#1E2336` fill, `#2A3049` stroke, `#A9B0C8` mono
   label. Active chip: brass tint fill (brass at 14%), brass stroke at 50%, `#F1CB8C` label.
@@ -99,7 +100,7 @@ recorded, not displayed.
 
 ## 5. Layout Principles (Mobile-First)
 
-- **Single column**, 16px gutters, safe-area aware; 12px corners on cards and buttons.
+- **Single column**, 16px gutters, safe-area aware; 8px corners on cards, buttons and inputs.
 - **The home is a deck.** It opens on **"Sparks"** — one proposed idea at a time — *not* on the user's notes.
   The **Vault** (all ideas) is reached via bottom nav.
 - **Bottom navigation**; sticky action bars where a screen needs one (deck actions, Capture save, Fork create).
