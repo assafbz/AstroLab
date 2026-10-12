@@ -12,14 +12,14 @@
 
 This spec defines **what moves the user**, not how it is rendered. Every transition below is a row in §4 with a **named trigger**, a **destination**, and an **empty / error state**. Screen-level layout and motion belong to `DESIGN.md`.
 
-**Known doc dependency (blocking for merge).** This spec is written against the 2026-10-12 pivot. Several upstream documents still contradict it and are owed a rewrite in a parallel PR:
+**Known doc dependency (blocking for merge).** This spec is written against the 2026-10-12 pivot. Two upstream documents still contradict it and are owed a rewrite in a parallel PR; two more are named for completeness:
 
-- **`PRD.md` §3.3.2 / §3.3.5** still define the **two-axis model** (domain distance + structural alignment) and *"Keep as is … recorded as a fork of the source pair."* The flow below drops the axes and makes acceptance produce a **root** idea.
-- **`PRD.md` §5 (NSM) / NFR-Q1** still measure *"sparks converted to **forks**."* Under this flow ACCEPT produces a **root** idea and a fork is a separate manual action (T24/T25), so that metric measures something the flow no longer contains — it needs redefining with §3.3.
-- **`VISION.md` §3 ("A Spark Is Distance Plus Alignment") / §4 Pillar 2 (two axes) / §8.4 (non-goal: "optimize for closeness")** contradict the pivot as directly as the PRD. They are owed the same rewrite.
-- **`DESIGN.md` §1 / §4 / §5 / §7** still describe a **light** vertical *feed* and a two-source origin line with a distance readout. The flow below assumes the **Nightfall** dark-canvas deck.
+- **`PRD.md` §3.3.2 / §3.3.5** still define the **two-axis model** (domain distance + structural alignment) and *"Keep as is … recorded as a fork of the source pair."* The flow below drops the axes and makes acceptance produce a **root** idea. *(Owed.)*
+- **`DESIGN.md` §1 / §4 / §5 / §7** still describe a **light** vertical *feed* and a two-source origin line with a distance readout. The flow below assumes the **Nightfall** dark-canvas deck. *(Owed.)*
+- **`VISION.md`** — **named, not owed.** Its §3 / §4 Pillar 2 / §8.4 govern the engine's *selection* (which pairs to surface), not a UI readout, so they do **not** contradict the pivot. The one bullet that did — §4 Pillar 2, *"explains the shared mechanism"* — was already rewritten in PR #3. Keep it in that revised form if VISION is touched again.
+- **`PRD.md` §5 (NSM) / NFR-Q1** — **already reconciled upstream:** PR #3 restated the NSM as *"sparks **accepted** per active user per month,"* and NFR-Q1's *spark→fork* proxy was reworded at `6665504`. Consistent with this flow; no action here.
 
-**Until those land, this file describes the intended product, not the current docs.** Reviewer: treat any divergence there as the upstream rewrite being owed, not a defect here.
+**Until the owed rewrites land, this file describes the intended product, not the current docs.** Reviewer: treat any divergence there as the upstream rewrite being owed, not a defect here.
 
 ---
 
@@ -230,7 +230,7 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 2. **Deck vs feed.** This spec assumes the **deck is the default** with **View all** as the escape hatch (David's recommendation; Assaf has not ruled). If Assaf rules for the vertical feed, only §4.1/§4.2 rendering changes — the state machine is unchanged.
 3. ~~Cold threshold value.~~ **Resolved by this spec (H1):** E0 triggers at **< 2 distinct domains** (no spark possible); `3 domains` is the target that drives the `x/3` readout and the widening nudge, not E0. Owner may still soften the 3-domain nudge's emphasis.
 4. **Delete semantics.** Whether deleting an idea with forks **blocks**, **orphans**, or **cascades** is a persistence decision (T26); this spec assumes **orphan-with-warning**, and that a deleted **provenance source** leaves a dangling (tolerated) ref on the derived idea.
-5. **Seed metric.** `PRD.md` §5 (NSM) / NFR-Q1 still count *spark→fork*; under this flow the acceptance event is *spark→root idea*. The metric needs redefining alongside §3.3 (H6) — owner call.
+5. ~~Seed metric.~~ **Resolved upstream (H6):** PR #3 restated `PRD.md` §5 (NSM) as *"sparks accepted per active user per month"* and NFR-Q1's proxy was reworded at `6665504` — now consistent with this flow's ACCEPT→root event.
 
 ---
 
@@ -250,6 +250,6 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 ## 8. Revision history
 
 - **2026-10-12 — r1.** Initial draft.
-- **2026-10-12 — r2 (this revision).** Adversarial review by Max (PR #2). Disposition: **all findings accepted and fixed** — H1 (E0 floor is 2 domains, not 3), H2 (S0 domain guard + spread gate), H3 (VISION.md added to the dependency list), H4 (`decision_id` idempotency), H5 (INSPIRE-save resolves the spark), H6 (metric mismatch recorded), M1 (E4 > E3 precedence), M2 (fork must widen the domain), M3 (provenance-source delete), M4 (Skip deviation stated), M5 (checklist wording), L1 (iteration is a version, not a lineage edge), L2 (undo-unavailable notice), L3 (S6 visual spec flagged). Open Q3 resolved; Q5 added.
+- **2026-10-12 — r2 (this revision).** Adversarial review by Max (PR #2) + David's routing corrections. Disposition: **all findings accepted and fixed** — H1 (E0 floor is 2 domains, not 3), H2 (S0 domain guard + spread gate), H4 (`decision_id` idempotency), H5 (INSPIRE-save resolves the spark), M1 (E4 > E3 precedence), M2 (fork must widen the domain), M3 (provenance-source delete), M4 (Skip deviation stated), M5 (checklist wording), L1 (iteration is a version, not a lineage edge), L2 (undo-unavailable notice). **H3:** `VISION.md` named in the dependency note but **not owed a rewrite** (its §3/§4/§8.4 govern selection, not a readout; the one contradicting bullet was already rewritten in PR #3). **H6:** reconciled upstream (PR #3 + `6665504`). **L3** (S6 visual spec) routed to the design owner. Open Q3 and Q5 resolved.
 
 *Draft — Ari (AstroLab agent), 2026-10-12. Review: adversarial pass by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
