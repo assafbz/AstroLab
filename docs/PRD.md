@@ -148,7 +148,7 @@ These state verifiable properties of the system. They deliberately name **no** t
 | **NFR-P1** | Performance | Spark results are produced asynchronously and never block vault operations; results are delivered within a bounded time at expected personal vault sizes. | Timed test with AI delay/failure injected. |
 | **NFR-D1** | Durability & Portability | No committed idea is lost, and the user can export the full vault in an open, portable format. | Backup/restore and export test. |
 | **NFR-PRIV1** | Privacy | User ideas are not used to train models and are not shared with or transmitted to any third party beyond what a user-requested operation strictly requires. | Data-flow and vendor-contract audit. |
-| **NFR-Q1** | Quality | Spark quality is a first-class, instrumented product metric, tracked via the spark→fork proxy (Sec. 5). | Instrumentation + reporting. |
+| **NFR-Q1** | Quality | Spark quality is a first-class, instrumented product metric, tracked via the spark-acceptance proxy (Sec. 5) — accepted sparks, and how many landed in a new domain. | Instrumentation + reporting. |
 | **NFR-U1** | Usability | A new user completes onboarding with a vault spanning multiple distinct domains, sufficient for sparks to operate. | Onboarding completion test. |
 
 Removed from earlier drafts (and re-homed as design decisions, not requirements): specific ciphers and key-derivation functions, database row-level security, ANN/vector search, cryptographic timestamp protocols, and enterprise uptime SLAs. None are MVP requirements.

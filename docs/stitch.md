@@ -61,6 +61,9 @@ out at ~60s and return copies of existing screens. Sources and 2x PNGs live with
 carries tones nobody chose (e.g. `secondary #bbc3ff`, `outline #9d8e7f`, `surface #0f141a`). `DESIGN.md` §2 is the
 source of truth; the asset will only ever be "close, Stitch-generated".
 
+**Known design gap:** the flow spec (`docs/FLOW.md`, S6) has an **Iterate** surface with no visual spec here and no
+screen in the set below — it is the one flow surface still unspecified. Owner: design.
+
 **Stitch-side actions still pending (need the Stitch UI / an editable asset):**
 
 - Project `designTheme` still says **"Collide"** — every regeneration drifts until it is corrected.
