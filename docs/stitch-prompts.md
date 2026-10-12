@@ -1,62 +1,96 @@
 # Astrolab — Stitch Screen Prompts (Mobile)
 
-Feed this into **Google Stitch** to generate the mobile-first screens. Source of truth: `DESIGN.md` (shadcn/mobile visual language) and `docs/PRD.md` (scope).
+Screen-generation prompts for **Google Stitch** (or the hand-built SVG pipeline). Source of truth:
+`DESIGN.md` (Nightfall visual language) and `docs/PRD.md` (scope).
 
 **Vocabulary:** the engine is **the Spark**; its outputs are **sparks**. Never write "collision."
 
+**Direction:** **Nightfall** — dark canvas, brass accent, indigo structure. Locked 2026-10-12.
+
 ## How to use
 
-1. Create a Stitch project named **Astrolab**.
+1. Create / open a Stitch project named **Astrolab**.
 2. Paste the **Global Style** (§0) as project context / design system.
 3. Paste each **Screen Prompt** (§1–§7) one at a time.
+
+> **Rendering note:** agent-side Stitch generation currently fails (calls time out and return copies of
+> existing screens). The Nightfall screens were hand-built from these prompts — SVG → PNG at 2x — and the
+> sources live with David in `OUTBOX/screens/nightfall/`. The prompts below are the spec.
 
 ---
 
 ## §0 — Global Style (project context)
 
-> **Astrolab** — a thinking instrument for ideas. **Light-mode shadcn/ui, mobile-first.** Single column, 16px gutters, safe-area aware.
+> **Astrolab** — a thinking instrument for ideas. **Nightfall: dark, mobile-first, shadcn-based.** Single
+> column, 16px gutters, safe-area aware. 8px corners on cards, buttons and inputs (chips are fully rounded).
 >
-> **Color:** white background; foreground `#09090B`; muted surface `#F4F4F5`; muted text `#71717A`; border `#E4E4E7`. **Exactly one accent: aged brass `#D69A4E`** — primary buttons, active states, focus rings, and the brass connector joining two ideas in a spark. Destructive `#DC2626` for validation only.
+> **Surfaces:** canvas `#080A12` · card `#10131F` · raised `#1E2336` · hairline `#2A3049` · outline `#39405E`.
+> **Text:** ink `#EAEDF7` · muted `#A9B0C8` · dim `#7C87A3` · faint `#5C6684`.
+> **Exactly one accent: aged brass `#D69A4E`** (label on brass `#0A0C15`) — primary actions, active states,
+> focus rings; **brass highlight `#F1CB8C`** for brass text on dark; **brass deep `#7E5218`** for pressed
+> states. **Indigo `#4A55A0` is structural only** — atmosphere, depth, and the astrolabe rings; never a
+> control, never text on a control.
+> **Atmosphere:** a soft brass light pool behind the active surface plus a cool indigo depth in the opposite
+> corner — two low-opacity radial washes.
 >
-> **Type:** Geist (display + body); JetBrains Mono (domain tags, idea ids, counts).
+> **Type:** Geist (display + body); JetBrains Mono (domain tags, idea ids, counters, section labels).
 >
-> **Components:** shadcn — Buttons (default/secondary/outline/ghost), Card (white, 1px border, 8px radius, `shadow-sm`), Badge (rounded-full domain tags), Input (label above, error below), bottom tab bar, sticky action bar, skeletal loaders (no spinners).
+> **Components:** shadcn — Buttons (default brass / outline / ghost), Card (`#10131F`, 1px `#2A3049`, 8px),
+> Badge (rounded-full domain chips), Input (label above in mono, error below), bottom tab bar, sticky action
+> bar, skeletal loaders (no spinners).
 >
-> **Layout:** single column; bottom navigation; 44px minimum tap targets; no horizontal scroll; cards over tables; borders over heavy shadows.
+> **Layout:** single column; bottom navigation; 44px minimum tap targets; no horizontal scroll; cards over
+> tables; borders over shadows.
 >
-> **Motion:** restrained springs; staggered list reveals; transform/opacity only.
+> **Motion:** restrained springs; transform/opacity only; deck swipes; staggered star-chart reveals.
 >
-> **Banned:** emojis; Inter; serifs; pure black; neon/glow; heavy shadows; gradient text; 3-equal-column grids; placeholder names; AI copy clichés ("Elevate", "Seamless", "Unleash", "Next-Gen"); "You might also like" / "Related ideas" surfaces; tag-cloud navigation. Never write **collision** — the engine's output is a **spark**.
+> **Banned:** emoji; Inter; Public Sans; serifs; pure black; neon/glow; heavy shadows; gradient text;
+> 3-equal-column grids; placeholder names; AI copy clichés ("Elevate", "Seamless", "Unleash", "Next-Gen");
+> "You might also like" / "Related ideas" surfaces; tag-cloud navigation; **any distance, alignment, or
+> similarity readout**. Never write **collision** — the engine's output is a **spark**.
 
 ---
 
-## §1 — Home: "Sparks" review queue *(primary screen)*
+## §1 — Home: "Sparks" deck *(primary screen)*
 
-The app opens **here**, not on the vault. A review queue of proposed sparks.
+The app opens **here**, not on the vault: a deck of proposed sparks, **one idea at a time**.
 
-- **Header:** title "Sparks" (Geist) with a small count of unreviewed suggestions in mono, plus one muted line: *"Directions pairing your own ideas — keep one, or let it spark your own."*
-- **Feed:** vertical list of **Spark Cards** (white, 1px zinc-200 border, 8px radius, `shadow-sm`). Each card:
-  - the **proposed direction** as the headline;
-  - an **origin line** — the two source ideas as small muted labels joined by a short **brass connector**, with the **shared mechanism** on one muted line;
-  - actions: **Keep as is** (brass) and **Use as inspiration** (ghost), plus a quiet dismiss.
+- **Header:** title "Sparks" (Geist) with an unreviewed count in mono (`3 / 12`), and one muted line:
+  *"Swipe right if it's good, left if it isn't."*
+- **The card** (the signature component), in this order:
+  1. mono label **THE IDEA**, then the idea as the headline (Geist, 3 lines max);
+  2. hairline, then mono label **THE CLAIM** and one or two lines of rationale;
+  3. mono label **FIRST STEP** and the smallest next move;
+  4. **domain tags** as mono chips.
+- **Actions:** **Not for me** (outline) and **Good** (brass, the only filled brass on the screen), both
+  44px+; a quiet mono **`↩ undo last`**; swipe hints `← not for me` / `good →`.
+- **No origin line. No distance / alignment / similarity readout. No shared-mechanism panel.**
 - **Bottom tab bar:** Sparks / Vault / Add (active tab in brass).
-- No "related ideas." No emoji/neon/gradients. 44px targets, no horizontal scroll.
+- Motion: the card leaves on a spring; a "good" gets a beat — the brass arc resolves before it commits.
 
-## §2 — Spark Detail
+## §2 — Idea expanded
 
-One proposed spark, expanded.
+One proposed spark, opened from the deck by tapping the card.
 
-- Top: the **proposed direction** (large Geist headline) and the shared mechanism.
-- Middle: the **two source idea Cards** separated by negative space, joined by the **brass connector** — the spark's origin made explicit. Small mono readout of *domain distance* and *structural alignment* (measured data, not gauges).
-- Bottom (sticky): **Keep as is** (brass) and **Use as inspiration** (outline).
-- No "related ideas."
+- Top: the **idea** as a large Geist headline; **domain tags** beneath.
+- **THE CLAIM** (ink) — why it matters.
+- **WHAT IT WOULD TAKE** (muted) — the honest cost.
+- **FIRST STEP** (muted).
+- One muted mono **provenance** line at rest: `SPARKED FROM  idea 02:31 + idea 09:14`. Recorded data —
+  it is *not* a similarity score, and it never gets a headline.
+- Sticky bottom, three paths: **Make it mine — capture it as your own** (ghost, brass text) · **Not for me**
+  (outline) · **Good** (brass).
+- No "related ideas", no numbers.
 
 ## §3 — Capture Idea
 
 Structured capture of one idea.
 
-- Left-aligned labels **above** inputs, no floating labels. Fields: **Core Hypothesis** (with a live mono character counter toward 280), **Problem Solved**, **Monetization / Value Angle**, **Domain tag(s)** (mono pill input with removable tokens).
-- When opened from "Use as inspiration," the hypothesis is **prefilled** with the spark and a muted banner reads *"Seeded from a spark — make it yours."*
+- Mono labels **above** inputs, no floating labels. Fields: **Core Hypothesis** (live mono counter toward
+  280), **Problem Solved**, **Monetization / Value Angle**, **Domain tag(s)** (mono pill input with removable
+  tokens, plus a dashed **+ add domain** chip).
+- Two entries: from **Make it mine**, the hypothesis is **prefilled** and a card with a brass edge reads mono
+  **FROM A SPARK** / *"Seeded from a spark — make it yours."* From the **Add** tab, the same form opens blank.
 - Inline validation below fields in `#DC2626`. One brass CTA **Save to vault**.
 
 ## §4 — The Vault
@@ -64,27 +98,43 @@ Structured capture of one idea.
 All of the user's ideas.
 
 - Header "Vault" + muted idea count in mono.
-- Horizontally scrollable filter row: domain tags as rounded-full Badges (one active in brass tint) + lineage filter (Root / Iteration / Fork).
-- Vertical list of idea **Cards**: Core Hypothesis as the title, domain tags as Badges, a lineage chip, muted mono metadata (timestamp, idea id).
-- Bottom tab bar. No "related ideas."
+- Search field (rounded, hairline, mono placeholder).
+- Horizontally scrolling **domain** chip row (active chip in brass tint, row clipping at the right edge) and a
+  **lineage** row: `root` / `iteration` / `fork`.
+- Vertical list of idea **Cards**: Core Hypothesis as the title (Geist), domain tags as chips, and muted mono
+  meta on the chip row — lineage + timestamp (`FORK · 04:12`).
+- Bottom tab bar. **No sticky "Add idea"** — Add is the nav tab. No "related ideas."
 
 ## §5 — Idea Detail + Lineage
 
-- Main: the idea's fields, domain tags as Badges.
-- Below: **Living Lineage** as a vertical measured chain — what it forked/iterated from above, what derived from it below — hairlines with small brass node markers, mono labels.
-- Actions: **Iterate** (ghost) and **Fork** (brass).
+- Main: the idea's headline, domain chips, **THE CLAIM**, **WHAT IT WOULD TAKE**.
+- Actions: **Iterate** (outline) and **Fork** (brass).
+- Below: **LIVING LINEAGE** as a vertical measured chain — what it forked/iterated from above, what derived
+  from it below — hairlines with brass node markers, mono labels, and a **filled brass node on *this* idea**.
 
 ## §6 — Fork
 
-- The **parent idea** shown dimmed at top.
-- A field for the **mutation delta** (helper text suggesting phrasing like *"Forking this … into …"*).
-- A **domain selector** defaulting to a **different** domain than the parent, with a soft nudge toward a new domain.
+- The **parent idea** shown dimmed at top, labelled mono **PARENT**.
+- A field for the **mutation delta** (helper text suggesting the phrasing *"Forking this … into …"*), with a
+  mono line: *"Say what changes. The parent stays intact."*
+- A **domain selector** — parent domain dimmed, an arrow, and a suggested **different** domain in brass tint,
+  with the nudge: *"Pick a domain you haven't used — forks widen the vault, and a wider vault makes better
+  sparks."*
+- A quiet card stating what will be recorded: *"Fork of 01:07 · domain #health-data"* (single-parent lineage).
 - One brass CTA **Create fork**.
 
 ## §7 — Onboarding / Bootstrap
 
 The empty vault *is* the onboarding.
 
-- One cross-domain prompt at a time — *"An idea from your work", "A frustration nobody has fixed", "A domain you have never touched"* — with a single minimal field.
-- A growing **star-chart map** of ideas captured so far, visibly widening as domains are covered. Progress shown as **domains covered** (mono), not numbered steps.
-- One brass CTA **Add idea**; quiet skip link. No AI-generated suggested ideas.
+- Mono wordmark **ASTROLAB**; headline **"Your star chart"**; muted line *"Every idea is a point. Sparks draw
+  the lines."*
+- The **star chart**: faint astrolabe rings (hairlines) with idea points as stars — brass for captured ideas,
+  pale ink for the rest — and thin **brass arcs** drawn between points that are far apart. It visibly widens
+  as domains are covered.
+- **Progress is domains, not steps:** mono `DOMAINS COVERED` + `2 / 3` and a three-segment bar (no numbered
+  steps).
+- One cross-domain prompt at a time — *"An idea from your work", "A frustration nobody has fixed", "An idea
+  from a domain you've never touched"* — inside a card labelled mono **CROSS-DOMAIN PROMPT**, with a single
+  minimal field (*"One sentence is enough"*).
+- One brass CTA **Add idea**; a quiet mono **skip for now**. No AI-generated suggested ideas.

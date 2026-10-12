@@ -38,6 +38,42 @@ Living record of the Google Stitch artifacts for Astrolab. Keep this in sync whe
 
 ---
 
+## Visual direction — **Nightfall** (locked 2026-10-12)
+
+The chosen visual language is **Nightfall**: deep indigo-black canvas, one accent (**aged brass**), indigo as
+a structural tone only. Full token set and rules: `DESIGN.md` §1/§2.
+
+Nightfall screens are **hand-built** (SVG → PNG at 2x) because agent-side Stitch generation fails — calls time
+out at ~60s and return copies of existing screens. Sources and 2x PNGs live with David in
+`OUTBOX/screens/nightfall/`, in the screen-prompts order §1–§7:
+
+| # | Screen |
+| :--- | :--- |
+| §1 | Sparks — the deck (swipe right = good, left = not for me) |
+| §2 | Idea expanded |
+| §3 | Capture (seeded from a spark) |
+| §4 | Vault |
+| §5 | Idea detail + lineage |
+| §6 | Fork |
+| §7 | Onboarding — star chart |
+
+**Do not treat the asset's `namedColors` as canonical.** Stitch regenerates the palette from seeds, so the asset
+carries tones nobody chose (e.g. `secondary #bbc3ff`, `outline #9d8e7f`, `surface #0f141a`). `DESIGN.md` §2 is the
+source of truth; the asset will only ever be "close, Stitch-generated".
+
+**Known design gap:** the flow spec (`docs/FLOW.md`, S6) has an **Iterate** surface with no visual spec here and no
+screen in the set below — it is the one flow surface still unspecified. Owner: design.
+
+**Stitch-side actions still pending (need the Stitch UI / an editable asset):**
+
+- Project `designTheme` still says **"Collide"** — every regeneration drifts until it is corrected.
+- The v3 design system swapped the mono label font for **Public Sans** (banned — must be `JETBRAINS_MONO`).
+- Color mode is still **LIGHT**; Nightfall needs **DARK** (or at least a dark custom palette).
+- ~~Roundness~~ — **resolved:** the asset is pinned at `ROUND_EIGHT` (a `ROUND_TWELVE` write is accepted by the
+  dry run, applied, then reverted server-side), so the screens and `DESIGN.md` use **8px** too.
+
+---
+
 ## Screens
 
 | Title | Screen ID | Resource name | Device | Size |
@@ -63,7 +99,7 @@ Living record of the Google Stitch artifacts for Astrolab. Keep this in sync whe
 | File | Role |
 | :--- | :--- |
 | `DESIGN.md` | The design system (mobile-first shadcn + brass). Mirrors the Stitch design system. |
-| `docs/stitch-prompts.md` | Per-screen generation prompts for Stitch (global style + §1–§7). |
+| `docs/stitch-prompts.md` | Per-screen generation prompts (Nightfall global style + §1–§7). |
 | `docs/PRD.md` | Product scope and requirements. |
 | `docs/VISION.md` | Strategic layer. |
 
