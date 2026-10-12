@@ -168,9 +168,9 @@ config(key TEXT PK, value TEXT)                                          -- thre
 `RESOLVED-DISMISSED` / `RESOLVED-INSPIRED` (H). There is no separate `ACCEPTED`/`INSPIRED` spelling.
 
 - **`decision_id` idempotency** (`FLOW.md` §2.2, §4.3): the client generates `decision_id`, **persists and
-  reuses it on retry**. The `UNIQUE(spark_id, id)` constraint plus an upsert makes a raced swipe+tap or a
-  retry a **single** decision — the second write is a no-op returning the first result. *This is the mechanism
-  that makes "commits exactly once" true.*
+  reuses it on retry**. The primary key on `id` (the client-supplied `decision_id`) plus an upsert makes a
+  raced swipe+tap or a retry a **single** decision — the second write is a no-op returning the first result.
+  *This is the mechanism that makes "commits exactly once" true.*
 - **Provenance write on ACCEPT / committed INSPIRE** is transactional with the `idea` insert and the `spark`
   status change (one SQLite transaction).
 
