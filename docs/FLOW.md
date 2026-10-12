@@ -162,7 +162,7 @@ Every transition: **ID · From → To · trigger · guard · side effects · emp
 | **T24** | S4 → **S5** | **Fork** | — | open Fork, seeded with parent | — |
 | **T25** | S5 → **S4** | **Create fork** | mutation delta non-empty **and domain ≠ parent's** (`PRD.md` §1.2 — a fork widens the vault into a new domain; the flywheel depends on it) | **new** node; lineage parent = source; domain defaults **different** | inline error if delta empty; if the chosen domain **equals** the parent's → offer **Iterate** instead (a same-domain branch is a refinement, not a fork) |
 | **T26** | S4 → **S3** | **Delete idea** | confirmed | node removed/archived; fork children keep their parent reference | if the idea is a fork **parent** → confirm names the affected forks; if it is a **provenance source** of a spark-derived idea → confirm names those derived ideas (their provenance keeps a dangling ref) — neither is deleted |
-| **T27** | S4 → S4 | complete a **needs-completion** spark-derived idea | — | fill missing mandatory fields; becomes fully valid | marked *"Needs completion"* until then (see §6 Open Q1) |
+| **T27** | S4 → S4 | complete a **needs-completion** spark-derived idea | — | fill missing mandatory fields; becomes fully valid **and eligible as a spark candidate** | marked *"Needs completion"* and **excluded from candidate selection** until then (see §6 Open Q1) |
 
 #### Global / cross-cutting
 
@@ -177,7 +177,7 @@ Every transition: **ID · From → To · trigger · guard · side effects · emp
 1. Create a **new root idea** (no lineage parent) from the spark's proposed direction.
 2. Record its two source ideas as **provenance** (muted on S4; *not* in the lineage chain).
 3. Mark the spark **accepted**; remove the card; reveal the next.
-4. The derived idea is subject to mandatory-field validation (`PRD.md` §2). Where the spark supplies the fields, prefill them; where it cannot, the idea enters **needs-completion** (§6 Open Q1).
+4. The derived idea is subject to mandatory-field validation (`PRD.md` §2). Where the spark supplies the fields, prefill them; where it cannot, the idea enters **needs-completion** — saved, flagged in the Vault, and **excluded from candidate selection** until complete (T27). *(Working resolution per David's call in-thread; owner override pending — §6 Open Q1.)*
 
 **DISMISS** (`swipe left` / **Not for me**):
 1. Mark the spark **dismissed**; retain it as **negative signal** so the pairing is not re-offered unchanged (`PRD.md` §3.3.5).
@@ -231,7 +231,7 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 
 ## 6. Open questions (owner / design calls, not for me to settle)
 
-1. **Mandatory fields vs one-tap ACCEPT.** `PRD.md` §2/§3.1 make Hypothesis, Problem, Monetization, and Domain **mandatory**. A one-tap "good" cannot always supply all four. Proposed resolution in §4.3 step 4: prefill what the spark has; mark the rest **needs-completion** with a prompt (T27). Alternative: ACCEPT opens seeded Capture instead of creating immediately — but that breaks the swipe-to-keep gesture. **Needs owner sign-off.**
+1. **Mandatory fields vs one-tap ACCEPT.** `PRD.md` §2/§3.1 make Hypothesis, Problem, Monetization, and Domain **mandatory**. A one-tap **Good** cannot always supply all four. **Working resolution** (§4.3 step 4 / T27, David's call in-thread): **Good** creates the idea prefilled from the spark, marked **needs-completion**, and **excluded from candidate selection** until complete — flagged in the Vault. The rejected alternative (**Good** opens Capture) kills the one-tap gesture. **Pending owner override.**
 2. **Deck vs feed.** This spec assumes the **deck is the default** with **View all** as the escape hatch (David's recommendation; Assaf has not ruled). If Assaf rules for the vertical feed, only §4.1/§4.2 rendering changes — the state machine is unchanged.
 3. ~~Cold threshold value.~~ **Resolved by this spec (H1):** E0 triggers at **< 2 distinct domains** (no spark possible); `3 domains` is the target that drives the `x/3` readout and the widening nudge, not E0. Owner may still soften the 3-domain nudge's emphasis.
 4. **Delete semantics.** Whether deleting an idea with forks **blocks**, **orphans**, or **cascades** is a persistence decision (T26); this spec assumes **orphan-with-warning**, and that a deleted **provenance source** leaves a dangling (tolerated) ref on the derived idea.
@@ -249,7 +249,7 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 - [ ] A committed **INSPIRE** save resolves its spark (`RESOLVED-INSPIRED`) and blocks a duplicate ACCEPT (§4.3).
 - [ ] **Undo** covers all three resolving paths (ACCEPT / DISMISS / committed seeded save), and resolution is **permanent** once the window closes — deleting a derived idea does not un-resolve its spark (§5.4).
 - [ ] The onboarding exit gates on **≥ 2 domains** (the NFR-U1 requirement); `≥ 3` shows as `x/3` progress, not a gate (T04).
-- [ ] Onboarding capture requires **Domain** and the `See your sparks` CTA gates on **≥ 3 domains** (T02/T04).
+- [ ] Onboarding capture requires **Domain** — the full mandatory-field set — before an idea is saved (T02). *(`PRD.md` §2: an idea without a domain cannot take part in a spark.)*
 - [ ] No `collision`; no "related ideas"; no circular spinners; no bare empty states.
 
 ---
@@ -260,5 +260,7 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 - **2026-10-12 — r2 (this revision).** Adversarial review by Max (PR #2) + David's routing corrections. Disposition: **all findings accepted and fixed** — H1 (E0 floor is 2 domains, not 3), H2 (S0 domain guard + spread gate), H4 (`decision_id` idempotency), H5 (INSPIRE-save resolves the spark), M1 (E4 > E3 precedence), M2 (fork must widen the domain), M3 (provenance-source delete), M4 (Skip deviation stated), M5 (checklist wording), L1 (iteration is a version, not a lineage edge), L2 (undo-unavailable notice). **H3:** `VISION.md` named in the dependency note but **not owed a rewrite** (its §3/§4/§8.4 govern selection, not a readout; the one contradicting bullet was already rewritten in PR #3). **H6:** reconciled upstream (PR #3 + `6665504`). **L3** (S6 visual spec) routed to the design owner. Open Q3 and Q5 resolved.
 
 - **2026-10-12 — r3 (this revision).** Max's re-review of r2: all 11 findings confirmed closed; 3 residuals + 1 nitpick folded in — **N1** (onboarding exit gates on ≥ 2 domains, `x/3` is progress not a gate — T04), **N2** (lifecycle diagram redrawn with the three terminal states incl. `RESOLVED-INSPIRED`), **N3** (§5.4 undo now covers the committed seeded save; resolution permanence and delete-does-not-un-resolve defined; T12 broadened), **N4** (`decision_id` must be persisted and reused on retry, never regenerated).
+
+- **2026-10-12 — r3.1.** Max/David re-review of r3: dropped the stale checklist line that still said the exit gates on ≥ 3 domains (the N1 edit left a duplicate — checklist now agrees with T04). Folded in David's in-thread **Open Q1** call: a **Good** idea that cannot be fully prefilled is saved **needs-completion** and **excluded from candidate selection** until complete (§4.3, T27) — owner override pending.
 
 *Draft — Ari (AstroLab agent), 2026-10-12. Review: two adversarial passes by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
