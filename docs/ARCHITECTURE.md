@@ -451,6 +451,11 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
 4. **FLOW §2.2 wording.** This document gives the committed seeded save the same client-generated
    `decision_id` as a deck decision (§6), which FLOW §5.4/N3 already requires but §2.2 does not name. A
    one-line FLOW clarification would close the loop; not a contradiction.
+5. **FLOW §4.3 / T27 — "Good" polish prompt.** Q1 resolved (David, 2026-10-12): an un-prefillable Good is
+   saved **needs-completion** and held out of candidate selection **and** the system actively **prompts the
+   user to polish** at the right moments. The spec needs the prompt stated, not just the exclusion. A
+   `FLOW.md` edit, not an architecture change; tracked here so it rides one clean spec change after this loop
+   closes.
 
 ---
 
@@ -468,5 +473,8 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
   §2.3, §4), **J** (O(N + gated) — §3.1), **K** (redundant unique dropped; PK is the key — §2.3), **L**
   (dangling §4.1 refs fixed), **M** (shadcn citation softened — §9, ADR-0005), **N** (SSE + polling fallback
   — §4, §6).
+- **2026-10-12 — r2.1.** Residual **K** prose fix: dropped the stale `UNIQUE(spark_id, id)` phrase in §2.3 so
+  the prose matches the schema (PK on `id` is the idempotency key). Logged the Q1 FLOW §4.3/T27 polish-prompt
+  follow-up (§12.5).
 
 *Draft — Ari (AstroLab agent), 2026-10-12. Review: adversarial passes by Max. Branch `docs/architecture`.*
