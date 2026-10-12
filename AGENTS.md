@@ -24,3 +24,16 @@ and apply it. They are binding instructions, not suggestions. Announce
 
 Provenance, pinned commit SHAs, and what was intentionally left out:
 `.agents/skills/VENDORED.md`.
+
+## Harness overrides — these win where a skill conflicts
+
+`.agents/skills/using-superpowers/SKILL.md` states that *"User instructions
+(CLAUDE.md, AGENTS.md, GEMINI.md, etc, direct requests) take precedence over
+skills."* Applied to this repo's harness, that means:
+
+1. **Never sleep or poll.** End the turn and wait to be re-invoked; no bounded
+   wait loops, however short.
+2. **No unprompted commits, pushes, or dependency installs.** The `.gitignore`
+   commit in `using-git-worktrees` and the install/build steps in
+   `using-git-worktrees` / `ponytail-help` are consent-gated here — they run
+   only when a human partner asks for them.

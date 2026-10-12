@@ -7,6 +7,10 @@ agents working here read and apply them. Both sources are **MIT licensed**
 
 Repo `AGENTS.md` names these as **required** and points here.
 
+Where a vendored skill conflicts with the harness rules in `AGENTS.md` (the
+**Harness overrides** section), **the harness rules win** — the vendored bytes
+are left unmodified.
+
 ---
 
 ## 1. superpowers
