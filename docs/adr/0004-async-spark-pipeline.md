@@ -15,10 +15,15 @@ earn its place.
 ## Decision
 
 - **Queue:** a lightweight **in-process job runner** (a `spark_run` table plus a worker loop) — no external
-  broker. A vault mutation commits, then enqueues a run; a newer mutation **supersedes** an in-flight run.
+  broker. A vault mutation stamps `vault_meta.revision` and enqueues a run tagged with it; a run whose revision
+  is stale is discarded and **superseded** by the newer one.
 - **Boundary:** the vault module **does not import** the AI-provider interface. Only the worker does. This is
-  enforced structurally, so NFR-A1 holds by construction, not by discipline.
-- **Delivery:** the client reads `GET /v1/sparks/state` (E0–E4) and the offered list; it never waits on a run.
+  enforced structurally, so NFR-A1 holds by construction, not by discipline. Domain-tag clustering also lives
+  in the worker (ADR-0002), so **no vault path — capture included — normalises tags via AI**.
+- **Delivery:** the client reads `GET /v1/sparks/state` (E0–E4) and the offered list, and subscribes to
+  `GET /v1/sparks/events` (SSE) with a polling fallback; it never waits on a run.
+- **Store concurrency:** the API and worker both write the one SQLite file; WAL + `busy_timeout` + bounded
+  retry handle the serialization (ADR-0001).
 
 ## Consequences
 

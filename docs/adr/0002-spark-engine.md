@@ -26,7 +26,7 @@ Run the engine in **two stages** in the worker:
 3. **Adjudicate (AI, once per gated pair)** — confirm the shared mechanism and produce the spark's
    direction/claim/first-step.
 
-AI cost is therefore **O(N + surfaced)** calls, while the O(N²) comparison stays a cheap local filter.
+AI cost is therefore **O(N + gated)** calls, while the O(N²) comparison stays a cheap local filter.
 
 ## Consequences
 

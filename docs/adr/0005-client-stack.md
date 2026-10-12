@@ -7,7 +7,8 @@
 
 ## Context
 
-`DESIGN.md` specifies a **mobile-first, shadcn-based** system (Nightfall). The MVP must ship the deck (S1),
+`DESIGN.md` specifies a **mobile-first, shadcn-based** system (Nightfall) — it names *shadcn*, not a
+framework; React is this ADR's implementation inference, not a doc citation. The MVP must ship the deck (S1),
 vault (S3), capture (S2), idea detail (S4), fork (S5) and onboarding (S0) with swipe **and** always-visible
 44px buttons (`FLOW.md` §2.2, §5.5). It is a small product with no native-only capability required, and the
 server will be TypeScript (§9).
@@ -20,7 +21,7 @@ so parity (`FLOW.md` §5.5) and accessibility hold by construction.
 
 ## Consequences
 
-- **Positive:** matches `DESIGN.md` (shadcn/ui is React); no app-store gate for MVP; a single language and
+- **Positive:** consistent with `DESIGN.md` (*"shadcn-based"*); no app-store gate for MVP; a single language and
   toolchain across the stack.
 - **Positive:** swipe/button parity is a first-class structural property (one action component, two triggers),
   not a bolt-on.

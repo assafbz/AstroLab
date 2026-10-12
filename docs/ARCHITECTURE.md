@@ -43,7 +43,7 @@ choice is load-bearing it is recorded as an **ADR** in `docs/adr/` and summarise
                        │  vault CRUD · decisions · undo · export     │
                        │  spark read model · run status (E0–E4)      │
                        └───────┬───────────────────────┬─────────────┘
-                               │ SQL (one writer)      │ enqueue run
+                               │ SQL (WAL, 2 writers)  │ enqueue run
                        ┌───────▼───────────┐   ┌───────▼─────────────┐
                        │  Store (SQLite)   │   │  Spark worker (TS)  │
                        │  ideas · lineage  │◄──┤  in-process queue   │
@@ -62,13 +62,15 @@ choice is load-bearing it is recorded as an **ADR** in `docs/adr/` and summarise
 | **Client (PWA)** | Render S0–S6 (`FLOW.md` §2.1); capture gestures; issue decisions with a `decision_id`; show engine state E0–E4. | Compute scores; hold the only copy of an idea; reach the AI provider directly. |
 | **API service** | The vault: create/read/iterate/fork/delete, decisions, undo, export, vault summary, spark read-model, run status. | Call AI on any vault path. Block a vault request on a spark run. |
 | **Spark worker** | Run the two-stage engine (§3) asynchronously; extract mechanisms; write spark candidates and suppressions. | Serve user requests; mutate idea content; run inline in the request path. |
-| **Store (SQLite)** | One durable home for ideas, versions, lineage edges, provenance edges, sparks, decisions, suppressions, config. | Be shared across processes for writes (single writer, §9). |
+| **Store (SQLite)** | One durable home for ideas, versions, lineage edges, provenance edges, sparks, decisions, suppressions, config. | Take a write without WAL + busy-timeout + retry (§9). |
 | **AI-provider boundary** | One interface the worker depends on; a swappable adapter behind it. | See idea data outside a requested run; retain or train on it. |
 
 **Deployment shape (MVP):** one host, three units — the **API service**, the **worker**, and the **SQLite
 file** — plus an **outbound-only** dependency on the AI provider. The API and worker are two processes of one
-codebase sharing the store (single writer = the worker owns writes to spark tables; the API owns vault
-writes). Stateless service, state on disk and in the provider — no message broker (ADR-0004).
+codebase; the API owns vault-table writes and the worker owns spark-table writes, but **both open the same
+SQLite file**, so writes are *serialized by SQLite's file lock*, not by a single process. The store runs in
+**WAL mode** with a `busy_timeout` and bounded retry (§9, ADR-0001); every write is a short transaction.
+Stateless service, state on disk and in the provider — no message broker (ADR-0004).
 
 ---
 
@@ -120,8 +122,10 @@ provenance_edge(
 `PRD.md` §2 adds **Provenance** as a field distinct from Lineage; `FLOW.md` §2.3 makes the two relations
 concrete. An accepted spark is a **ROOT** (`lineage_parent_id IS NULL`) that carries 0..N provenance edges.
 Provenance is muted metadata on Idea Detail; it is **never** traversed as ancestry, and never surfaced as a
-similarity signal. This is what closes decision **D1** (no two-parent fork). *Invariant:* no `idea` row may
-have both a `lineage_parent_id` and provenance edges from the same spark.
+similarity signal. This is what closes decision **D1** (no two-parent fork). *Invariant:* **an idea that
+bears provenance edges has no lineage parent** — `provenance-bearing ⇒ lineage_parent_id IS NULL`. Provenance
+and lineage are mutually exclusive on a node; this is the rule that makes D1 hold for *every* idea, not only a
+same-spark one.
 
 ### 2.3 Sparks, runs, decisions, suppression
 
@@ -137,25 +141,31 @@ spark(
   mechanism           TEXT,            -- extracted shared mechanism (internal; never surfaced)
   domain_distance     REAL,            -- internal score (§3)
   structural_alignment REAL,           -- internal score (§3)
-  status              TEXT,            -- OFFERED | ACCEPTED | DISMISSED | INSPIRED
+  status              TEXT,            -- OFFERED | RESOLVED-ACCEPTED | RESOLVED-DISMISSED | RESOLVED-INSPIRED
   created_at          TEXT
 )
 -- partial unique index: at most one live offer per pair (§3.5)
 --   CREATE UNIQUE INDEX ux_spark_live ON spark(pair_key) WHERE status = 'OFFERED';
 
-decision(
+decision(                              -- one row per RESOLVING action (FLOW.md §4.3)
   id            TEXT PK,               -- === the client-supplied decision_id (FLOW.md §2.2)
   spark_id      TEXT FK spark(id),
-  kind          TEXT,                  -- ACCEPT | DISMISS
-  result_idea_id TEXT NULL,            -- the root created by ACCEPT
-  decided_at    TEXT,
-  UNIQUE(spark_id, id)                 -- the idempotency key
+  kind          TEXT,                  -- ACCEPT | DISMISS | INSPIRED
+  result_idea_id TEXT NULL,            -- the root created by ACCEPT or a committed seeded save
+  decided_at    TEXT
 )
+-- idempotency key IS the primary key: (spark_id, decision_id) is unique because `id` is
+-- globally unique (== decision_id). A repeated insert is a no-op returning the first row.
 
-spark_run(id TEXT PK, status TEXT, started_at, finished_at, error TEXT)  -- PENDING|RUNNING|DONE|FAILED
+spark_run(id TEXT PK, vault_revision INTEGER, status TEXT, started_at, finished_at, error TEXT)
+                                         -- PENDING|RUNNING|DONE|FAILED
 suppressed_pair(pair_key TEXT PK, reason TEXT, updated_at TEXT)          -- CLICHE|NOISE|DISMISSED
+vault_meta(revision INTEGER)            -- monotonic; bumped on every vault mutation (§4)
 config(key TEXT PK, value TEXT)                                          -- thresholds (§3.4)
 ```
+
+**Status vocabulary** is `FLOW.md` §3's verbatim: a spark is `OFFERED`, then terminal `RESOLVED-ACCEPTED` /
+`RESOLVED-DISMISSED` / `RESOLVED-INSPIRED` (H). There is no separate `ACCEPTED`/`INSPIRED` spelling.
 
 - **`decision_id` idempotency** (`FLOW.md` §2.2, §4.3): the client generates `decision_id`, **persists and
   reuses it on retry**. The `UNIQUE(spark_id, id)` constraint plus an upsert makes a raced swipe+tap or a
@@ -173,7 +183,7 @@ domain_map(tag TEXT PK, cluster_id TEXT)                -- free-text tag → clu
 
 A small shipped taxonomy (§3.2). Not an embedding store; not queryable by similarity.
 
-**Why SQLite:** single user, single writer, relational edges (lineage, provenance, idempotency constraint),
+**Why SQLite:** single user, one file, relational edges (lineage, provenance, idempotency constraint),
 trivial file-level backup and export (NFR-D1), and **no vector index** (PRD §3.3.7). Postgres is the
 documented scale-out path once multi-user ships (`PRD.md` §6) — ADR-0001.
 
@@ -185,27 +195,39 @@ The engine turns a vault into offered sparks. It is **selection-internal**: it c
 *choose*, and never surfaces either (`PRD.md` §3.3.2–3.3.4). It runs entirely in the **worker**, never in the
 API path (NFR-A1/P1).
 
-### 3.1 Two-stage, ANN-free, O(N) AI calls
+### 3.1 Two-stage, ANN-free, O(N + gated) AI calls
 
 | Stage | Where | AI? | Cost |
 | :--- | :--- | :-- | :--- |
 | **Extract** | once per idea, cached | **yes** (1 call) | O(N) calls, re-run only when an idea's text changes |
 | **Gate** | local, deterministic | no | O(N²) comparisons — fine at personal scale |
-| **Adjudicate** | once per gated pair | **yes** (1 call) | O(candidates passed by the gate) |
+| **Adjudicate** | once per **gated** pair | **yes** (1 call) | O(pairs that pass the gate) |
 
-This is the key sizing decision (ADR-0002): AI cost is **O(N + surfaced)**, not O(N²). The O(N²) work is a
-cheap local filter, which is exactly what "compares pairs directly" (`PRD.md` §3.3.7) permits.
+This is the key sizing decision (ADR-0002): AI cost is **O(N + gated)**, not O(N²). The O(N²) work is a
+cheap local filter, which is exactly what "compares pairs directly" (`PRD.md` §3.3.7) permits. "Gated" is the
+set that clears both thresholds — bounded well below N² by the gate, and the quantity the thresholds tune.
 
-### 3.2 Axis 1 — domain distance (deterministic)
+### 3.2 Axis 1 — domain distance (deterministic, worker-only)
 
-1. At capture, each free-text domain tag is mapped to a **domain cluster** via `domain_map`; unknown tags are
-   normalised to the nearest cluster (an AI call, cached — never per pair).
-2. Distance = **taxonomy hops** between the two ideas' clusters (`domain_cluster.adjacency`); `0` for
-   same-cluster. Two ideas whose every tag is in one cluster are **same-domain** and land in the cliché
-   quadrant (`PRD.md` §3.3.3).
+**Capture never calls the boundary (A).** `POST /v1/ideas` stores each domain tag **raw**. All clustering
+happens in the **worker**, during a run:
+
+1. **Map (deterministic first):** each tag present in the shipped `domain_map` resolves to a **cluster** with
+   no AI. A tag not in the map is **provisional** — it is its own cluster until the worker normalises it.
+2. **Normalise (worker, AI, cached):** an unmapped tag is normalised to the nearest cluster by an AI call and
+   written back to `domain_map`, so it is paid for **once per distinct tag**, never per pair and never on the
+   vault path.
+3. **Distance** = **taxonomy hops** between the two ideas' clusters (`domain_cluster.adjacency`); `0` for
+   same-cluster. Two ideas whose every tag resolves to one cluster are **same-domain** → cliché
+   (`PRD.md` §3.3.3).
+
+**The `x/3` summary stays AI-free.** `GET /v1/vault/summary` counts **distinct resolved clusters, with each
+unmapped tag counting as its own provisional cluster** — a deterministic count computed from `domain_map`
+alone. It never blocks on the provider; the worker's later normalisation can only *collapse* provisional
+clusters (never split them), so the readout is conservative and monotone (A).
 
 No embeddings, no ANN — a small curated table. Domain is "the axis along which distance is measured"
-(`PRD.md` §2), and this measures it deterministically.
+(`PRD.md` §2), and this measures it deterministically on the vault path.
 
 ### 3.3 Axis 2 — structural alignment (AI-extracted, locally compared)
 
@@ -239,14 +261,22 @@ schema or the API.
 ## 4. Async pipeline & degradation (NFR-A1, NFR-P1)
 
 **Trigger.** Any vault mutation that can change the candidate set (create / complete / iterate / fork /
-delete) enqueues a **spark run** (§4.1). The mutation itself commits and returns **immediately** — it never
-waits on the engine (NFR-P1).
+delete) stamps `vault_meta.revision` (monotonic) and enqueues a **spark run** (§4) carrying that revision. The
+mutation itself commits and returns **immediately** — it never waits on the engine (NFR-P1).
 
-**Run lifecycle.** `PENDING → RUNNING → DONE | FAILED`. A run is idempotent per vault revision: a newer
-mutation supersedes an in-flight run rather than queueing behind it.
+**Run lifecycle & idempotency (I).** `PENDING → RUNNING → DONE | FAILED`, each run tagged with the
+`vault_revision` it was cut from. A run is **idempotent per revision**: if `vault_meta.revision` has advanced
+past a run's stamp, that run is stale — its results are discarded and a newer run supersedes it, rather than
+queueing behind it. Re-running the same revision reproduces the same candidates.
 
-**Delivery.** The client reads `GET /v1/sparks/state` (E0–E4) and `GET /v1/sparks?state=offered`. Offered
-sparks appear as they are produced; the deck is never blocked waiting (NFR-P1).
+**Delivery & the bound (N, F).** `GET /v1/sparks/state` (E0–E4) and `GET /v1/sparks?state=offered` are the
+read model; the client **subscribes** to run progress on `GET /v1/sparks/events` (SSE), with a **polling
+fallback** (bounded backoff, only while state = E1). New offers therefore surface **on the event, not on a
+timer**; the deck is never blocked waiting.
+
+> **Bounded delivery (NFR-P1 target):** with a responsive provider, a run completes **p95 ≤ 60 s for a vault
+> of ≤ 500 ideas**; if the provider is slow or down, the run fails per the matrix below rather than holding
+> the bound. This is the number the timed test asserts.
 
 **Degradation matrix** (`FLOW.md` §5.6):
 
@@ -296,14 +326,14 @@ HTTP/JSON, bearer-authenticated. Endpoints map 1:1 to `FLOW.md` surfaces; decisi
 
 | Surface (`FLOW.md`) | Endpoint | Notes |
 | :--- | :--- | :--- |
-| **S0** Onboarding | `POST /v1/ideas` · `GET /v1/vault/summary` | capture is **domain-mandatory** (T02); summary returns `domains covered` for the `x/3` readout |
+| **S0** Onboarding | `POST /v1/ideas` · `GET /v1/vault/summary` | capture is **domain-mandatory** (T02) and stores tags **raw** — no AI on this path (§3.2); summary returns `domains covered` from the **deterministic** cluster count (§3.2) |
 | **S0 → S1** exit | — | gate on **≥ 2 domains** (T04); client computes the gate from the summary |
-| **S1** Sparks deck | `GET /v1/sparks?state=offered` · `GET /v1/sparks/state` | `state` = E0–E4 (§4). Deck order = server order |
+| **S1** Sparks deck | `GET /v1/sparks?state=offered` · `GET /v1/sparks/state` · `GET /v1/sparks/events` (SSE) | `state` = E0–E4 (§4). Deck order = server order. Events stream new offers (N) |
 | **S1b** Spark detail | `GET /v1/sparks/{id}` | direction / claim / what-it-takes / first-step / tags. **No scores, no similarity readout** |
 | **decision** | `POST /v1/sparks/{id}/decision` `{decision_id, kind: ACCEPT\|DISMISS}` | idempotent on `(spark_id, decision_id)`; returns the created idea id for ACCEPT |
-| **INSPIRE** | `POST /v1/sparks/{id}/decision` `{decision_id, kind: INSPIRE}` | opens S2 seeded; spark stays OFFERED until a committed seeded save (T16) |
-| **undo** | `POST /v1/decisions/{decision_id}/undo` | one step; within window; retracts derived idea + provenance, re-offers. `409` if not reversible (`FLOW.md` §5.4) |
-| **S2** Capture | `POST /v1/ideas` (seeded or blank) | mandatory-field validation; 280-char counter client-side, enforced server-side |
+| **INSPIRE (open seeded capture)** | `POST /v1/sparks/{id}/inspire` | **not a resolution** — writes no `decision`; returns the seed payload; the spark stays `OFFERED` until a committed seeded save (B) |
+| **undo** | `POST /v1/decisions/{decision_id}/undo` | one step; within window; retracts derived idea + provenance, re-offers. Covers ACCEPT, DISMISS **and a committed seeded save** — which carries its own `decision_id` (C). `409` if not reversible (`FLOW.md` §5.4) |
+| **S2** Capture | `POST /v1/ideas` (blank, or **seeded** with `{origin_spark_id, decision_id}`) | mandatory-field validation; a seeded save writes its `decision` row (kind=INSPIRED) **transactionally** and is idempotent on `decision_id` (D); 280-char counter client-side, enforced server-side |
 | **S3** Vault | `GET /v1/ideas?domain=&lineage=&status=` | |
 | **S4** Idea detail | `GET /v1/ideas/{id}` | fields + lineage chain + provenance (muted) |
 | **S6** Iterate | `POST /v1/ideas/{id}/iterate` | new version, same node |
@@ -312,8 +342,12 @@ HTTP/JSON, bearer-authenticated. Endpoints map 1:1 to `FLOW.md` surfaces; decisi
 | **Recompute** | `POST /v1/sparks/run` | enqueues a run (E1) |
 | **Export** | `GET /v1/export` | NFR-D1 (§8) |
 
-**`decision_id` persist-and-reuse** (`FLOW.md` §2.2, N4): the client MUST persist the id before sending and
-reuse it on retry; the server treats a repeated `(spark_id, decision_id)` as the same decision.
+**`decision_id` persist-and-reuse** (`FLOW.md` §2.2, N4): for **every resolving action — ACCEPT, DISMISS, and
+a committed seeded save** — the client generates the id, persists it, and reuses it on retry; the server treats
+a repeated `(spark_id, decision_id)` as the same decision. *(FLOW §2.2 spells out ACCEPT/DISMISS and §5.4/N3
+already extends undo to the committed seeded save; this document gives that save the same client-generated
+`decision_id`, written at commit. A one-line FLOW §2.2 clarification is a recommended follow-up — not a
+contradiction, since FLOW §5.4 already requires the capability.)*
 
 **Invariants the API enforces (not the client):** domain-mandatory capture; single-parent lineage; provenance
 ≠ lineage; at most one live offer per pair; mandatory-field validation on every write.
@@ -352,16 +386,21 @@ counts and lineage/provenance edges survive.
 
 | Layer | Choice | Rationale |
 | :--- | :--- | :--- |
-| Client | **React + TypeScript, Vite, mobile-first PWA** | `DESIGN.md` is shadcn/ui (React); a PWA ships the mobile-first deck without app-store overhead; one language with the server (ADR-0005) |
+| Client | **React + TypeScript, Vite, mobile-first PWA** | `DESIGN.md` is *"shadcn-based"* (it names no framework) — React is the implementation inference (ADR-0005); a PWA ships the mobile-first deck without app-store overhead; one language with the server |
 | API | **Node + TypeScript**, HTTP/JSON | same language as the client; small surface; portable contract |
 | Worker | **Node + TypeScript**, in-process queue | no broker for a single user (ADR-0004) |
-| Store | **SQLite** (WAL), single writer | §2.4; ADR-0001 |
+| Store | **SQLite**, one file, two writers (API + worker) | WAL + `busy_timeout` + bounded retry (§9); §2.4; ADR-0001 |
 | AI | **hosted model behind an adapter** | §5; ADR-0003 |
 
 **Security posture.**
 - **Single-tenant by construction.** The MVP is one user (`PRD.md` §1.3), so there is no tenant boundary to
   enforce; `PRD.md` §4 deliberately removed row-level security as a non-requirement. Multi-user isolation is
   future scope (`PRD.md` §6) and is where RLS/tenancy would be introduced — not here.
+- **Concurrency (E).** SQLite gives **one file-wide write lock**, so the API and worker writers serialize — they
+  are *not* a single writer. The store runs in **WAL mode** (readers don't block the writer), with
+  `busy_timeout` (e.g. 5 s) and **bounded retry-with-backoff** on `SQLITE_BUSY`; every write is a short
+  transaction. This is the correct MVP posture for two processes on one file; if write contention ever
+  appears, the fallback is to funnel all writes through one process (ADR-0001).
 - **Auth.** Bearer token over HTTPS; secrets in env, never in the repo.
 - **Data at rest.** Private by default (`visibility = PRIVATE`); encryption at rest is deferred
   (`PRD.md` §6), noted rather than claimed.
@@ -377,7 +416,7 @@ Load-bearing decisions, one file each, in `docs/adr/`:
 | ADR | Decision | Closes |
 | :--- | :--- | :--- |
 | **0001** | SQLite as the MVP store; Postgres as the scale-out path | §2.4, NFR-D1 |
-| **0002** | Two-stage, ANN-free spark engine; AI cost O(N + surfaced) | §3, PRD §3.3.7 |
+| **0002** | Two-stage, ANN-free spark engine; AI cost O(N + gated) | §3, PRD §3.3.7 |
 | **0003** | One AI-provider interface + swappable adapter; structured output; no-training/zero-retention | §5, NFR-PRIV1 |
 | **0004** | Async in-process queue; vault code never imports the AI boundary | §4, NFR-A1/P1 |
 | **0005** | Client = React/TS mobile-first PWA (one language with the server) | §9 |
@@ -391,7 +430,7 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
 | NFR | Requirement | Design element | Verification |
 | :--- | :--- | :--- | :--- |
 | **A1** Availability | Vault works without the Spark | Vault module has no dependency on the AI boundary (§4, §9); engine is a separate worker (§1) | **Fault injection:** disable the provider, run the vault suite — capture/read/iterate/fork/delete pass; S1 shows E4 |
-| **P1** Performance | Sparks async, never block vault; bounded delivery | Mutation commits then enqueues a run (§4.1); client reads state, never waits | **Timed test** with injected AI delay/failure — vault request latency unchanged; sparks delivered within the bound |
+| **P1** Performance | Sparks async, never block vault; bounded delivery | Mutation commits then enqueues a run (§4); client reads state/SSE, never waits. Bound: **p95 ≤ 60 s at ≤ 500 ideas** with a responsive provider (§4) | **Timed test** with injected AI delay/failure — vault request latency unchanged; sparks delivered within the bound |
 | **D1** Durability/Portability | No idea lost; open export | SQLite + WAL; `GET /v1/export` JSON (§8) | **Backup→wipe→restore** + **export round-trip** tests |
 | **PRIV1** Privacy | No training; no third-party transmission beyond a requested op | Operation-scoped payloads; zero-retention/no-training adapter config; no telemetry (§5) | **Data-flow audit** (grep the boundary; assert one call site per operation) + **vendor-contract audit** |
 | **Q1** Quality | Spark quality instrumented (acceptance proxy) | `decision` records kind + whether the accepted idea landed in a **new domain** (§3.5, §5 metrics) | **Instrumentation test** + reporting query over `decision` |
@@ -409,7 +448,25 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
    calibration run.
 3. **Cold-start ordering.** Whether onboarding triggers the first run automatically or on "See your sparks"
    is a UX call already implied by `FLOW.md` T04; noted for completeness.
+4. **FLOW §2.2 wording.** This document gives the committed seeded save the same client-generated
+   `decision_id` as a deck decision (§6), which FLOW §5.4/N3 already requires but §2.2 does not name. A
+   one-line FLOW clarification would close the loop; not a contradiction.
 
 ---
 
-*Draft — Ari (AstroLab agent), 2026-10-12. Review: adversarial pass by Max. Branch `docs/architecture`.*
+## 13. Revision history
+
+- **2026-10-12 — r1.** Initial draft (11 sections + ADRs).
+- **2026-10-12 — r2.** Adversarial review by Max (round 1) + David's confirmation. All 14 findings accepted:
+  **A** (domain clustering moved to the worker; capture stores raw tags; `x/3` summary is deterministic —
+  §3.2, §6), **B** (INSPIRE is not a decision; separate `POST /v1/sparks/{id}/inspire` — §6), **C/D** (the
+  committed seeded save carries its own `decision_id`, writes its `decision` row transactionally, is
+  idempotent and undoable — §2.3, §6), **E** (SQLite writer model: WAL + `busy_timeout` + retry, two writers
+  — §1, §9, ADR-0001/0004), **F** (NFR-P1 bound quantified: p95 ≤ 60 s at ≤ 500 ideas — §4, §11), **G**
+  (provenance invariant widened to `provenance-bearing ⇒ no lineage parent` — §2.2), **H** (status vocabulary
+  = FLOW's `OFFERED` / `RESOLVED-*` — §2.3), **I** (`vault_meta.revision` + `spark_run.vault_revision` —
+  §2.3, §4), **J** (O(N + gated) — §3.1), **K** (redundant unique dropped; PK is the key — §2.3), **L**
+  (dangling §4.1 refs fixed), **M** (shadcn citation softened — §9, ADR-0005), **N** (SSE + polling fallback
+  — §4, §6).
+
+*Draft — Ari (AstroLab agent), 2026-10-12. Review: adversarial passes by Max. Branch `docs/architecture`.*
