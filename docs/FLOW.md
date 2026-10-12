@@ -105,13 +105,13 @@ A spark instance moves through a small state machine of its own:
 
 | Ref | State | Condition | S1 shows |
 | :-- | :---- | :-------- | :------- |
-| **E0** | **Cold** | vault **below the spark floor: fewer than 2 distinct domains** (or < 2 ideas). Every possible pair is same-domain → cliché → suppressed (`PRD.md` §3.3.3), so **no spark is possible**. *(2 distinct domains already makes a spark possible; **≥ 3** is the product target, handled by the nudge below, not by E0.)* | Composed empty state, **not** an error: *"Sparks need breadth."* Progress `domains covered x/3` (mono) + **Add idea** CTA. |
+| **E0** | **Cold** | vault **below the spark floor: fewer than 2 distinct *resolved* domains** (or < 2 ideas). Every possible pair is same-domain → cliché → suppressed (`PRD.md` §3.3.3), so **no spark is possible**. *(2 distinct domains already makes a spark possible; **≥ 3** is the product target, handled by the nudge below, not by E0.)* | Composed empty state, **not** an error: *"Sparks need breadth."* Progress `domains covered x/3` (mono) + **Add idea** CTA. |
 | **E1** | **Computing** | engine run in flight | Skeletal shimmer **cards** matching deck dimensions; staggered reveal. **No circular spinner** (DESIGN.md §4). Deck remains usable for already-offered sparks. |
 | **E2** | **Ready(n)** | n ≥ 1 unreviewed sparks | Deck: top card. List toggle if n > 1. |
 | **E3** | **Exhausted** | vault **at/above the floor** (≥ 2 domains), 0 unreviewed, none computing | Composed empty state: *"No sparks left — for now."* CTAs: **Add idea** (S2), **Fork an idea into a new domain** (encourages the flywheel). A **Recompute** affordance. When the vault holds exactly 2 domains, E3 adds a widening nudge toward the `x/3` target (`PRD.md` §5). |
 | **E4** | **Unavailable** | AI down (NFR-A1) | Quiet, non-blocking state: *"Sparks are paused. Your vault is fully available."* + **Retry**. Already-offered sparks stay reviewable. |
 
-> Axis thresholds are tuning parameters (`PRD.md` §3.3.3), not fixed requirements. **The floor for *any* spark is 2 distinct domains** (`PRD.md` §3.3.3: only *same-domain* pairs are cliché-suppressed) — that is E0's trigger. The **3-domain** figure is the onboarding *target* (`PRD.md` §5): it drives the `x/3` progress readout and the widening nudge, **not** the Cold state.
+> Axis thresholds are tuning parameters (`PRD.md` §3.3.3), not fixed requirements. **The floor for *any* spark is 2 distinct *resolved* domains** (`PRD.md` §3.3.3: only *same-domain* pairs are cliché-suppressed) — that is E0's trigger; an unclassified free-text tag is provisional and never counts (§4.2/T02, §5.2). The **3-domain** figure is the onboarding *target* (`PRD.md` §5): it drives the `x/3` progress readout and the widening nudge, **not** the Cold state.
 >
 > **State precedence: E4 > E3.** A vault that is both Exhausted and Unavailable shows **Unavailable** (the transient cause, with Retry) — never Exhausted (which implies "come back after adding ideas"). **E0 dominates all**: with no domain spread there is no spark to compute, review, or await, so E0 shows regardless of AI state. E1 (Computing) may coexist with E2 — shimmer for in-flight work sits alongside any already-offered cards.
 
@@ -238,6 +238,7 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 3. ~~Cold threshold value.~~ **Resolved by this spec (H1):** E0 triggers at **< 2 distinct domains** (no spark possible); `3 domains` is the target that drives the `x/3` readout and the widening nudge, not E0. Owner may still soften the 3-domain nudge's emphasis.
 4. **Delete semantics.** Whether deleting an idea with forks **blocks**, **orphans**, or **cascades** is a persistence decision (T26); this spec assumes **orphan-with-warning**, and that a deleted **provenance source** leaves a dangling (tolerated) ref on the derived idea.
 5. ~~Seed metric.~~ **Resolved upstream (H6):** PR #3 restated `PRD.md` §5 (NSM) as *"sparks accepted per active user per month"* and NFR-Q1's proxy was reworded at `6665504` — now consistent with this flow's ACCEPT→root event.
+6. **S0 domain input — closed taxonomy picker vs free text (owner call).** Closing R1 (T02/T04) implements the architecture's option (a): onboarding **Domain is chosen from the shipped taxonomy** so the `≥ 2` gate counts deterministic *resolved* clusters. Max flagged that this is **more than a spec clarification** — it changes a **user-facing input contract**: `PRD.md` §2 describes Domain as user-supplied **tags**, and §3.4.1 frames onboarding as *guided* cross-domain **prompts**; nothing upstream authorises withholding free text at S0. Failure mode: a real domain absent from the shipped taxonomy forces a wrong pick at onboarding, inherited by every bootstrap idea. **Recommended mitigation (Max, 2026-10-12):** add an **`Other → free text (provisional)`** escape at S0 — mapped picks stay deterministic, and a provisional tag simply does **not** count toward the `≥ 2` gate, so nothing is boxed in. **Needs Assaf's sign-off** (routed with the `ARCHITECTURE.md` §12.1 batch); not yet in the spec text.
 
 ---
 
@@ -273,5 +274,7 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
   - **§12.4** — a committed seeded save carries its **own `decision_id`**, making it idempotent and undoable, named in §2.2 (which §5.4/N3 already required).
 
 - **2026-10-12 — r3.2.1.** Cross-ref fix (David's review of r3.2): §5.2 cited `§7/T02`; **T02 lives in §4.2** — corrected to `§4.2/T02`. No semantic change.
+
+- **2026-10-12 — r3.2.2.** Max's r3.2.1 review, follow-ups: added **resolved** to the §4.1 **E0** condition and the §4.1 floor note so E0 has a single in-file definition matching §5.2/T04 (the optional nit); logged the **S0 domain input** question as §6 **Open Q6** — the closed taxonomy picker is a user-facing input change, with Max's recommended **`Other → free text (provisional)`** escape pending Assaf's sign-off (not yet in the spec text).
 
 *Draft — Ari (AstroLab agent), 2026-10-12. Review: two adversarial passes by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
