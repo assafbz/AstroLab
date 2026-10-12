@@ -59,7 +59,7 @@ Ideas are captured with standardized, machine-readable semantics rather than uns
 ### Pillar 2: The Spark — **[MVP]**
 The heart of the product. Operating over a creator's *own* ideas:
 * **Internal Sparks:** Scores every pair of ideas on two independent axes — domain distance and structural alignment — and surfaces only those that are both far apart and structurally aligned.
-* **Rationale, not magic:** Every surfaced spark explains the shared mechanism and proposes a fork direction.
+* **Rationale, not magic:** Every surfaced spark is a **proposal**, not a pairing — it is shown as an idea with a claim and a first step, and it is judged on its own merits. The shared mechanism drives *selection*; it is never displayed as a similarity score.
 * **Feedback loop:** Dismissals are remembered so expected non-matches are not re-offered.
 
 ### Pillar 3: Living Lineage (Iterations vs. Forks) — **[MVP]**

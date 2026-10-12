@@ -1,6 +1,6 @@
 # Design System: Astrolab (Mobile)
 
-> **shadcn-based, mobile-first. One accent: aged brass.**
+> **Nightfall — dark, mobile-first, shadcn-based. One accent: aged brass.**
 >
 > **Vocabulary:** the engine is **the Spark**; its outputs are **sparks**. *(Never "collision.")*
 
@@ -8,82 +8,121 @@
 
 ## 1. Visual Theme & Atmosphere
 
-Clean, neutral, tactile. A **light-mode shadcn/ui** system: white surfaces, zinc neutrals, hairline borders, 8px radius, and understated shadows. The interface stays quiet and neutral except for a single warm accent — **aged brass** — reserved for primary actions and the connector that joins two ideas in a spark. The mood is a well-organized thinking tool.
+A night sky, not a workspace. Deep indigo-black canvas, layered surfaces, one warm accent. The name is
+earned: **ideas are stars, and a spark is a brass arc drawn between two distant ones.** The drama comes from
+Geist display type and deep negative space — never from decoration.
 
 - **Density:** 4 / 10 — *Daily App Balanced.*
-- **Variance:** 5 / 10 — mobile is inherently single-column; asymmetry lives in the spark layout, not split screens.
+- **Variance:** 5 / 10 — mobile is single-column; asymmetry lives in the deck and the star chart, not in split screens.
 - **Motion:** 6 / 10 — *Fluid,* restrained.
 
-**Governance principle — "Astrolab shows distance, not likeness."** The product's value is pairing ideas that are *far apart but structurally aligned*. The UI must never resemble a recommendation feed of similar items.
+**Governance principle — "judge the idea, not the pairing."** A spark is offered *as an idea*, and the user
+answers exactly one question: **is it good?** The UI never scores, ranks, or explains the *similarity* of two
+source ideas — no distance or alignment readout, no "related ideas", nothing that reads as a recommendation
+feed. Provenance (which ideas a spark came from) is recorded data; it appears once, muted, on **Idea
+Detail** — never as the headline of the judgement.
 
 ---
 
 ## 2. Color Palette & Roles
 
-shadcn light tokens, neutral family, one accent.
+Two families: **indigo structure** (surfaces, hairlines, atmosphere) and **brass accent** (the only pressable
+colour). Indigo is never an accent; brass is never a surface.
 
-- **Background** (`#FFFFFF`) — Canvas and Card fill.
-- **Foreground** (`#09090B`, zinc-950) — Primary text. Never pure `#000000`.
-- **Muted Surface** (`#F4F4F5`, zinc-100) — Secondary fills, inactive chips, skeletons.
-- **Muted Foreground** (`#71717A`, zinc-500) — Secondary text, metadata, timestamps.
-- **Border** (`#E4E4E7`, zinc-200) — 1px structural lines, Card borders, separators.
-- **Primary — Aged Brass** (`#D69A4E`) — **The single accent.** Primary buttons, active states, focus rings, and the brass connector in a Spark Card. Foreground `#09090B`.
-- **Destructive** (`#DC2626`) — Validation and delete only. Not decorative.
+| Token | Value | Role |
+| :--- | :--- | :--- |
+| **Canvas** | `#080A12` | App background. Never pure `#000000`. |
+| **Card** | `#10131F` | Card and sheet fill. |
+| **Raised** | `#1E2336` | Chips, badges, inner surfaces, segmented controls. |
+| **Hairline** | `#2A3049` | 1px structural lines, card borders, separators. |
+| **Ink** | `#EAEDF7` | Primary text. |
+| **Muted** | `#A9B0C8` | Secondary text, body copy at rest. |
+| **Dim** | `#7C87A3` | Section labels, metadata, timestamps. |
+| **Faint** | `#5C6684` | Placeholders, disabled, the quietest mono meta. |
+| **Primary — Aged Brass** | `#D69A4E` | **The single accent.** Primary action fill, active states, focus rings. Label on brass: `#0A0C15`. |
+| **Brass Highlight** | `#F1CB8C` | Brass text on dark (ghost actions, active chip labels), star points. |
+| **Brass Deep** | `#7E5218` | Brass shadow and pressed states. |
+| **Indigo (structural)** | `#4A55A0` | Atmosphere, depth, and the astrolabe rings — backgrounds only, never a control, never text on a control. |
+| **Outline** | `#39405E` | Outline-button and input borders. |
+| **Destructive** | `#DC2626` | Validation and delete only. Not decorative. |
 
-**Banned:** purple, blue, neon hues; gradients on text; any second accent.
+**Atmosphere:** a soft brass light pool behind the active surface, plus a cool indigo depth in the opposite
+corner — two low-opacity radial washes. This is the one sanctioned gradient, and it is a *background*.
+
+**Banned:** gradients on text; neon or outer glow; pure black `#000000`; any **second accent**; brass as a
+large surface fill; indigo on a control.
 
 ---
 
 ## 3. Typography Rules
 
 - **Display / Headings:** **Geist** — tight tracking, hierarchy by weight and size.
-- **Body / UI:** **Geist** — comfortable leading.
-- **Mono:** **JetBrains Mono** — domain tags, idea ids, counts.
-- **Banned:** `Inter`; all serifs; emoji anywhere.
+- **Body / UI:** **Geist** — comfortable leading, `#A9B0C8` at rest on dark.
+- **Mono:** **JetBrains Mono** — domain tags, idea ids, counters, section labels, lineage metadata.
+- **Banned:** `Inter`; all serifs; `Public Sans` (a Stitch substitution — reject on sight); emoji anywhere.
 
 ---
 
-## 4. Component Stylings (shadcn)
+## 4. Component Stylings (shadcn, dark)
 
-- **Button.** Variants: *default* (aged-brass fill, near-black label), *secondary* (zinc-100), *outline* (1px border), *ghost*. 8px radius, visible pressed state, **min height 44px** on mobile. No glow.
-- **Card.** White fill, 1px zinc-200 border, 8px radius, `shadow-sm`.
-- **Badge.** Domain tags as rounded-full badges (zinc-100 fill, zinc-700 text).
-- **Input.** Label **above**, helper optional, error **below** in Destructive. Focus ring in brass. No floating labels.
-- **Navigation.** Bottom tab bar (Sparks / Vault / Add); a sticky action bar where a screen needs one.
-- **Loaders.** Skeletal shimmer matching Card dimensions — **no circular spinners.**
+- **Button.** *default* — brass fill, `#0A0C15` label; *outline* — 1px `#39405E` on transparent; *ghost* —
+  brass-highlight text. **12px radius**, min height 44px, visible pressed state. No glow.
+- **Card.** `#10131F` fill, 1px `#2A3049` border, 12px radius. Borders over shadows — the system ships no
+  drop shadows.
+- **Badge / chip.** Domain tags as rounded-full chips: `#1E2336` fill, `#2A3049` stroke, `#A9B0C8` mono
+  label. Active chip: brass tint fill (brass at 14%), brass stroke at 50%, `#F1CB8C` label.
+- **Input.** Label **above** (mono, `#7C87A3`), helper optional, error below in Destructive. `#0E111C` fill,
+  `#2A3049` border, brass focus ring. No floating labels.
+- **Navigation.** Bottom tab bar — Sparks / Vault / Add. Active tab = brass dot + brass label.
+- **Loaders.** Skeletal shimmer at Card dimensions — **no circular spinners.**
 - **Empty States.** Composed, prompting — never a bare *"No ideas yet."*
 
-**Signature — the Spark Card.** The primary component of the home screen. A single **proposed spark**:
+**Signature — the Spark Card.** The home component: one proposed spark, presented **as an idea**.
 
-1. **Proposed direction** — the spark itself, as the card's headline (Geist).
-2. **Origin line** — the two source ideas shown as small muted labels, joined by a short **brass connector**, with the **shared mechanism** on one muted line beneath.
-3. **Actions** — **Keep as is** (accept: the spark becomes an idea, recorded as a fork of the pair) and **Use as inspiration** (opens Capture, seeded with the spark). A quiet **dismiss** affordance.
+1. **The idea** — the headline (Geist, 21/600), up to three lines.
+2. **The claim** — one or two lines on why it matters.
+3. **First step** — the smallest next move.
+4. **Domain tags** — mono chips.
+5. **Actions** — **Good** (accept: it becomes an idea in the vault) and **Not for me**, plus a one-step
+   **undo**. Both directions also work as swipe gestures (right = good, left = not for me); the explicit
+   buttons stay, at 44px or more, for discoverability and accessibility.
 
-Brass appears on the connector and the "Keep as is" button only — **one spark per card.**
+**No origin line, no distance or alignment readout, no shared-mechanism panel on the card.** The sources are
+recorded, not displayed.
 
 ---
 
 ## 5. Layout Principles (Mobile-First)
 
-- **Single column**, 16px gutters, safe-area aware.
-- **The home is a review queue.** It opens on **"Sparks"** — a feed of Spark Cards awaiting review — *not* on the user's notes. The **Vault** (all ideas) is reached via bottom nav.
-- **Bottom navigation**; sticky action bars where needed.
-- **44px minimum tap targets**; **never** horizontal scroll.
-- Cards over tables; **borders over heavy shadows.**
+- **Single column**, 16px gutters, safe-area aware; 12px corners on cards and buttons.
+- **The home is a deck.** It opens on **"Sparks"** — one proposed idea at a time — *not* on the user's notes.
+  The **Vault** (all ideas) is reached via bottom nav.
+- **Bottom navigation**; sticky action bars where a screen needs one (deck actions, Capture save, Fork create).
+- **44px minimum tap targets**; **never** horizontal scroll — the Vault filter row is the one deliberate
+  exception, clipping at the right edge to signal more filters.
+- Cards over tables; **borders over shadows.**
 
 ---
 
 ## 6. Motion & Interaction
 
-- Restrained spring physics; **staggered feed reveals** — never mount the list instantly.
-- **Spark reveal:** the two source-idea labels converge and the **brass connector draws** between them as the proposed direction appears.
+- Restrained spring physics; **animate `transform` and `opacity` only.**
+- **Swipe to judge.** In the deck: right = good, left = not for me. The card leaves on a spring; a one-step
+  **undo** is always available.
+- **A "good" gets a beat.** The brass arc resolves before the card commits, so accepting an idea reads as a
+  decision rather than a reflex.
+- **Star-chart reveal** (onboarding): idea points appear as they are captured, and brass arcs draw between
+  points that are far apart.
 - Perpetual micro-loops **only** on the active card.
-- Animate **`transform` and `opacity` only.**
 
 ---
 
 ## 7. Anti-Patterns (Banned)
 
-No emoji; no `Inter`; no serif; no pure black; no neon/outer glow; no heavy drop shadows; no gradient text; no 3-equal-column grids; no generic placeholder names; no fake round numbers; no AI copy clichés ("Elevate", "Seamless", "Unleash", "Next-Gen").
+No emoji; no `Inter`; no `Public Sans`; no serif; no pure black; no neon or outer glow; no heavy drop shadows;
+no gradient text; no 3-equal-column grids; no generic placeholder names; no fake round numbers; no AI copy
+clichés ("Elevate", "Seamless", "Unleash", "Next-Gen").
 
-**Astrolab-specific:** no "You might also like" / "Related ideas" surfaces; no tag clouds as navigation (likeness is the wrong axis); never write *collision* — the engine's output is a **spark**; no tiny tap targets; no horizontal scroll.
+**Astrolab-specific:** no distance, alignment, or similarity scores anywhere in the UI; no "You might also
+like" / "Related ideas" surfaces; no tag clouds as navigation; never write *collision* — the engine's output
+is a **spark**; no tiny tap targets.

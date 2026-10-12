@@ -55,7 +55,8 @@ Every idea is a structured knowledge unit, not arbitrary rich text.
 - **Problem Solved (Mandatory):** The specific friction, pain point, or operational bottleneck addressed.
 - **Monetization / Value Angle (Mandatory):** How value is captured — revenue model, unit economics, or cost savings.
 - **Domain Tag(s) (Mandatory):** One or more cross-disciplinary tags (e.g., `#fintech`, `#audio-dsp`, `#logistics`, `#developer-tooling`). Domain is the axis along which the distance between ideas is measured; **an idea without a domain cannot take part in a spark.**
-- **Lineage:** `Root`, `Iteration of ⟨X⟩`, or `Fork of ⟨Y⟩`.
+- **Lineage:** `Root`, `Iteration of ⟨X⟩`, or `Fork of ⟨Y⟩` — strictly single-parent.
+- **Provenance (optional):** `Sparked from ⟨A⟩ + ⟨B⟩` — the ideas a spark was generated from. Recorded as muted metadata, **not** part of Lineage: accepting a spark creates a **new root idea** (Sec. 3.3.5).
 - **Visibility Scope:** `PRIVATE` only in the MVP. Sharing scopes (Circle / Company / Public) are deferred.
 
 Every field above is part of the machine-readable "anatomy" that makes ideas comparable to one another.
@@ -83,12 +84,15 @@ Every field above is part of the machine-readable "anatomy" that makes ideas com
 The Spark surfaces non-obvious, coherent sparks from the user's **own** vault.
 
 1. **Scope — internal only.** The engine operates over the user's own idea nodes. No external users, no public graph, no cross-user matching in the MVP.
-2. **Two independent axes.** Each candidate pair is scored on two axes:
+
+2. **Candidate selection — two internal axes.** Each candidate pair is scored on two axes:
 
    | Axis | Meaning | Desired |
    | :--- | :--- | :--- |
    | **Domain distance** | How unrelated the two ideas' domains are. | **High** — surprise. |
    | **Structural alignment** | Whether they share a transferable *mechanism* (relational structure), independent of domain. | **High** — combinability. |
+
+   These axes are **selection internals**: tuning parameters for finding non-obvious candidates. They are never surfaced as UI readouts (Sec. 3.3.4).
 
 3. **Surface rule.** A pair is surfaced **only** when both axes are high (far apart **and** structurally aligned). The engine must actively suppress:
 
@@ -99,10 +103,29 @@ The Spark surfaces non-obvious, coherent sparks from the user's **own** vault.
 
    *Axis thresholds are calibrated empirically; they are tuning parameters, not fixed requirements.*
 
-4. **Rationale.** Every surfaced spark explains *why* the pairing is offered: the shared mechanism and a candidate fork direction.
-5. **Interaction.** Proposed sparks are surfaced as a **review queue on the home screen**. Each spark offers two positive paths — **Keep as is** (the spark becomes an idea, recorded as a fork of the source pair) and **Use as inspiration** (opens Capture, seeded with the spark) — plus **Dismiss**. Dismissals are retained as negative signal so the same pairing is not re-surfaced unchanged.
+4. **Presentation — a spark is shown as an *idea*, and judged on its own merits.** A surfaced spark is presented as a proposed idea:
+
+   - the **idea** — the headline;
+   - **the claim** — one or two lines on why it matters;
+   - **what it would take** — on the expanded view;
+   - **first step** — the smallest next move;
+   - **domain tags**.
+
+   The shared mechanism is **not** displayed as a separate readout, and no similarity, distance, or alignment number appears anywhere in the UI. The user's only judgement is **good / not for me**: the pairing's similarity is not the question. Which ideas the spark came from stays recorded as *provenance* (Sec. 2).
+
+   *Rationale:* the product's value is a direction the author would not have reached alone. Once that direction exists, it stands or falls as an idea. Explaining *why two ideas are alike* invites reading the spark as a recommendation feed of similar items — which Sec. 7 of this document and `DESIGN.md` Sec. 7 forbid.
+
+5. **Interaction — a deck, judged by swipe or button.** Proposed sparks are surfaced as a **deck on the home screen**, one at a time:
+
+   - **Good** (swipe right) — the spark is accepted and becomes a **new root idea** in the vault; its two sources are recorded as provenance metadata, **not** lineage.
+   - **Not for me** (swipe left) — dismissed. Dismissals are retained as negative signal so the same pairing is not re-surfaced unchanged.
+   - **Make it mine** — opens **Capture**, seeded from the spark.
+   - Explicit buttons accompany both gestures, and every judgement is followed by a **one-step undo**.
+
 6. **Mechanism (design note).** The two axes pull in opposite directions, so a single similarity metric cannot rank both: one measure that finds *near* ideas cannot find the *far* ones the product wants. Mechanism extraction (identifying each idea's transferable structure) is AI-assisted. Concrete model/algorithm choices belong in the architecture doc and ADRs, not here.
+
 7. **Scale.** At personal vault sizes the engine compares pairs directly. The MVP does **not** require a vector database, approximate-nearest-neighbour index, or million-node scaling.
+
 8. **Quality bar.** Surfaced sparks must be **non-obvious AND coherent**. Quality is tracked via a proxy metric (see Sec. 5).
 
 ### 3.4 Module 4 — Bootstrap (Guided Elicitation)
@@ -134,11 +157,11 @@ Removed from earlier drafts (and re-homed as design decisions, not requirements)
 
 ## 5. Success Metrics & KPIs
 
-- **North Star Metric (NSM):** **Sparks converted to forks per active user per month** — the count of non-obvious sparks that became new ideas, especially ideas landing in a *new* domain.
+- **North Star Metric (NSM):** **Sparks accepted per active user per month** — the count of non-obvious sparks that became ideas in the vault (Sec. 3.3.5, *Good*), especially ideas landing in a *new* domain.
 - **Vault Diversity:** Distinct domains represented per user (spark quality depends on breadth, not volume).
 - **Onboarding Activation:** Percentage of new users who complete onboarding with a vault spanning **≥ 3 distinct domains** (proposed target: ≥ 60%; to confirm).
 - **Lineage Activity:** Forks and iterations generated per user (is the flywheel turning?).
-- **Retention:** Weekly return rate of users whose vault has reached a collidable size.
+- **Retention:** Weekly return rate of users whose vault has reached a spark-viable size.
 
 ---
 
