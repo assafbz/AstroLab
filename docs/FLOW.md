@@ -201,7 +201,7 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 - **Returning user, empty (all deleted) → S1 shows E0 Cold**, with an onboarding exit back to S0.
 
 ### 5.2 Vault below the spark floor (no sparks possible) — **E0 Cold**
-- The **floor is 2 distinct domains** (`PRD.md` §3.3.3) — counted as **resolved clusters** (§7/T02: onboarding domains come from the shipped taxonomy; an unclassified free-text tag is provisional and never counts toward the floor). Below it, every possible pair is *same-domain* → cliché → suppressed, so **no spark is possible** — that is the only condition that puts S1 in E0. `≥ 3` domains is the *target* (`PRD.md` §5), not the floor (H1).
+- The **floor is 2 distinct domains** (`PRD.md` §3.3.3) — counted as **resolved clusters** (§4.2/T02: onboarding domains come from the shipped taxonomy; an unclassified free-text tag is provisional and never counts toward the floor). Below it, every possible pair is *same-domain* → cliché → suppressed, so **no spark is possible** — that is the only condition that puts S1 in E0. `≥ 3` domains is the *target* (`PRD.md` §5), not the floor (H1).
 - S1 renders a **composed** empty state, framed as progress not failure: `domains covered x/3` (mono) + **Add idea** CTA + a one-line reason (*"Sparks pair distant domains — add ideas from another field."*).
 - **2 domains is not E0** — a 2-domain vault is eligible and shows sparks if any pair aligns; if none do, that is **E3** (§5.3), with the `x/3` widening nudge. The engine must **not** present a spinner or an error here.
 
@@ -271,5 +271,7 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
   - **§12.5 → Q1** — a **Good** that cannot be fully prefilled is saved **needs-completion**, **excluded from candidate selection**, **and** the system **actively prompts the user to polish** at the right moments (§4.3 step 4, T27, §6 Q1). Owner override still open.
   - **§12.6 → S0 taxonomy picker (R1)** — the S0 **Domain is picked from the shipped taxonomy** (T02), so the T04 gate counts **≥ 2 distinct *resolved* domains** — the same quantity the E0 check uses, deterministic and AI-free; free-text domains stay from S3 on (§5.2, §7 checklist).
   - **§12.4** — a committed seeded save carries its **own `decision_id`**, making it idempotent and undoable, named in §2.2 (which §5.4/N3 already required).
+
+- **2026-10-12 — r3.2.1.** Cross-ref fix (David's review of r3.2): §5.2 cited `§7/T02`; **T02 lives in §4.2** — corrected to `§4.2/T02`. No semantic change.
 
 *Draft — Ari (AstroLab agent), 2026-10-12. Review: two adversarial passes by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
