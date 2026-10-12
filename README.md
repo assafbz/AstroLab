@@ -1,26 +1,27 @@
 # 🧭 Astrolab
 
 > **Spark. Pivot. Build.**  
-> *The living idea graph that turns fragmented concepts into prioritized, high-impact ventures.*
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
+> *The living idea graph that pairs your own ideas into new directions.*
 
 ---
 
 ## 🔭 Overview
 
-**Astrolab** is an intelligent, evolving repository for ideas, designed for both solopreneurs and organizations of all sizes. Built on the belief that breakthrough innovations happen at the meeting point of unrelated disciplines, Astrolab turns static notes into living intellectual assets.
+**Astrolab** is an intelligent workspace for ideas. It turns static notes into structured knowledge units that can be compared, connected, and recombined. Its distinctive act is the **spark**: it deliberately pairs ideas that are *far apart in domain* yet *share a transferable structure*, proposing directions their author would not have reached alone.
 
-Rather than acting as a passive suggestion box or isolated notebook, Astrolab continuously synthesizes your backlog, suggests structural sparks, discovers serendipitous cross-domain synergies, and provides objective prioritization frameworks to guide execution.
+The first release (**v1.0**) is a personal creative loop — **Capture → Spark → Fork** — for one creator at a time. Collaboration, matchmaking, and prioritization build on that loop once it demonstrably produces sparks worth pursuing.
 
 ---
 
 ## ✨ Core Pillars
 
-- ⚡ **Structured Idea Vault:** Capture concepts with machine-readable fields (Core Hypothesis, Problem Solved, Monetization Model, Target Domain).
-- 🧭 **The Spark:** Autonomous AI-driven structural sparks proposing alternative business models, target audiences, and industry applications.
-- 🌌 **Cross-Domain Synergy Radar:** Background correlation mapping private backlogs against public star graphs via double-opt-in, privacy-preserving matchmaking.
-- 🌿 **Git-Style Lineage (Iterations vs. Forks):** Refine concepts through author iterations or fork existing seed thoughts into brand-new directions with verifiable provenance.
-- 📐 **The Horizon (Prioritization Engine):** Objective scoring using ICE/RICE frameworks and dynamic Impact vs. Effort (2×2) canvases to bridge the gap between ideation and building.
-- 🛡️ **Zero-Knowledge Privacy:** Client-side encryption for private thoughts with zero-retention AI processing—ensuring your intellectual edge remains yours.
+Each pillar is tagged by phase: **[MVP]** ships in v1.0; **[Future]** builds on it.
+
+- ⚡ **The Idea Vault — [MVP]:** Capture concepts as structured, machine-readable knowledge units (Core Hypothesis, Problem Solved, Monetization / Value Angle, Domain Tag).
+- ✨ **The Spark — [MVP]:** The differentiator. Pairs *your own* ideas when they are far apart in domain yet structurally aligned, explaining the shared mechanism and proposing a fork direction.
+- 🌿 **Living Lineage — [MVP]:** Refine concepts through author iterations, or fork an existing idea into a new direction with recorded provenance.
+- 🌱 **Guided Bootstrap — [MVP]:** Onboarding deliberately elicits your own ideas across unrelated domains, so sparks can deliver value from the first session.
+- 📐 **The Horizon (Prioritization Engine) — [Future]:** ICE/RICE scoring and a dynamic Impact vs. Effort 2×2 canvas, with one-click export to GitHub Issues, Linear, or Jira.
+- 🌌 **Blind Matchmaking & the Shared Graph — [Future]:** Cross-creator synergy via opt-in, double-consent matchmaking and an open public graph.
+
+**Privacy:** User ideas are not used to train models, and are not shared with or transmitted to any third party beyond what a user-requested operation strictly requires.
