@@ -24,6 +24,15 @@ const db = openStore(process.env.DB_PATH ?? "./data/astrolab.sqlite");
 | `busy_timeout` | `5000` ms (override with `busyTimeoutMs`) | SQLite waits for a released lock before returning `SQLITE_BUSY` |
 | `foreign_keys` | `ON` | the schema's guards are real foreign keys (`docs/SCHEMA.md`); it is per-connection, so it lives here |
 
+Two details of that setup are load-bearing, because the API and the worker boot independently:
+
+- `busy_timeout` is set **before** the WAL conversion, and that conversion is **retried**. SQLite does
+  not run the busy handler for a journal-mode change, so two processes converting a fresh file at once
+  would otherwise collide with `SQLITE_BUSY` instantly — however large the timeout. On the retry the
+  loser finds the file already in WAL, where the pragma is a no-op.
+- Consequently a bare `new DatabaseSync(path)` at a second boot site would reintroduce that race: open
+  the file through `openStore`.
+
 ## Writing
 
 `writeTransaction` is the shape every write takes: `BEGIN IMMEDIATE` (take the write lock up front), your
@@ -53,6 +62,10 @@ migrate(db, MIGRATIONS);
 
 `0001_init` — the twelve tables of `ARCHITECTURE.md` §2 — is F3's (#10); the DDL of record is
 `docs/SCHEMA.md`. Running against a store *newer* than the build throws rather than guessing.
+
+`migrate` is safe to call from both processes at boot: the applied version is re-read **inside** the
+transaction, so a process that loses the write-lock race skips the migration instead of re-applying its
+DDL. Without that re-read, a concurrent boot fails with `table … already exists`.
 
 ## Backup
 

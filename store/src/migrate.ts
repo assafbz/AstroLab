@@ -29,21 +29,26 @@ export function migrate(db: DatabaseSync, migrations: Migration[]): number {
     }
   }
 
-  const current = schemaVersion(db);
   const newest = ordered.at(-1)?.version ?? 0;
-  if (current > newest) {
+  let applied = schemaVersion(db);
+  if (applied > newest) {
     throw new Error(
-      `store is at schema v${current} but this build knows only v${newest}: forward-only, refusing to run against a newer database`,
+      `store is at schema v${applied} but this build knows only v${newest}: forward-only, refusing to run against a newer database`,
     );
   }
 
   for (const m of ordered) {
-    if (m.version <= current) continue;
+    if (m.version <= applied) continue;
     // SQLite's DDL is transactional, so a failure leaves the file exactly at the previous version.
     writeTransaction(db, () => {
+      // Re-read inside the transaction: a second process migrating the same file at boot may have
+      // applied this while we waited for the write lock, and `BEGIN IMMEDIATE` serializes writers —
+      // so this re-read is race-free, where the one above the loop is only a fast path.
+      if (schemaVersion(db) >= m.version) return;
       db.exec(m.sql);
       db.exec(`PRAGMA user_version = ${m.version}`);
     });
+    applied = m.version;
   }
   return schemaVersion(db);
 }

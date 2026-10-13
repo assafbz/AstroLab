@@ -19,9 +19,13 @@ export function openStore(path: string, options: OpenStoreOptions = {}): Databas
   }
 
   const db = new DatabaseSync(path);
-  // WAL: readers don't block the writer — the property that makes two writer processes workable.
-  db.exec("PRAGMA journal_mode = WAL");
+  // `busy_timeout` first, so it is in effect for everything that follows.
   db.exec(`PRAGMA busy_timeout = ${busyTimeoutMs}`);
+  // WAL: readers don't block the writer — the property that makes two writer processes workable.
+  // The conversion takes the write lock and SQLite does *not* run the busy handler for a
+  // journal-mode change, so a concurrent boot of a fresh file loses it with SQLITE_BUSY instantly,
+  // timeout or not. Hence the retry: the loser finds the file already WAL, where this is a no-op.
+  withRetry(() => db.exec("PRAGMA journal_mode = WAL"));
   // Per-connection, so it lives here rather than in the migration (docs/SCHEMA.md).
   db.exec("PRAGMA foreign_keys = ON");
   return db;

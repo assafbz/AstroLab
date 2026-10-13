@@ -1,20 +1,16 @@
-import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 
 import { afterEach, expect, test } from "vitest";
 
 import { openStore } from "../src/store.js";
+import { runChild } from "./harness.js";
 
 /**
  * F2's acceptance criterion: "a test with two concurrent writers passes" (ARCHITECTURE.md §9).
  * Two *processes*, because the store's whole concurrency story is two processes on one file.
  */
-const HERE = dirname(fileURLToPath(import.meta.url));
-const PACKAGE_DIR = join(HERE, "..");
-const WRITER = join(HERE, "writer.ts");
 const WRITERS = 2;
 const ROWS_EACH = 40;
 
@@ -28,18 +24,6 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function runWriter(path: string): Promise<{ code: number | null; stderr: string }> {
-  return new Promise((resolve) => {
-    const child = spawn(process.execPath, ["--import", "tsx", WRITER, path, String(ROWS_EACH)], {
-      cwd: PACKAGE_DIR,
-      stdio: ["ignore", "ignore", "pipe"],
-    });
-    let stderr = "";
-    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
-    child.on("close", (code) => resolve({ code, stderr }));
-  });
-}
-
 test(
   "two concurrent writers both commit — WAL + busy_timeout + retry absorb the collisions",
   { timeout: 60_000 },
@@ -49,7 +33,9 @@ test(
     setup.exec("CREATE TABLE t (k INTEGER)");
     setup.close();
 
-    const results = await Promise.all(Array.from({ length: WRITERS }, () => runWriter(path)));
+    const write = () => runChild("writer.ts", [path, String(ROWS_EACH)]);
+    const results = await Promise.all([write(), write()]);
+
     expect(results.map((r) => r.code)).toEqual([0, 0]);
     // Node 22 prints an `ExperimentalWarning` for `node:sqlite` in every process that imports it,
     // so stderr is not empty there. What must never appear is a failure.
