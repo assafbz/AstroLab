@@ -22,6 +22,17 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  citations:
+    name: citation ref-lint — §X.Y item N form
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run lint:citations
+      - run: npm run lint:citations -- --self-check
+
   zdr-evidence:
     name: PRIV1 — capture OpenRouter's ZDR endpoint list (non-required)
     runs-on: ubuntu-latest
