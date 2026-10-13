@@ -8,8 +8,9 @@
 > **Scope:** the tables, keys, and the partial unique index. Connection/WAL/retry belong to **F2**;
 > the invariant *tests* belong to **F3**.
 
-The DDL below applies as one forward-only migration (`0001_init`). `PRAGMA journal_mode=WAL` is set by
-the store's connection setup (F2), not by the migration.
+The DDL below applies as one forward-only migration (`0001_init`). `PRAGMA journal_mode=WAL` and
+`PRAGMA foreign_keys=ON` are set by the store's connection setup (F2), not by the migration — the
+foreign-keys pragma is per-connection and a no-op inside the migration's `BEGIN IMMEDIATE`.
 
 ---
 
@@ -20,7 +21,7 @@ descriptor cache — `ARCHITECTURE.md` §2.3, §3.3 step 1; ADR-0002; W3 `#28`),
 record 2026-10-13 per David's ruling (reading B — an omission, not a later stage).
 
 ```sql
-PRAGMA foreign_keys = ON;
+-- (no `PRAGMA foreign_keys`: per-connection, so the store's setup (F2) sets it, not this migration)
 
 -- §2.1 Idea and its history
 CREATE TABLE idea (
@@ -161,7 +162,8 @@ text changes"). Exact column shape is F3's; the cache is **internal** and never 
 ## 3. Verification (evidence)
 
 Applied the fenced DDL as one script to a fresh **in-memory** SQLite 3.45.1 database (Python `sqlite3`;
-no `sqlite3` CLI on this host) and probed the guards:
+no `sqlite3` CLI on this host), with `PRAGMA foreign_keys=ON` set on the connection first — as F2's
+`openStore` does, not the migration (§1) — and probed the guards:
 
 ```
 tables (12): config, decision, domain_cluster, domain_map, idea, idea_mechanism, idea_version,

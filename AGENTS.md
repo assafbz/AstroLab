@@ -2,7 +2,7 @@
 
 Repository context: product and design intent live in `docs/PRD.md`, `docs/VISION.md`
 and `DESIGN.md` — do not contradict those without flagging it. The repo is **no longer
-docs-only**: the F1 delivery spine (`api` · `worker` · `client`, root tooling, CI) is on
+docs-only**: the delivery spine (`api` · `worker` · `client` · `store/`, root tooling, CI) is on
 `main` as of 2026-10-13; the product loop itself is still being built.
 
 ## Required skills
