@@ -33,7 +33,9 @@ skills."* Applied to this repo's harness, that means:
 
 1. **Never sleep or poll.** End the turn and wait to be re-invoked; no bounded
    wait loops, however short.
-2. **No unprompted commits, pushes, or dependency installs.** The `.gitignore`
-   commit in `using-git-worktrees` and the install/build steps in
-   `using-git-worktrees` / `ponytail-help` are consent-gated here — they run
-   only when a human partner asks for them.
+2. **Only merges need a human.** Branch commits, pushes, dependency installs and
+   opening PRs need **no** approval — work in a worktree on a branch and leave
+   `main` untouched. **Merging to `main` is the one gate**, and it stays with the
+   owner. (Owner ruling, 2026-10-13.) The `.gitignore` commit in
+   `using-git-worktrees` and the install/build steps in `using-git-worktrees` /
+   `ponytail-help` are therefore fine to run on a branch.

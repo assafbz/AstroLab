@@ -1,0 +1,12 @@
+node_modules/
+dist/
+artifacts/
+
+.env
+.env.local
+.env.*.local
+
+# SQLite store (ARCHITECTURE.md §9, ADR-0001)
+data/
+*.sqlite
+*.sqlite-*

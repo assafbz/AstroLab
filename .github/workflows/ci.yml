@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: lint · format · typecheck · test · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  zdr-evidence:
+    name: PRIV1 — capture OpenRouter's ZDR endpoint list (non-required)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/capture-zdr.mjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zdr-endpoints
+          path: artifacts/zdr-endpoints.json
+          retention-days: 90
