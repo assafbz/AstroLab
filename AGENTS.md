@@ -1,8 +1,9 @@
 # AGENTS.md — AstroLab
 
-Repository context: **docs-only** at this stage. Product and design intent live
-in `docs/PRD.md`, `docs/VISION.md`, and `DESIGN.md`. Do not contradict those
-without flagging it.
+Repository context: product and design intent live in `docs/PRD.md`, `docs/VISION.md`
+and `DESIGN.md` — do not contradict those without flagging it. The repo is **no longer
+docs-only**: the F1 delivery spine (`api` · `worker` · `client`, root tooling, CI) is on
+`main` as of 2026-10-13; the product loop itself is still being built.
 
 ## Required skills
 
@@ -33,9 +34,13 @@ skills."* Applied to this repo's harness, that means:
 
 1. **Never sleep or poll.** End the turn and wait to be re-invoked; no bounded
    wait loops, however short.
-2. **Only merges need a human.** Branch commits, pushes, dependency installs and
-   opening PRs need **no** approval — work in a worktree on a branch and leave
-   `main` untouched. **Merging to `main` is the one gate**, and it stays with the
-   owner. (Owner ruling, 2026-10-13.) The `.gitignore` commit in
-   `using-git-worktrees` and the install/build steps in `using-git-worktrees` /
-   `ponytail-help` are therefore fine to run on a branch.
+2. **Only merges need a human — and the reviewer performs them.** Branch commits,
+   pushes, dependency installs and opening PRs need **no** approval — work in a
+   worktree on a branch and leave `main` untouched. **Merging is the one gate**, and
+   since 2026-10-13 the assigned reviewer **approves and merges**: it is no longer a
+   stop with the owner (that earlier owner-only rule is superseded). Author ≠ reviewer.
+   Agent PRs are opened under one account, so GitHub refuses a formal self-approval —
+   record the verdict as a PR comment: an explicit **Review: approve** plus the
+   evidence. The `.gitignore` commit in `using-git-worktrees` and the install/build
+   steps in `using-git-worktrees` / `ponytail-help` are therefore fine to run on a
+   branch.
