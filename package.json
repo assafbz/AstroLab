@@ -6,10 +6,11 @@
   "workspaces": [
     "api",
     "worker",
-    "client"
+    "client",
+    "store"
   ],
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22.13"
   },
   "scripts": {
     "dev": "concurrently -n api,worker -c blue,magenta \"npm:dev:api\" \"npm:dev:worker\"",
