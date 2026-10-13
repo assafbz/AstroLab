@@ -4,6 +4,10 @@ The SQLite store: one file, two writer processes (the API and the worker) — `A
 `ADR-0001`. Built on Node's built-in `node:sqlite`, so the package adds no dependency and CI needs no
 native build.
 
+> **Node 22 prints a one-line `ExperimentalWarning`** (*"SQLite is an experimental feature…"*) in any
+> process that imports `node:sqlite`; node 26 does not. It is a warning, not an error, and CI tolerates
+> it — but it is the visible price of taking the builtin over `better-sqlite3`.
+
 ## Connection
 
 ```ts

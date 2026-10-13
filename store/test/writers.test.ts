@@ -50,8 +50,10 @@ test(
     setup.close();
 
     const results = await Promise.all(Array.from({ length: WRITERS }, () => runWriter(path)));
-    expect(results.map((r) => r.stderr)).toEqual(["", ""]);
     expect(results.map((r) => r.code)).toEqual([0, 0]);
+    // Node 22 prints an `ExperimentalWarning` for `node:sqlite` in every process that imports it,
+    // so stderr is not empty there. What must never appear is a failure.
+    for (const r of results) expect(r.stderr).not.toMatch(/SQLITE_BUSY|Error:/);
 
     const check = openStore(path);
     try {
