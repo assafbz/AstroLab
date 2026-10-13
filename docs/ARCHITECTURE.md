@@ -3,7 +3,7 @@
 > **Status:** Merged on `main`.
 > **Scope:** The technical design the PRD defers to. `docs/PRD.md` §4 names **no** technologies and
 > re-homes every one here: *"a separate security/architecture document and ADRs."* This is it.
-> **Grounded in the merged specs:** `docs/PRD.md` v2.0.0 · `docs/VISION.md` · `docs/FLOW.md` r3.1 ·
+> **Grounded in the merged specs:** `docs/PRD.md` v2.0.0 · `docs/VISION.md` · `docs/FLOW.md` r3.3 ·
 > `DESIGN.md` (Nightfall) · `README.md`.
 > **Vocabulary:** the engine is **the Spark**; its outputs are **sparks**. *(Never "collision.")*
 
