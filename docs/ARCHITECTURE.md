@@ -233,11 +233,13 @@ the gate: two raw tags that both normalise to one cluster (`#fintech` + `#bankin
 exact class `FLOW.md` **H2** fixed. Gating on `resolved` makes the gate and the post-run `E0` count the
 **same** quantity, so a pass cannot be false.
 
-**S0 domain input is drawn from the shipped taxonomy (R1, option a).** Onboarding capture selects each domain
-from the shipped cluster taxonomy (a picker), so every S0 tag is **resolved** deterministically and the gate
-is reachable with **no run and no AI**. Free-text domain input remains available from **S3 onward**, where a
-provisional cluster is harmless — the vault is already warm and has run once. This changes the S0 input
-contract, so it is logged as a `FLOW.md` §7 spec touch in §12.
+**S0 domain input is drawn from the shipped taxonomy (R1, option a), plus an `Other → free text` escape
+(owner-approved, 2026-10-13).** Onboarding capture picks each mapped domain from the shipped cluster taxonomy
+(a picker), so every **picked** S0 tag is **resolved** deterministically and the gate is reachable with **no run
+and no AI**; a typed `Other` lane is **provisional** — its own cluster, and it **never opens the gate** —
+normalised by the worker once, on the first run. Free-text domain input remains available from **S3 onward**,
+where a provisional cluster is harmless — the vault is already warm and has run once. This changes the S0 input
+contract, so it is logged as `FLOW.md` spec touches in §12 (§12.6).
 
 No embeddings, no ANN — a small curated table. Domain is "the axis along which distance is measured"
 (`PRD.md` §2), and this measures it deterministically on the vault path.
@@ -325,8 +327,11 @@ invalid output = a failed call, retried per §4, never stored.
 **Privacy (NFR-PRIV1).**
 - **Only the operation's payload is sent:** the idea text needed for extraction, or the two ideas' text +
   descriptors for adjudication. No account identity, no vault listing, no unrelated ideas.
-- **No training, no retention:** the provider is used under a zero-retention / no-training term; the adapter
-  asserts this in configuration and the claim is audited (NFR-PRIV1 verification).
+- **No training, no retention (requirement — verification open, §12.1):** the provider is used under a
+  zero-retention / no-training term; on the **OpenRouter → DeepSeek** route this must be enforced **on the
+  request** (`data_collection: deny` + provider routing), not assumed — so the **vendor-terms verification is
+  open** (Max, in flight). NFR-PRIV1 stands as a requirement; this document does **not** yet claim the route
+  satisfies it.
 - **No third-party transmission beyond a requested operation:** the engine runs only when a vault mutation
   requests it; there is no background telemetry or periodic upload.
 
@@ -339,7 +344,7 @@ HTTP/JSON, bearer-authenticated. Endpoints map 1:1 to `FLOW.md` surfaces; decisi
 
 | Surface (`FLOW.md`) | Endpoint | Notes |
 | :--- | :--- | :--- |
-| **S0** Onboarding | `POST /v1/ideas` · `GET /v1/vault/summary` | capture is **domain-mandatory** (T02); the S0 domain input is a **pick from the shipped taxonomy** so tags resolve deterministically — no AI on this path (§3.2); summary returns `domains covered` = the **resolved** cluster count (§3.2) |
+| **S0** Onboarding | `POST /v1/ideas` · `GET /v1/vault/summary` | capture is **domain-mandatory** (T02); the S0 domain input is a **pick from the shipped taxonomy plus an `Other → free text` escape** — picked tags resolve deterministically (**no AI on this path**, §3.2); a typed lane is **provisional** and never opens the gate; summary returns `domains covered` = the **resolved** cluster count (§3.2) |
 | **S0 → S1** exit | — | gate on **≥ 2 resolved domains** (T04); client computes the gate from the summary's `resolved` count only (R1) |
 | **S1** Sparks deck | `GET /v1/sparks?state=offered` · `GET /v1/sparks/state` · `GET /v1/sparks/events` (SSE) | `state` = E0–E4 (§4). Deck order = server order. Events stream new offers (N) |
 | **S1b** Spark detail | `GET /v1/sparks/{id}` | direction / claim / what-it-takes / first-step / tags. **No scores, no similarity readout** |
@@ -373,8 +378,8 @@ contradiction, since FLOW §5.4 already requires the capability.)*
   An idea without a domain cannot take part in a spark, so allowing one would silently defeat the bootstrap.
 - **Spread gate** (`FLOW.md` T04; `PRD.md` §3.4.2 / NFR-U1): the onboarding exit is available at **≥ 2
   distinct *resolved* domains** (the spark floor, §3.2), with S0 domain input drawn from the shipped taxonomy
-  so the count is deterministic and AI-free; `≥ 3` is shown as `x/3` **progress**, not a gate. A provisional
-  (unmapped) tag never counts toward the gate — see R1, §3.2.
+  (plus the `Other → free text` escape) so the count is deterministic and AI-free; `≥ 3` is shown as `x/3`
+  **progress**, not a gate. A provisional (unmapped or typed) tag never counts toward the gate — see R1, §3.2.
 - **No synthetic seeds, no note import** (`PRD.md` §3.4.3): neither the engine nor the API generates ideas
   on the user's behalf.
 
@@ -455,26 +460,30 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
 
 ## 12. Open questions (for the reviewer / owner)
 
-1. **Hosted vs local model.** This design assumes a *hosted* provider for MVP simplicity. A local/on-device
-   model would strengthen NFR-PRIV1 but raise the engine's operational cost. Owner call; the adapter makes it
-   a swap, not a rewrite.
+1. ~~Hosted vs local model.~~ **Resolved — hosted (owner, 2026-10-13).** Provider: **OpenRouter**; initial model
+   **`deepseek/deepseek-v4-flash`** (env-overridable: `AI_PROVIDER` / `AI_MODEL`). A local/on-device model
+   remains a drop-in adapter later — it would strengthen NFR-PRIV1 at higher operational cost; **not** MVP.
+   **Open sub-item (NFR-PRIV1):** zero-retention / no-training on the **OpenRouter → DeepSeek** route must be
+   enforced on the request (`data_collection: deny` + provider routing), not assumed — **under vendor-terms
+   verification** (Max). PRIV1 is **not** verified until that closes; §5 states the requirement without
+   claiming it is met.
 2. **Mechanism descriptor schema.** The exact fields of the descriptor (§3.3) are a tuning artifact; the
    contract (structured, cached, locally comparable) is the decision. Confirm the field set with the first
    calibration run.
 3. **Cold-start ordering.** Whether onboarding triggers the first run automatically or on "See your sparks"
    is a UX call already implied by `FLOW.md` T04; noted for completeness.
-4. **FLOW §2.2 wording.** This document gives the committed seeded save the same client-generated
-   `decision_id` as a deck decision (§6), which FLOW §5.4/N3 already requires but §2.2 does not name. A
-   one-line FLOW clarification would close the loop; not a contradiction.
-5. **FLOW §4.3 / T27 — "Good" polish prompt.** Q1 resolved (David, 2026-10-12): an un-prefillable Good is
-   saved **needs-completion** and held out of candidate selection **and** the system actively **prompts the
-   user to polish** at the right moments. The spec needs the prompt stated, not just the exclusion. A
-   `FLOW.md` edit, not an architecture change; tracked here so it rides one clean spec change after this loop
-   closes.
-6. **FLOW §7 — S0 domain input contract (R1).** Closing R1 makes the S0 domain input a **pick from the shipped
-   taxonomy** (so the `≥ 2` gate counts resolved clusters deterministically), while free-text domain input
-   stays from **S3 onward**. `FLOW.md` T02/§7 should state the picker at onboarding. A `FLOW.md` edit, tracked
-   here alongside item 5 so both spec touches land together.
+4. ~~FLOW §2.2 wording.~~ **Landed in `FLOW.md` r3.2.** The committed seeded save carries the same client-generated
+   `decision_id` as a deck decision (§6) — FLOW §5.4/N3 already required the capability and the one-line FLOW
+   §2.2 clarification is in the spec (r3.2).
+5. ~~FLOW §4.3 / T27 — "Good" polish prompt.~~ **Landed in `FLOW.md` r3.2.** Q1 resolved (David, 2026-10-12): an
+   un-prefillable Good is saved **needs-completion**, held out of candidate selection, **and** the system
+   actively **prompts the user to polish** at the right moments — stated in the spec, not only the exclusion
+   (§4.3 step 4, T27, §6 Q1). Owner override still open.
+6. ~~FLOW §7 — S0 domain input contract (R1).~~ **Landed in `FLOW.md` r3.2 (picker) and r3.3 (escape).** The S0
+   domain input is a **pick from the shipped taxonomy** — so the `≥ 2` gate counts resolved clusters
+   deterministically — **plus an `Other → free text` escape**, owner-approved 2026-10-13, whose typed lane is
+   **provisional** and never opens the gate; free-text domain input stays from **S3 onward**. Stated in `FLOW.md`
+   T02 / §5.2 / §7; `FLOW.md` §6 Q6 is closed.
 
 ---
 
@@ -501,5 +510,19 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
   impossible. **S0 domain input is a pick from the shipped taxonomy** (deterministic, AI-free; free-text from
   S3 on). Aligned **§6** (S0 row, S0→S1 exit), **§7** (spread gate) and **§11** (U1 verification: ≥ 2 distinct
   *resolved* domains, and E0 not Cold on first run). Added the `FLOW.md` §7 spec touch (§12.6).
+
+- **2026-10-13 — r3.1.** Follow-up PR (docs-only, `docs/arch-escape`) recording owner decisions:
+
+  - **§12.1 — resolved: hosted.** Provider **OpenRouter**, initial model **`deepseek/deepseek-v4-flash`**
+    (env-overridable). The **NFR-PRIV1** zero-retention / no-training check on the OpenRouter → DeepSeek route
+    stays an **open sub-item** (§5, §12.1) — a requirement, not a verified property, until the vendor terms are
+    confirmed.
+  - **§3.2 / §6 / §7 — S0 `Other → free text` escape** (owner-approved 2026-10-13): a typed lane is
+    **provisional** and never opens the spread gate; free-text from S3 on is unchanged.
+  - **§12 reconcile** — §12.4 and §12.5 marked **landed in `FLOW.md` r3.2**; §12.6 marked **r3.2 (picker) +
+    r3.3 (escape)**.
+  - **ADR-0003** — provider pinned (OpenRouter + `deepseek/deepseek-v4-flash`); the zero-retention claim is
+    stated as a **requirement under verification**, not as satisfied.
+  - No schema, API, or state-machine change.
 
 *Draft — Ari (AstroLab agent), 2026-10-12. Review: adversarial passes by Max. Branch `docs/architecture`.*
