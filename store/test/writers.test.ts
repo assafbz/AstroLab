@@ -1,0 +1,63 @@
+import { spawn } from "node:child_process";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+import { afterEach, expect, test } from "vitest";
+
+import { openStore } from "../src/store.js";
+
+/**
+ * F2's acceptance criterion: "a test with two concurrent writers passes" (ARCHITECTURE.md §9).
+ * Two *processes*, because the store's whole concurrency story is two processes on one file.
+ */
+const HERE = dirname(fileURLToPath(import.meta.url));
+const PACKAGE_DIR = join(HERE, "..");
+const WRITER = join(HERE, "writer.ts");
+const WRITERS = 2;
+const ROWS_EACH = 40;
+
+const dirs: string[] = [];
+function tempStorePath(): string {
+  const dir = mkdtempSync(join(tmpdir(), "astrolab-writers-"));
+  dirs.push(dir);
+  return join(dir, "astrolab.sqlite");
+}
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+function runWriter(path: string): Promise<{ code: number | null; stderr: string }> {
+  return new Promise((resolve) => {
+    const child = spawn(process.execPath, ["--import", "tsx", WRITER, path, String(ROWS_EACH)], {
+      cwd: PACKAGE_DIR,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    child.on("close", (code) => resolve({ code, stderr }));
+  });
+}
+
+test(
+  "two concurrent writers both commit — WAL + busy_timeout + retry absorb the collisions",
+  { timeout: 60_000 },
+  async () => {
+    const path = tempStorePath();
+    const setup = openStore(path);
+    setup.exec("CREATE TABLE t (k INTEGER)");
+    setup.close();
+
+    const results = await Promise.all(Array.from({ length: WRITERS }, () => runWriter(path)));
+    expect(results.map((r) => r.stderr)).toEqual(["", ""]);
+    expect(results.map((r) => r.code)).toEqual([0, 0]);
+
+    const check = openStore(path);
+    try {
+      expect(check.prepare("SELECT count(*) AS n FROM t").get()?.n).toBe(WRITERS * ROWS_EACH);
+    } finally {
+      check.close();
+    }
+  },
+);
