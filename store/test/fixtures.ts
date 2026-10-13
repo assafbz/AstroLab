@@ -1,8 +1,8 @@
 import type { Migration } from "../src/migrate.js";
 
 /**
- * Fixture migrations shared by the boot test and its children. F2 ships the runner, not the schema —
- * `0001_init` is F3's — so the fixtures stand in for it.
+ * Fixture migrations shared by the boot test and its children. These exercise the *runner* with a
+ * two-step change; F3's real `0001_init` is `../src/migrations.js` and is boot-tested alongside them.
  */
 export const FIXTURE_MIGRATIONS: Migration[] = [
   { version: 1, name: "0001_init", sql: "CREATE TABLE idea (id TEXT PRIMARY KEY)" },

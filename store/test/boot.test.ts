@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 
 import { schemaVersion } from "../src/migrate.js";
+import { SCHEMA_VERSION } from "../src/migrations.js";
 import { openStore } from "../src/store.js";
 import { BOOT_LEAD_MS, FIXTURE_VERSION } from "./fixtures.js";
 import { runChild } from "./harness.js";
@@ -30,8 +31,8 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-function boot(path: string, mode: "open" | "open-migrate") {
-  return runChild("boot.ts", [path, String(Date.now() + BOOT_LEAD_MS), mode]);
+function boot(path: string, mode: "open" | "open-migrate", which: "fixture" | "real" = "fixture") {
+  return runChild("boot.ts", [path, String(Date.now() + BOOT_LEAD_MS), mode, which]);
 }
 
 test(
@@ -80,6 +81,43 @@ test(
         expect(tables, `round ${round} — idea table count`).toBe(1);
         db.exec("INSERT INTO idea (id) VALUES ('i1')");
         expect(db.prepare("SELECT status FROM idea WHERE id = 'i1'").get()?.status).toBe("ACTIVE");
+      } finally {
+        db.close();
+      }
+    }
+  },
+);
+
+test(
+  "two processes applying the shipped 0001_init at boot both land on the schema",
+  { timeout: 120_000 },
+  async () => {
+    for (let round = 0; round < ROUNDS; round++) {
+      const path = freshStorePath();
+      const results = await Promise.all([
+        boot(path, "open-migrate", "real"),
+        boot(path, "open-migrate", "real"),
+      ]);
+      const detail = results.map((r) => `exit ${r.code}: ${r.stderr.trim()}`).join(" | ");
+      expect(
+        results.map((r) => r.code),
+        `round ${round} — ${detail}`,
+      ).toEqual([0, 0]);
+
+      // Exactly once, and the whole of §2: the loser must skip the twelve-table DDL, not re-apply it.
+      const db = openStore(path);
+      try {
+        expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
+        const tables = db
+          .prepare(
+            "SELECT count(*) AS n FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+          )
+          .get()?.n;
+        expect(tables, `round ${round} — table count`).toBe(12);
+        const index = db
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'ux_spark_live'")
+          .get()?.name;
+        expect(index, `round ${round} — partial index`).toBe("ux_spark_live");
       } finally {
         db.close();
       }
