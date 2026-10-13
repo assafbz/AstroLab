@@ -34,7 +34,7 @@ Living record of the Google Stitch artifacts for Astrolab. Keep this in sync whe
 - Roundness: `ROUND_EIGHT` (8px)
 - Primary / custom color: `#D69A4E` (aged brass)
 
-> ⚠️ **Stale:** this design system's embedded `designMd` still says *"collision bridge," "Collide,"* and *"The Collision Card"* — it predates the **Spark** renames. Refresh via `update_design_system`.
+> ⚠️ **Historical — not to be refreshed.** This design system's embedded `designMd` still says *"collision bridge," "Collide,"* and *"The Collision Card,"* and still declares **LIGHT** mode: it predates both the **Spark** renames and Nightfall. It is kept here as a record of the superseded asset, **not** as canon — `DESIGN.md` §2 is the source of truth. Refreshing it needs the Stitch UI (see the pending Stitch-side actions below) and is not planned.
 
 ---
 

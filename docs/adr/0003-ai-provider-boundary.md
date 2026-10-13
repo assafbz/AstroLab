@@ -7,7 +7,7 @@
 
 ## Context
 
-Mechanism extraction and adjudication are AI-assisted (`PRD.md` §3.3.6, §3.3.7). The PRD deliberately names
+Mechanism extraction and adjudication are AI-assisted (`PRD.md` §3.3 item 6, §3.3 item 7). The PRD deliberately names
 **no** provider (`PRD.md` §4). Privacy is a requirement: ideas are **not** used to train models and are **not**
 transmitted to any third party beyond what a user-requested operation strictly requires (NFR-PRIV1). The
 provider may be unavailable; that must degrade only sparks, never the vault (NFR-A1).
@@ -42,7 +42,7 @@ implementation**, not a vendor guarantee (§5).
   **provider-attested, not independently audited**; request **metadata** (not content) is always stored; and
   OpenRouter transiently sees the prompt (`ARCHITECTURE.md` §5, §11).
 - **Negative / bounded:** a hosted provider means idea text leaves the host for a run; this is the minimum the
-  operation requires, and a **local model** is available as a drop-in adapter later (§12.1) if privacy
+  operation requires, and a **local model** is available as a drop-in adapter later (§12 item 1) if privacy
   must be stronger.
 - **Failure:** any provider error/timeout is a failed call (§4); the vault is untouched (NFR-A1).
 

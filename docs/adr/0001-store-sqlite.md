@@ -10,7 +10,7 @@
 The MVP is a **single-user** vault (`PRD.md` §1.3). The data is relational: ideas with single-parent lineage
 (`PRD.md` §2), provenance edges distinct from lineage (D1), and a **`(spark_id, decision_id)` uniqueness
 constraint** that make decisions idempotent (`FLOW.md` §2.2). The engine must compare candidate pairs directly
-and **must not** introduce a vector database or ANN index (`PRD.md` §3.3.7). Durability and an **open export**
+and **must not** introduce a vector database or ANN index (`PRD.md` §3.3 item 7). Durability and an **open export**
 are requirements (NFR-D1). Deferred scope includes multi-user and tenancy (`PRD.md` §6).
 
 ## Decision
@@ -24,7 +24,7 @@ database, not by application convention. Ship a JSON export and file-level backu
 ## Consequences
 
 - **Positive:** zero operational footprint (one file); relational constraints enforce the invariants the flow
-  depends on; backup/export are trivial, satisfying NFR-D1 cheaply; no ANN infrastructure, per PRD §3.3.7.
+  depends on; backup/export are trivial, satisfying NFR-D1 cheaply; no ANN infrastructure, per PRD §3.3 item 7.
 - **Positive:** pairwise scoring at personal scale is plain SQL + a local loop — no index to maintain.
 - **Negative / bounded:** SQLite takes **one file-wide write lock**, so the two writers serialize and may hit
   `SQLITE_BUSY` — handled by WAL + `busy_timeout` + retry (above). Acceptable for one user, where writes are
@@ -40,4 +40,4 @@ database, not by application convention. Ship a JSON export and file-level backu
   not MVP requirements (`PRD.md` §4).
 - **Document store / embedded key-value.** Rejected: loses the declarative constraints (idempotency key,
   lineage) that make the flow's invariants trustworthy.
-- **Vector store.** Rejected outright: `PRD.md` §3.3.7 forbids it for the MVP.
+- **Vector store.** Rejected outright: `PRD.md` §3.3 item 7 forbids it for the MVP.
