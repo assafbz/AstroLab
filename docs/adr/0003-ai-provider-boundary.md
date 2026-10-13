@@ -1,7 +1,7 @@
 # ADR-0003: One AI-provider interface, swappable adapter
 
 - **Status:** Proposed (MVP)
-- **Date:** 2026-10-12
+- **Date:** 2026-10-12 · **Updated:** 2026-10-13 (provider pinned: OpenRouter + `deepseek/deepseek-v4-flash`; PRIV1 = ZDR routing control, provider-attested)
 - **Context:** `docs/ARCHITECTURE.md` §5
 - **Deciders:** architecture (Ari) — review Max
 
@@ -23,7 +23,12 @@ interface SparkAdjudicator   { adjudicate(ideaA, ideaB, mechanisms): SparkDraft 
 
 A single **adapter** implements both against a **hosted, frontier-class chat model**, selected by env
 (`AI_PROVIDER`, `AI_MODEL`). All calls use **structured output** validated against a schema before storage.
-The provider is used under **zero-retention / no-training** terms, asserted in adapter configuration.
+
+Provider **OpenRouter** (`AI_PROVIDER=openrouter`), initial model **`deepseek/deepseek-v4-flash`**
+(env-overridable). Calls pin `provider: { zdr: true }` to restrict routing to Zero-Data-Retention endpoints;
+the model is hosted by third-party providers (no first-party DeepSeek endpoint), so retention depends on the
+**routed endpoint**, not on DeepSeek's terms. Zero retention is a **routing control verified at
+implementation**, not a vendor guarantee (§5).
 
 ## Consequences
 
@@ -31,8 +36,13 @@ The provider is used under **zero-retention / no-training** terms, asserted in a
   in the data (descriptors are stored, not model-specific vectors).
 - **Positive:** NFR-PRIV1 is boundary-scoped — only the operation's payload is sent; there is one call site per
   operation to audit, and no background or periodic upload.
+- **Controlled (NFR-PRIV1):** every call pins `provider: { zdr: true }`, limiting routing to
+  Zero-Data-Retention endpoints ("are also unable to train on your data"). This is a **routing control verified
+  at implementation**, not a vendor guarantee — OpenRouter's per-endpoint ZDR classification is
+  **provider-attested, not independently audited**; request **metadata** (not content) is always stored; and
+  OpenRouter transiently sees the prompt (`ARCHITECTURE.md` §5, §11).
 - **Negative / bounded:** a hosted provider means idea text leaves the host for a run; this is the minimum the
-  operation requires, and a **local model** is available as a drop-in adapter (open question §12.1) if privacy
+  operation requires, and a **local model** is available as a drop-in adapter later (§12.1) if privacy
   must be stronger.
 - **Failure:** any provider error/timeout is a failed call (§4); the vault is untouched (NFR-A1).
 
