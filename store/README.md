@@ -66,7 +66,9 @@ migrate(db, MIGRATIONS);
 `0001_init` — the twelve tables of `ARCHITECTURE.md` §2 — ships in `src/migrations.ts` (`MIGRATIONS`,
 `SCHEMA_VERSION`); the DDL of record is `docs/SCHEMA.md`. It deliberately does not set
 `PRAGMA foreign_keys`: that is per-connection and a no-op inside a transaction, so `openStore` owns it.
-Running against a store *newer* than the build throws rather than guessing.
+`0002_seed_vault_meta` then seeds the `vault_meta` singleton, so §4's relative `revision` bump lands
+instead of silently matching zero rows. Running against a store *newer* than the build throws rather
+than guessing.
 
 `migrate` is safe to call from both processes at boot: the applied version is re-read **inside** the
 transaction, so a process that loses the write-lock race skips the migration instead of re-applying its

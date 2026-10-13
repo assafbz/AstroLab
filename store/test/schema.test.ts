@@ -84,12 +84,18 @@ const COLUMNS: Record<string, string[]> = {
 const dirs: string[] = [];
 const opened: DatabaseSync[] = [];
 
-/** A fresh file store with `0001_init` applied — file-backed, so FK enforcement is the real thing. */
-function migrated(): DatabaseSync {
+/** A fresh file store, opened but not yet migrated — file-backed, so FK enforcement is the real thing. */
+function newStore(): DatabaseSync {
   const dir = mkdtempSync(join(tmpdir(), "astrolab-schema-"));
   dirs.push(dir);
   const db = openStore(join(dir, "astrolab.sqlite"));
   opened.push(db);
+  return db;
+}
+
+/** A fresh file store with the shipped migrations applied. */
+function migrated(): DatabaseSync {
+  const db = newStore();
   migrate(db, MIGRATIONS);
   return db;
 }
@@ -207,7 +213,20 @@ test("the vocabulary CHECKs reject out-of-vocabulary values", () => {
 
 test("vault_meta is structurally a single row", () => {
   const db = migrated();
-  db.exec("INSERT INTO vault_meta (id, revision) VALUES (1, 0)");
+  // `0002_seed_vault_meta` inserts the singleton; a second row is impossible.
   expect(rows(db, "SELECT count(*) AS n FROM vault_meta")[0]?.n).toBe(1);
   expect(() => db.exec("INSERT INTO vault_meta (id, revision) VALUES (2, 0)")).toThrow(/CHECK/);
+});
+
+test("a store already at v1 is upgraded by 0002 and the singleton appears", () => {
+  const db = newStore();
+  // The F3 world: only `0001_init` applied, so `vault_meta` is empty.
+  migrate(db, [MIGRATIONS[0]!]);
+  expect(schemaVersion(db)).toBe(1);
+  expect(rows(db, "SELECT count(*) AS n FROM vault_meta")[0]?.n).toBe(0);
+
+  // Forward-only upgrade: `0002` runs, and §2's single-row invariant now holds at revision 0.
+  migrate(db, MIGRATIONS);
+  expect(schemaVersion(db)).toBe(SCHEMA_VERSION);
+  expect(rows(db, "SELECT id, revision FROM vault_meta")).toEqual([{ id: 1, revision: 0 }]);
 });
