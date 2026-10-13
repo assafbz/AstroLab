@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Astrolab">
+  <rect width="512" height="512" rx="96" fill="#080A12" />
+  <circle cx="150" cy="330" r="26" fill="#EAEDF7" />
+  <circle cx="362" cy="182" r="26" fill="#EAEDF7" />
+  <path
+    d="M150 330 Q256 96 362 182"
+    fill="none"
+    stroke="#D69A4E"
+    stroke-width="26"
+    stroke-linecap="round"
+  />
+</svg>
