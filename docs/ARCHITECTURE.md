@@ -327,11 +327,15 @@ invalid output = a failed call, retried per §4, never stored.
 **Privacy (NFR-PRIV1).**
 - **Only the operation's payload is sent:** the idea text needed for extraction, or the two ideas' text +
   descriptors for adjudication. No account identity, no vault listing, no unrelated ideas.
-- **No training, no retention (requirement — verification open, §12.1):** the provider is used under a
-  zero-retention / no-training term; on the **OpenRouter → DeepSeek** route this must be enforced **on the
-  request** (`data_collection: deny` + provider routing), not assumed — so the **vendor-terms verification is
-  open** (Max, in flight). NFR-PRIV1 stands as a requirement; this document does **not** yet claim the route
-  satisfies it.
+- **No training, no retention — enforced by routing, not assumed.** Every worker call sets
+  `provider: { zdr: true }` (equivalently `data_collection: "deny"`), so OpenRouter routes only to endpoints it
+  classifies as Zero Data Retention — which "are also unable to train on your data." OpenRouter itself stores
+  no prompt content unless prompt logging is opted in; *Private Input & Output Logging* and *OpenRouter Use of
+  Inputs/Outputs* stay off (both default off). Residuals, stated not hidden: OpenRouter's per-endpoint ZDR
+  classification is **provider-attested, not independently audited**; request **metadata** (tokens, latency —
+  not content) is always stored; OpenRouter is itself an intermediary that transiently sees the prompt.
+  Verified by asserting `provider.zdr=true` on every call and capturing `GET /api/v1/endpoints/zdr` at build
+  time.
 - **No third-party transmission beyond a requested operation:** the engine runs only when a vault mutation
   requests it; there is no background telemetry or periodic upload.
 
@@ -452,7 +456,7 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
 | **A1** Availability | Vault works without the Spark | Vault module has no dependency on the AI boundary (§4, §9); engine is a separate worker (§1) | **Fault injection:** disable the provider, run the vault suite — capture/read/iterate/fork/delete pass; S1 shows E4 |
 | **P1** Performance | Sparks async, never block vault; bounded delivery | Mutation commits then enqueues a run (§4); client reads state/SSE, never waits. Bound: **p95 ≤ 60 s at ≤ 500 ideas** with a responsive provider (§4) | **Timed test** with injected AI delay/failure — vault request latency unchanged; sparks delivered within the bound |
 | **D1** Durability/Portability | No idea lost; open export | SQLite + WAL; `GET /v1/export` JSON (§8) | **Backup→wipe→restore** + **export round-trip** tests |
-| **PRIV1** Privacy | No training; no third-party transmission beyond a requested op | Operation-scoped payloads; zero-retention/no-training adapter config; no telemetry (§5) | **Data-flow audit** (grep the boundary; assert one call site per operation) + **vendor-contract audit** |
+| **PRIV1** Privacy | No training; no third-party transmission beyond a requested op | Operation-scoped payloads; **ZDR routing control** (`provider: { zdr: true }` on every call); no telemetry (§5) | **Data-flow audit** (grep the boundary; assert one call site per operation) + **routing control**: assert `provider.zdr=true` on every call; capture `GET /api/v1/endpoints/zdr` at build time |
 | **Q1** Quality | Spark quality instrumented (acceptance proxy) | `decision` records kind + whether the accepted idea landed in a **new domain** (§3.5, §5 metrics) | **Instrumentation test** + reporting query over `decision` |
 | **U1** Usability | New user onboards spanning domains | Domain-mandatory capture (S0 picks from the shipped taxonomy) + `≥ 2`-**resolved**-domain spread gate with `x/3` progress (§3.2, §7) | **Onboarding completion test** (assert ≥ 2 distinct **resolved** domains at exit; and assert `E0` is not Cold on the first run) |
 
@@ -463,10 +467,11 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
 1. ~~Hosted vs local model.~~ **Resolved — hosted (owner, 2026-10-13).** Provider: **OpenRouter**; initial model
    **`deepseek/deepseek-v4-flash`** (env-overridable: `AI_PROVIDER` / `AI_MODEL`). A local/on-device model
    remains a drop-in adapter later — it would strengthen NFR-PRIV1 at higher operational cost; **not** MVP.
-   **Open sub-item (NFR-PRIV1):** zero-retention / no-training on the **OpenRouter → DeepSeek** route must be
-   enforced on the request (`data_collection: deny` + provider routing), not assumed — **under vendor-terms
-   verification** (Max). PRIV1 is **not** verified until that closes; §5 states the requirement without
-   claiming it is met.
+   **NFR-PRIV1 sub-item — closed by routing, not a vendor term (Max's verdict 2026-10-13; numbers
+   re-verified by David).** Every call pins `provider: { zdr: true }`, so OpenRouter routes only to endpoints it
+   classifies Zero Data Retention; retention depends on the **routed endpoint**, not on DeepSeek's terms. The
+   provider choice is unchanged and **needs no paid tier** (ZDR is a request/account setting). §5, §11 and
+   ADR-0003 state the one rule; the control is **provider-attested, not independently audited** (§5).
 2. **Mechanism descriptor schema.** The exact fields of the descriptor (§3.3) are a tuning artifact; the
    contract (structured, cached, locally comparable) is the decision. Confirm the field set with the first
    calibration run.
@@ -514,9 +519,12 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
 - **2026-10-13 — r3.1.** Follow-up PR (docs-only, `docs/arch-escape`) recording owner decisions:
 
   - **§12.1 — resolved: hosted.** Provider **OpenRouter**, initial model **`deepseek/deepseek-v4-flash`**
-    (env-overridable). The **NFR-PRIV1** zero-retention / no-training check on the OpenRouter → DeepSeek route
-    stays an **open sub-item** (§5, §12.1) — a requirement, not a verified property, until the vendor terms are
-    confirmed.
+    (env-overridable). **NFR-PRIV1 closed by routing, not a vendor term** (Max's verdict, re-verified by David):
+    every call pins `provider: { zdr: true }` so routing is limited to ZDR-classified endpoints; the control is
+    **provider-attested, not independently audited**, and no paid tier is needed (§5, §11).
+  - **§5 / §11 / ADR-0003 — PRIV1 stated as one rule:** ZDR routing control (`provider: { zdr: true }`),
+    verified by asserting `provider.zdr=true` on every call and capturing `GET /api/v1/endpoints/zdr` at build
+    time; residuals stated (metadata stored; OpenRouter transiently sees the prompt).
   - **§3.2 / §6 / §7 — S0 `Other → free text` escape** (owner-approved 2026-10-13): a typed lane is
     **provisional** and never opens the spread gate; free-text from S3 on is unchanged.
   - **§12 reconcile** — §12.4 and §12.5 marked **landed in `FLOW.md` r3.2**; §12.6 marked **r3.2 (picker) +
