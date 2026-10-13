@@ -74,6 +74,24 @@ than guessing.
 transaction, so a process that loses the write-lock race skips the migration instead of re-applying its
 DDL. Without that re-read, a concurrent boot fails with `table … already exists`.
 
+## Seed taxonomy
+
+`domain_cluster` / `domain_map` (the domain vocabulary behind the spread gate, `ARCHITECTURE.md` §2.4)
+are seeded from a YAML data file, not from code — `seed/domain-taxonomy.yaml`, applied at boot right
+after `migrate()`:
+
+```ts
+import { seedDomainTaxonomy } from "@astrolab/store";
+
+migrate(db, MIGRATIONS);
+seedDomainTaxonomy(db); // idempotent and forward-only: a second boot writes nothing
+```
+
+The loader reads the file from `seed/` one level under the package root, so it resolves from both
+`src/` (tsx dev) and `dist/` (the built `main` the API imports); CI proves the built path after
+`npm run build`. The curation rule, the loader contract, and how a new taxonomy version ships are in
+`seed/README.md`.
+
 ## Backup
 
 WAL means the `.sqlite` file alone is not a complete copy — committed data can still live in `-wal`. The

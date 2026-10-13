@@ -4,6 +4,9 @@ artifacts/
 .agents/
 
 # Spec docs are hand-laid-out (tables, deliberate line breaks) — not prettier's to reflow.
+# The seed taxonomy is a hand-laid-out data file (the artifact of record, one cluster per block) —
+# not prettier's to reflow into a one-token-per-line flow sequence.
+store/seed/
 docs/
 DESIGN.md
 README.md

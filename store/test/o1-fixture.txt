@@ -1,0 +1,8 @@
+fintech,healthcare,climate,developer tools,devops
+llms,machine learning,ecommerce,logistics,govtech
+mental health,payments,gaming,recruiting,renewables
+proptech,supply chain,customer support,sensors,satellites
+education,fashion,personal finance,robotics,cybersecurity
+analytics,community,restaurants,insurance,wellness
+agriculture,construction,aerospace,publishing,tutoring
+hotels,procurement,museums,parenting,workflow

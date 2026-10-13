@@ -21,6 +21,37 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
+      # The seed resolves from `src/` under tsx and from `dist/` under the built `main` the API
+      # imports — a path that only works under tsx passes every test and dies at deploy. Prove it.
+      - name: the built store still resolves its seed file
+        run: |
+          node --input-type=module -e "
+            const { readFileSync } = await import('node:fs');
+            const { TAXONOMY_PATH } = await import('@astrolab/store');
+            console.log('built store reads', TAXONOMY_PATH, readFileSync(TAXONOMY_PATH).length, 'bytes');
+          "
+
+  o1-taxonomy:
+    name: o1-taxonomy — canonical harness on the shipped seed file
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      # The verdict is a function of the shipped bytes, so the harness runs on the file the loader
+      # reads — not on a reconstruction. The header prints (curr, prev, harness, fixture) hashes.
+      - name: canonical harness — the shipped file must PASS
+        run: python3 store/test/o1_check.py store/seed/domain-taxonomy.yaml store/test/o1-fixture.txt
+      # `--strict` drops normalisation and the key fallback, so it must FAIL: those rules cannot
+      # silently disappear without this step going red.
+      - name: --strict is the negative test — it must FAIL
+        run: |
+          if python3 store/test/o1_check.py store/seed/domain-taxonomy.yaml store/test/o1-fixture.txt --strict; then
+            echo "::error::--strict was expected to fail — the normalisation rules are not doing their job"
+            exit 1
+          fi
 
   citations:
     name: citation ref-lint — §X.Y item N form
