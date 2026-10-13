@@ -1,0 +1,11 @@
+node_modules/
+dist/
+artifacts/
+.agents/
+
+# Spec docs are hand-laid-out (tables, deliberate line breaks) — not prettier's to reflow.
+docs/
+DESIGN.md
+README.md
+AGENTS.md
+package-lock.json
