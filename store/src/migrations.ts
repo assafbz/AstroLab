@@ -7,8 +7,14 @@ import type { Migration } from "./migrate.js";
  * the partial unique index `ux_spark_live`. `PRAGMA foreign_keys` is deliberately absent from the
  * DDL: it is per-connection and a no-op inside a transaction, so `openStore` sets it, not the
  * migration (`docs/SCHEMA.md` §1).
+ *
+ * `0002_seed_vault_meta` seeds the `vault_meta` singleton. §4's stamp is relative
+ * (`revision = revision + 1`), so an empty table makes the first candidate-affecting mutation a
+ * silent no-op; seeding makes §2's *single-row* invariant true the moment `migrate()` returns. A new
+ * migration rather than an edit to `0001_init`, which is already applied — rewriting it would break
+ * forward-only and skip every store already at v1.
  */
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const MIGRATIONS: Migration[] = [
   {
@@ -124,5 +130,12 @@ CREATE TABLE domain_map (                          -- free-text tag → cluster
   cluster_id TEXT NOT NULL REFERENCES domain_cluster(id)
 );
 `,
+  },
+  {
+    version: 2,
+    name: "0002_seed_vault_meta",
+    // The stamp is relative (ARCH §4), so an empty table makes the first mutation a silent no-op.
+    // A separate migration, not an edit to 0001_init — that one is already applied.
+    sql: "INSERT INTO vault_meta (id, revision) VALUES (1, 0);",
   },
 ];

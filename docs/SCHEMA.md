@@ -1,7 +1,7 @@
 # Schema: Astrolab store (SQLite) — issue F3 design
 
-> **Status:** Design for issue **F3** (`#10`). Becomes the initial forward-only migration
-> (`0001_init`) once F1's monorepo layout lands; kept here as the schema of record in DDL form.
+> **Status:** The schema of record, in DDL form — and **shipped**: `0001_init` (the twelve tables) and
+> `0002_seed_vault_meta` live in `store/src/migrations.ts`, and this file tracks them.
 > **Source of record:** `docs/ARCHITECTURE.md` §2 (data model — the complete table set incl.
 > `idea_mechanism`) and ADR-0001 / ADR-0002. Where this file and §2 differ, **§2 wins** and this file
 > is the defect — file it.
@@ -143,6 +143,19 @@ Applied cleanly under SQLite; see §3.
 re-run **only when the text changes** (`ARCHITECTURE.md` §3.3 step 1; W3's "re-run only when an idea's
 text changes"). Exact column shape is F3's; the cache is **internal** and never surfaced.
 
+**`0002_seed_vault_meta` — the singleton's first row** (issue #62, 2026-10-13). `0001_init` creates
+`vault_meta` empty, and §4's stamp is relative — `UPDATE vault_meta SET revision = revision + 1` — so the
+**first** candidate-affecting mutation would be a silent no-op: it matches zero rows and reports success.
+A second forward-only migration seeds the row, so §2's *single-row* invariant holds the moment
+`migrate()` returns and the bump stays a plain relative `UPDATE` inside the mutation's transaction:
+
+```sql
+INSERT INTO vault_meta (id, revision) VALUES (1, 0);
+```
+
+A new migration rather than an edit to `0001_init`, which is already applied — rewriting it would break
+forward-only and skip every store already at v1.
+
 ---
 
 ## 2. Invariants F3's tests assert
@@ -174,11 +187,14 @@ foreign_keys pragma = 1
 ux_spark_live:              2nd live OFFERED for pair 'a|b'  -> UNIQUE constraint failed: spark.pair_key
 decision PK idempotency:    duplicate decision.id 'd1'       -> UNIQUE constraint failed: decision.id
 lineage CHECK:              ROOT row carrying a parent       -> CHECK constraint failed
+vault_meta after 0001_init: 0 rows                          -> the first relative bump is a no-op
+vault_meta after 0002 seed: {id: 1, revision: 0}             -> the first bump yields 1
 ```
 
 So the table count, the partial index, and the `FORK`-only-parent check all hold. This is a schema
 probe, **not** a green CI run — the F3 invariant *tests* (`provenance ⇒ no lineage parent`,
-`vault_meta.revision` monotonicity) land with the harness once F1 lands, shaped for F1's runner.
+`vault_meta.revision` monotonicity) have since landed with the harness (`store/test/`, F3 #61), and the
+singleton-seed assertion with #62.
 
 ---
 
@@ -192,4 +208,4 @@ adds write-path complexity for one invariant; revisit if the class recurs.
 ---
 
 *Design — Ari (AstroLab agent), 2026-10-13, issue F3 (`#10`). Source: `ARCHITECTURE.md` §2. Review:
-David (ruling, 2026-10-13); pending PR.*
+David (ruling, 2026-10-13); merged as PR #61; `0002_seed_vault_meta` added under #62.*

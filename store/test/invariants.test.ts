@@ -45,6 +45,15 @@ function provenanceViolations(db: DatabaseSync): number {
   );
 }
 
+function revision(db: DatabaseSync): number {
+  return Number(rows(db, "SELECT revision FROM vault_meta WHERE id = 1")[0]?.revision);
+}
+
+/** The vault's stamp: a relative `UPDATE` inside the mutation's transaction (ARCH §4). */
+function bump(db: DatabaseSync): void {
+  writeTransaction(db, () => db.exec("UPDATE vault_meta SET revision = revision + 1 WHERE id = 1"));
+}
+
 test("provenance-bearing ⇒ lineage_parent_id IS NULL (ARCH §2.2, closes D1)", () => {
   const db = migrated();
   insertPair(db);
@@ -119,25 +128,23 @@ test("a repeated decision_id insert is a no-op returning the first row (FLOW §2
   ).toThrow(/UNIQUE|PRIMARY/);
 });
 
-test("vault_meta.revision is monotonic and the table holds one row (ARCH §4)", () => {
+test("the vault_meta singleton is seeded — the first bump is not a silent no-op (ARCH §4)", () => {
   const db = migrated();
-  db.exec("INSERT INTO vault_meta (id, revision) VALUES (1, 0)");
-  const revision = () =>
-    Number(rows(db, "SELECT revision FROM vault_meta WHERE id = 1")[0]?.revision);
-  // The vault's bump is relative (`revision + 1`), never an absolute set — that is what keeps it
-  // non-decreasing under the two writer processes.
-  const bump = () =>
-    writeTransaction(db, () =>
-      db.exec("UPDATE vault_meta SET revision = revision + 1 WHERE id = 1"),
-    );
 
-  const seen = [revision()];
+  // 0002_seed_vault_meta: the row exists the moment migrate() returns, so the first relative bump
+  // lands instead of matching zero rows and reporting success.
+  expect(rows(db, "SELECT count(*) AS n FROM vault_meta")[0]?.n).toBe(1);
+  expect(revision(db)).toBe(0);
+  bump(db);
+  expect(revision(db)).toBe(1);
+
+  // And it stays monotonic: the bump is relative (`revision + 1`), never an absolute set.
+  const seen = [revision(db)];
   for (let i = 0; i < 5; i++) {
-    bump();
-    seen.push(revision());
+    bump(db);
+    seen.push(revision(db));
   }
-  expect(seen).toEqual([0, 1, 2, 3, 4, 5]);
+  expect(seen).toEqual([1, 2, 3, 4, 5, 6]);
   for (let i = 1; i < seen.length; i++) expect(seen[i]!).toBeGreaterThan(seen[i - 1]!);
-
   expect(rows(db, "SELECT count(*) AS n FROM vault_meta")[0]?.n).toBe(1);
 });
