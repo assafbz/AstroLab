@@ -35,6 +35,7 @@
 | Timestamps | ISO-8601 UTC, e.g. `2026-10-13T05:14:05Z` |
 | IDs | opaque strings (uuid). Never parse them client-side |
 | Auth | `Authorization: Bearer <token>` on every `/v1` route, where `<token>` is the **value** of the env var **`API_TOKEN`**; `/healthz` is unauthenticated |
+| Auth order | checked **before** routing, for the whole `/v1` namespace: an unauthenticated request to *any* `/v1` path — a known route, an unknown one, or the bare prefix — is `401 unauthorized`. Routing runs only with a valid token, so an unauthenticated caller cannot tell which routes exist. The check **fails closed**: with `API_TOKEN` unset or empty, every `/v1` request is `401`. `/healthz` is the exception — liveness never depends on the secret, or a health check would fail exactly when it is most needed |
 | Secret source | env vars **`API_TOKEN`** (bearer) and `AI_PROVIDER` / `AI_MODEL` come from the environment only, never the repo (`ARCHITECTURE.md` §9). `API_TOKEN` is the **env var name**, not the token value |
 | Unknown query param | ignored |
 | Unknown enum value | `422 validation_failed` |
@@ -55,7 +56,7 @@ regenerated id turns a retry into a second decision; the client must not regener
 | `code` | HTTP | When |
 | :--- | :--- | :--- |
 | `unauthorized` | 401 | missing, blank, or invalid bearer token |
-| `not_found` | 404 | unknown `{id}`, `{decision_id}`, or spark |
+| `not_found` | 404 | unknown `{id}`, `{decision_id}`, or spark — **and any path or method that is not a defined route**: only defined routes answer, everything else is this envelope |
 | `validation_failed` | 422 | a mandatory field missing/empty; `hypothesis` > 280; `domain_tags` empty; `mutation_delta` empty |
 | `conflict` | 409 | same-domain fork (offers Iterate, T25); undo not reversible (§5.4) |
 | `internal_error` | 500 | unexpected |
@@ -311,14 +312,19 @@ committed idea is present; no vendor format, no proprietary ids needed to read i
 
 ## 6. Contract decisions to confirm (flagged, not silently invented)
 
-Two shapes below are not spelled out in `ARCHITECTURE.md` §6 and are this doc's proposal. Confirm or
-correct before the client lane relies on them:
+The shapes below are not spelled out in `ARCHITECTURE.md` §6 — the first two are this doc's proposal
+(confirm or correct before the client lane relies on them); the third is settled and recorded here
+rather than left to the implementation:
 
 - **`referenced_by` on Idea detail (§4.5)** — the T26 delete warning ("names the affected forks / the
   derived ideas") needs *reverse* references; the contract exposes them on detail rather than inventing
   a dry-run delete.
 - **`undoable` + the 409 rule (§3.5, §4.15)** — `FLOW.md` §5.4 leaves the undo window unspecified;
   the contract treats it as server policy and exposes only the resulting `undoable` flag.
+- **Auth ordering, and the unknown path / method rule (settled in F4 `#11`)** — auth is checked
+  **before** routing, for the whole `/v1` namespace (§1), and any path or method that is not a defined
+  route is the `not_found` envelope (`404`): there is no third case. Both are observable behaviour
+  `ARCHITECTURE.md` §6 does not state, so they are written down here.
 
 ---
 
