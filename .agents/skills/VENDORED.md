@@ -30,12 +30,12 @@ are left unmodified.
   `.cursor-plugin/`, …), and the upstream `AGENTS.md` (contributor rules for the
   superpowers repo itself, not relevant here).
 
-  Rationale: this repo is still **docs-only** and the harness in use has no
-  superpowers session-start hook, so the plugin/hook bootstrap would not execute
-  anyway. The skill content — which is the part that shapes agent behaviour — is
-  vendored in full. Note upstream's own caution: skills copied onto disk without
-  the session-start bootstrap are not auto-invoked by that framework; here the
-  invocation mechanism is the **Required skills** section in `AGENTS.md`.
+  Rationale: the harness in use has no superpowers session-start hook, so the
+  plugin/hook bootstrap would not execute anyway. The skill content — which is
+  the part that shapes agent behaviour — is vendored in full. Note upstream's own
+  caution: skills copied onto disk without the session-start bootstrap are not
+  auto-invoked by that framework; here the invocation mechanism is the
+  **Required skills** section in `AGENTS.md`.
 
 ## 2. ponytail
 
