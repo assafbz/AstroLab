@@ -127,7 +127,7 @@ bears provenance edges has no lineage parent** — `provenance-bearing ⇒ linea
 and lineage are mutually exclusive on a node; this is the rule that makes D1 hold for *every* idea, not only a
 same-spark one.
 
-### 2.3 Sparks, runs, decisions, suppression
+### 2.3 Sparks, runs, decisions, suppression, mechanism cache
 
 ```
 spark(
@@ -146,6 +146,13 @@ spark(
 )
 -- partial unique index: at most one live offer per pair (§3.5)
 --   CREATE UNIQUE INDEX ux_spark_live ON spark(pair_key) WHERE status = 'OFFERED';
+
+idea_mechanism(                        -- per-idea descriptor cache (§3.3 step 1; W3)
+  idea_id      TEXT PK,                -- one descriptor per idea
+  descriptor   TEXT,                   -- JSON {verb, object_class, constraint, transferable_structure}
+  source_hash  TEXT,                   -- hash of the idea text the descriptor was extracted from
+  extracted_at TEXT
+)
 
 decision(                              -- one row per RESOLVING action (FLOW.md §4.3)
   id            TEXT PK,               -- === the client-supplied decision_id (FLOW.md §2.2)
@@ -166,6 +173,10 @@ config(key TEXT PK, value TEXT)                                          -- thre
 
 **Status vocabulary** is `FLOW.md` §3's verbatim: a spark is `OFFERED`, then terminal `RESOLVED-ACCEPTED` /
 `RESOLVED-DISMISSED` / `RESOLVED-INSPIRED` (H). There is no separate `ACCEPTED`/`INSPIRED` spelling.
+
+- **Mechanism cache** (`idea_mechanism`): one descriptor per idea, keyed by `idea_id`; `source_hash` is a
+  hash of the idea's text, so extraction is re-run only when the text changes (§3.3 step 1, W3). The
+  descriptor and its cache are internal and **never surfaced**.
 
 - **`decision_id` idempotency** (`FLOW.md` §2.2, §4.3): the client generates `decision_id`, **persists and
   reuses it on retry**. The primary key on `id` (the client-supplied `decision_id`) plus an upsert makes a
@@ -532,5 +543,11 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
   - **ADR-0003** — provider pinned (OpenRouter + `deepseek/deepseek-v4-flash`); the zero-retention claim is
     stated as a **requirement under verification**, not as satisfied.
   - No schema, API, or state-machine change.
+
+- **2026-10-13 — r3.2.** §2.3 gains the **`idea_mechanism`** table (per-idea descriptor cache: PK
+  `idea_id`, JSON `descriptor`, `source_hash`, `extracted_at`). It was referenced by §3.3 step 1,
+  ADR-0002 and W3 but missing from §2's table set; ruled an **omission** (not a later-stage migration),
+  so it ships in the `0001_init` migration with **F3**. §2 now reads as the complete table set. No other
+  schema, API, or state-machine change.
 
 *Draft — Ari (AstroLab agent), 2026-10-12. Review: adversarial passes by Max. Branch `docs/architecture`.*
