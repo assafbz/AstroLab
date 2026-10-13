@@ -1,6 +1,6 @@
 # Flow Spec: Astrolab (MVP v1.0)
 
-> **Status:** Draft for review — not yet merged.
+> **Status:** Merged on `main`.
 > **Scope:** End-to-end user journey + application state machine for the MVP creative loop.
 > **Vocabulary:** the engine is **the Spark**; its outputs are **sparks**. *(Never "collision.")*
 > **Source of truth for scope:** `docs/PRD.md`, `docs/VISION.md`. Visual language: `DESIGN.md`.
@@ -12,14 +12,14 @@
 
 This spec defines **what moves the user**, not how it is rendered. Every transition below is a row in §4 with a **named trigger**, a **destination**, and an **empty / error state**. Screen-level layout and motion belong to `DESIGN.md`.
 
-**Known doc dependency (blocking for merge).** This spec is written against the 2026-10-12 pivot. Two upstream documents still contradict it and are owed a rewrite in a parallel PR; two more are named for completeness:
+**Doc dependencies — resolved.** This spec was written against the 2026-10-12 pivot. The upstream rewrites it named have since landed, so nothing here is blocked:
 
-- **`PRD.md` §3.3.2 / §3.3.5** still define the **two-axis model** (domain distance + structural alignment) and *"Keep as is … recorded as a fork of the source pair."* The flow below drops the axes and makes acceptance produce a **root** idea. *(Owed.)*
-- **`DESIGN.md` §1 / §4 / §5 / §7** still describe a **light** vertical *feed* and a two-source origin line with a distance readout. The flow below assumes the **Nightfall** dark-canvas deck. *(Owed.)*
-- **`VISION.md`** — **named, not owed.** Its §3 / §4 Pillar 2 / §8.4 govern the engine's *selection* (which pairs to surface), not a UI readout, so they do **not** contradict the pivot. The one bullet that did — §4 Pillar 2, *"explains the shared mechanism"* — was already rewritten in PR #3. Keep it in that revised form if VISION is touched again.
+- **`PRD.md` §3.3 item 2 / §3.3 item 5** — **landed.** Item 2 keeps the two axes **selection-internal** (never a UI readout); item 5 makes a *good* spark a **new root idea** with its two sources kept as **provenance**, not lineage. *(Corrected in the 2026-10-13 citation sweep: this bullet cited PRD §3.3 with third-level sub-anchors, which do not exist — PRD §3.3 is a numbered list.)*
+- **`DESIGN.md` §1 / §4 / §5 / §7** — **landed** as **Nightfall**: deep indigo-black canvas, aged brass, dark shadcn. The flow below assumes that deck.
+- **`VISION.md`** — **named, not owed.** Its §3 / §4 Pillar 2 / §8 item 4 govern the engine's *selection* (which pairs to surface), not a UI readout, so they do **not** contradict the pivot. The one bullet that did — §4 Pillar 2, *"explains the shared mechanism"* — was already rewritten in PR #3. Keep it in that revised form if VISION is touched again.
 - **`PRD.md` §5 (NSM) / NFR-Q1** — **already reconciled upstream:** PR #3 restated the NSM as *"sparks **accepted** per active user per month,"* and NFR-Q1's *spark→fork* proxy was reworded at `6665504`. Consistent with this flow; no action here.
 
-**Until the owed rewrites land, this file describes the intended product, not the current docs.** Reviewer: treat any divergence there as the upstream rewrite being owed, not a defect here.
+**No dependency remains open — this file describes the shipped product.**
 
 ---
 
@@ -35,7 +35,7 @@ A spark is a *proposed direction* derived from two of the user's own ideas. The 
 
 ### 2.1 Surfaces (routes)
 
-| Ref | Surface | DESIGN.md § | Role |
+| Ref | Surface | stitch-prompts.md § | Role |
 | :-- | :------ | :---------- | :--- |
 | **S0** | Onboarding / Bootstrap | §7 | Cross-domain elicitation. The *empty vault is the onboarding*. |
 | **S1** | Sparks (home) | §1 | The review **queue**. Default = **deck** (one card at a time); **View all** toggle = list. |
@@ -44,7 +44,7 @@ A spark is a *proposed direction* derived from two of the user's own ideas. The 
 | **S3** | Vault | §4 | All ideas; domain + lineage filters. |
 | **S4** | Idea Detail | §5 | One idea; lineage chain; provenance when present. |
 | **S5** | Fork | §6 | New node branching from a parent, with mutation delta + a different domain. |
-| **S6** | Iterate | — *(no DESIGN.md § — visual spec owed; flag to design owner)* | In-place refinement of an idea; prior version retained as history. |
+| **S6** | Iterate | — *(no stitch-prompts.md § — visual spec owed; flag to design owner)* | In-place refinement of an idea; prior version retained as history. |
 
 ### 2.2 The three user actions on a spark
 
@@ -71,7 +71,7 @@ The pivot retires the pair-fork (decision **D1**). Lineage stays **single-parent
 | **Provenance** | 0..N sources | spark-derived idea → its source ideas | **ACCEPT**, and committed **INSPIRE** saves | muted line on **S4** (not the lineage chain) |
 
 - A **fork** widens the vault into a new domain (`VISION.md` §4 Pillar 3). Its parent is one idea.
-- An **iteration** does not create a lineage edge — it is a new version under the same node (`PRD.md` §3.2.1).
+- An **iteration** does not create a lineage edge — it is a new version under the same node (`PRD.md` §3.2 item 1).
 - An **accepted spark** is a **root** idea (no lineage parent). Its two sources are **provenance** — informational, not ancestry. This is why D1 closes: nothing requires a two-parent node.
 
 ---
@@ -105,13 +105,13 @@ A spark instance moves through a small state machine of its own:
 
 | Ref | State | Condition | S1 shows |
 | :-- | :---- | :-------- | :------- |
-| **E0** | **Cold** | vault **below the spark floor: fewer than 2 distinct *resolved* domains** (or < 2 ideas). Every possible pair is same-domain → cliché → suppressed (`PRD.md` §3.3.3), so **no spark is possible**. *(2 distinct *resolved* domains already makes a spark possible; **≥ 3** is the product target, handled by the nudge below, not by E0.)* | Composed empty state, **not** an error: *"Sparks need breadth."* Progress `domains covered x/3` (mono) + **Add idea** CTA. |
+| **E0** | **Cold** | vault **below the spark floor: fewer than 2 distinct *resolved* domains** (or < 2 ideas). Every possible pair is same-domain → cliché → suppressed (`PRD.md` §3.3 item 3), so **no spark is possible**. *(2 distinct *resolved* domains already makes a spark possible; **≥ 3** is the product target, handled by the nudge below, not by E0.)* | Composed empty state, **not** an error: *"Sparks need breadth."* Progress `domains covered x/3` (mono) + **Add idea** CTA. |
 | **E1** | **Computing** | engine run in flight | Skeletal shimmer **cards** matching deck dimensions; staggered reveal. **No circular spinner** (DESIGN.md §4). Deck remains usable for already-offered sparks. |
 | **E2** | **Ready(n)** | n ≥ 1 unreviewed sparks | Deck: top card. List toggle if n > 1. |
 | **E3** | **Exhausted** | vault **at/above the floor** (≥ 2 domains), 0 unreviewed, none computing | Composed empty state: *"No sparks left — for now."* CTAs: **Add idea** (S2), **Fork an idea into a new domain** (encourages the flywheel). A **Recompute** affordance. When the vault holds exactly 2 domains, E3 adds a widening nudge toward the `x/3` target (`PRD.md` §5). |
 | **E4** | **Unavailable** | AI down (NFR-A1) | Quiet, non-blocking state: *"Sparks are paused. Your vault is fully available."* + **Retry**. Already-offered sparks stay reviewable. |
 
-> Axis thresholds are tuning parameters (`PRD.md` §3.3.3), not fixed requirements. **The floor for *any* spark is 2 distinct *resolved* domains** (`PRD.md` §3.3.3: only *same-domain* pairs are cliché-suppressed) — that is E0's trigger; an unclassified free-text tag is provisional and never counts (§4.2/T02, §5.2). The **3-domain** figure is the onboarding *target* (`PRD.md` §5): it drives the `x/3` progress readout and the widening nudge, **not** the Cold state.
+> Axis thresholds are tuning parameters (`PRD.md` §3.3 item 3), not fixed requirements. **The floor for *any* spark is 2 distinct *resolved* domains** (`PRD.md` §3.3 item 3: only *same-domain* pairs are cliché-suppressed) — that is E0's trigger; an unclassified free-text tag is provisional and never counts (§4.2/T02, §5.2). The **3-domain** figure is the onboarding *target* (`PRD.md` §5): it drives the `x/3` progress readout and the widening nudge, **not** the Cold state.
 >
 > **State precedence: E4 > E3.** A vault that is both Exhausted and Unavailable shows **Unavailable** (the transient cause, with Retry) — never Exhausted (which implies "come back after adding ideas"). **E0 dominates all**: with no domain spread there is no spark to compute, review, or await, so E0 shows regardless of AI state. E1 (Computing) may coexist with E2 — shimmer for in-flight work sits alongside any already-offered cards.
 
@@ -125,8 +125,8 @@ Every transition: **ID · From → To · trigger · guard · side effects · emp
 | :-- | :-------- | :------ | :---- | :----------- | :------------------ |
 | **T01** | launch → **S0** | first run | vault is **empty** | none | — |
 | **T02** | S0 → S0 | **Add idea** (one prompt at a time) | **Hypothesis, Problem, Monetization, and Domain all non-empty** (`PRD.md` §2/§3.1 — *"an idea without a domain cannot take part in a spark"*). **Domain is chosen from the shipped domain taxonomy — with an `Other → free text` escape** — at onboarding. A picked tag carries a *resolved* cluster deterministically (**no AI on this path**, R1); a typed `Other` lane is **provisional** and never counts toward the `≥ 2` gate (§4.1/E0, §5.2) — the worker resolves it on the first run (`ARCHITECTURE.md` §3.2) | node created; star-chart widens; `domains covered` updates | inline error below each empty field (Destructive) |
-| **T03** | S0 → **S1** | **Skip** | — | — | if vault in **E0** → S1 shows **E0 Cold**; else → **E1 Computing**. *(Deviation: `PRD.md` §3.4.2 / NFR-U1 require onboarding to leave the user spanning multiple domains. Skip is allowed, but it is recorded as a deviation — S1 then shows E0 with the widening CTA.)* |
-| **T04** | S0 → **S1** | **See your sparks** CTA appears | vault **≥ 2 distinct *resolved* domains** — the `PRD.md` §3.4.2 / NFR-U1 spread requirement (2 domains is the spark floor). Because a **picked** S0 domain resolves against the shipped taxonomy and a **typed** lane stays provisional (T02), the count is **deterministic and AI-free**, and it is the **same** quantity the engine's E0 check uses — so the gate cannot pass and then collapse (R1). `≥ 3` is the `PRD.md` §5 *target*, shown as `x/3` progress, **not** a gate (N1) | kick engine run | — |
+| **T03** | S0 → **S1** | **Skip** | — | — | if vault in **E0** → S1 shows **E0 Cold**; else → **E1 Computing**. *(Deviation: `PRD.md` §3.4 item 2 / NFR-U1 require onboarding to leave the user spanning multiple domains. Skip is allowed, but it is recorded as a deviation — S1 then shows E0 with the widening CTA.)* |
+| **T04** | S0 → **S1** | **See your sparks** CTA appears | vault **≥ 2 distinct *resolved* domains** — the `PRD.md` §3.4 item 2 / NFR-U1 spread requirement (2 domains is the spark floor). Because a **picked** S0 domain resolves against the shipped taxonomy and a **typed** lane stays provisional (T02), the count is **deterministic and AI-free**, and it is the **same** quantity the engine's E0 check uses — so the gate cannot pass and then collapse (R1). `≥ 3` is the `PRD.md` §5 *target*, shown as `x/3` progress, **not** a gate (N1) | kick engine run | — |
 | **T05** | launch → **S1** | return launch | vault was **not** empty | evaluate engine state | E0/E1/E2/E3/E4 per §4.1 |
 
 #### Sparks deck (S1) and Spark Detail (S1b)
@@ -160,7 +160,7 @@ Every transition: **ID · From → To · trigger · guard · side effects · emp
 | **T20** | S3 → S3 | filter by domain / lineage | — | list narrows | no match → filtered-empty: *"No ideas in ⟨domain⟩."* |
 | **T21** | S3 → **S4** | tap idea card | — | open detail; render fields, lineage chain, provenance if any | — |
 | **T22** | S4 → **S6** | **Iterate** | — | open in-place editor | — |
-| **T23** | S6 → **S4** | **Save iteration** | all mandatory fields valid (`PRD.md` §2) | same node, new version; prior version retained as history (`PRD.md` §3.2.1); **no lineage edge** | inline error below any empty mandatory field |
+| **T23** | S6 → **S4** | **Save iteration** | all mandatory fields valid (`PRD.md` §2) | same node, new version; prior version retained as history (`PRD.md` §3.2 item 1); **no lineage edge** | inline error below any empty mandatory field |
 | **T24** | S4 → **S5** | **Fork** | — | open Fork, seeded with parent | — |
 | **T25** | S5 → **S4** | **Create fork** | mutation delta non-empty **and domain ≠ parent's** (`PRD.md` §1.2 — a fork widens the vault into a new domain; the flywheel depends on it) | **new** node; lineage parent = source; domain defaults **different** | inline error if delta empty; if the chosen domain **equals** the parent's → offer **Iterate** instead (a same-domain branch is a refinement, not a fork) |
 | **T26** | S4 → **S3** | **Delete idea** | confirmed | node removed/archived; fork children keep their parent reference | if the idea is a fork **parent** → confirm names the affected forks; if it is a **provenance source** of a spark-derived idea → confirm names those derived ideas (their provenance keeps a dangling ref) — neither is deleted |
@@ -182,7 +182,7 @@ Every transition: **ID · From → To · trigger · guard · side effects · emp
 4. The derived idea is subject to mandatory-field validation (`PRD.md` §2). Where the spark supplies the fields, prefill them; where it cannot, the idea enters **needs-completion** — saved, flagged in the Vault, and **excluded from candidate selection** until complete (T27). It is not silently dropped: the system **actively prompts the user to polish** it at the right moments (a *Complete* nudge in the deck and the Vault), so the one-tap gesture survives and completion is **nudged, not blocked**. *(Recorded resolution per David's in-thread call, 2026-10-12; owner override still open — §6 Open Q1.)*
 
 **DISMISS** (`swipe left` / **Not for me**):
-1. Mark the spark **dismissed**; retain it as **negative signal** so the pairing is not re-offered unchanged (`PRD.md` §3.3.5).
+1. Mark the spark **dismissed**; retain it as **negative signal** so the pairing is not re-offered unchanged (`PRD.md` §3.3 item 5).
 2. Remove the card; reveal the next. No vault node is created.
 
 **INSPIRE** (`Use as inspiration` button only):
@@ -197,11 +197,11 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 ## 5. Edge cases (required set)
 
 ### 5.1 Empty vault
-- **First launch, vault empty → S0.** The empty vault *is* the onboarding (`DESIGN.md` §7). Never show a bare *"No ideas yet."*
+- **First launch, vault empty → S0.** The empty vault *is* the onboarding (`stitch-prompts.md` §7). Never show a bare *"No ideas yet."*
 - **Returning user, empty (all deleted) → S1 shows E0 Cold**, with an onboarding exit back to S0.
 
 ### 5.2 Vault below the spark floor (no sparks possible) — **E0 Cold**
-- The **floor is 2 distinct domains** (`PRD.md` §3.3.3) — counted as **resolved clusters** (§4.2/T02: onboarding domains come from the shipped taxonomy, **or — via the `Other → free text` escape — a typed lane**; an unclassified or typed tag is **provisional** and never counts toward the floor until the worker resolves it — `ARCHITECTURE.md` §3.2). Below it, every possible pair is *same-domain* → cliché → suppressed, so **no spark is possible** — that is the only condition that puts S1 in E0. `≥ 3` domains is the *target* (`PRD.md` §5), not the floor (H1).
+- The **floor is 2 distinct domains** (`PRD.md` §3.3 item 3) — counted as **resolved clusters** (§4.2/T02: onboarding domains come from the shipped taxonomy, **or — via the `Other → free text` escape — a typed lane**; an unclassified or typed tag is **provisional** and never counts toward the floor until the worker resolves it — `ARCHITECTURE.md` §3.2). Below it, every possible pair is *same-domain* → cliché → suppressed, so **no spark is possible** — that is the only condition that puts S1 in E0. `≥ 3` domains is the *target* (`PRD.md` §5), not the floor (H1).
 - S1 renders a **composed** empty state, framed as progress not failure: `domains covered x/3` (mono) + **Add idea** CTA + a one-line reason (*"Sparks pair distant domains — add ideas from another field."*).
 - **2 domains is not E0** — a 2-domain vault is eligible and shows sparks if any pair aligns; if none do, that is **E3** (§5.3), with the `x/3` widening nudge. The engine must **not** present a spinner or an error here.
 
@@ -238,7 +238,7 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 3. ~~Cold threshold value.~~ **Resolved by this spec (H1):** E0 triggers at **< 2 distinct domains** (no spark possible); `3 domains` is the target that drives the `x/3` readout and the widening nudge, not E0. Owner may still soften the 3-domain nudge's emphasis.
 4. **Delete semantics.** Whether deleting an idea with forks **blocks**, **orphans**, or **cascades** is a persistence decision (T26); this spec assumes **orphan-with-warning**, and that a deleted **provenance source** leaves a dangling (tolerated) ref on the derived idea.
 5. ~~Seed metric.~~ **Resolved upstream (H6):** PR #3 restated `PRD.md` §5 (NSM) as *"sparks accepted per active user per month"* and NFR-Q1's proxy was reworded at `6665504` — now consistent with this flow's ACCEPT→root event.
-6. ~~S0 domain input — closed taxonomy picker vs free text (owner call).~~ **Resolved — owner (Assaf, 2026-10-13): option (a) accepted.** Closing R1 (T02/T04) implements the architecture's option (a): onboarding **Domain is chosen from the shipped taxonomy** so the `≥ 2` gate counts deterministic *resolved* clusters. Max flagged that this is **more than a spec clarification** — it changes a **user-facing input contract**: `PRD.md` §2 describes Domain as user-supplied **tags**, and §3.4.1 frames onboarding as *guided* cross-domain **prompts**; nothing upstream authorises withholding free text at S0. Failure mode: a real domain absent from the shipped taxonomy forces a wrong pick at onboarding, inherited by every bootstrap idea. **Landed as Max's recommended mitigation — owner-approved (Assaf, 2026-10-13):** an **`Other → free text (provisional)`** escape at S0 — picked domains stay deterministic and AI-free, and a typed lane is **provisional**: it simply does **not** count toward the `≥ 2` gate until the worker resolves it on the first run (`ARCHITECTURE.md` §3.2). Nothing is boxed in, and the failure mode above is closed. In this revision: §4.2/T02, §5.2, §7.
+6. ~~S0 domain input — closed taxonomy picker vs free text (owner call).~~ **Resolved — owner (Assaf, 2026-10-13): option (a) accepted.** Closing R1 (T02/T04) implements the architecture's option (a): onboarding **Domain is chosen from the shipped taxonomy** so the `≥ 2` gate counts deterministic *resolved* clusters. Max flagged that this is **more than a spec clarification** — it changes a **user-facing input contract**: `PRD.md` §2 describes Domain as user-supplied **tags**, and §3.4 item 1 frames onboarding as *guided* cross-domain **prompts**; nothing upstream authorises withholding free text at S0. Failure mode: a real domain absent from the shipped taxonomy forces a wrong pick at onboarding, inherited by every bootstrap idea. **Landed as Max's recommended mitigation — owner-approved (Assaf, 2026-10-13):** an **`Other → free text (provisional)`** escape at S0 — picked domains stay deterministic and AI-free, and a typed lane is **provisional**: it simply does **not** count toward the `≥ 2` gate until the worker resolves it on the first run (`ARCHITECTURE.md` §3.2). Nothing is boxed in, and the failure mode above is closed. In this revision: §4.2/T02, §5.2, §7.
 
 ---
 
@@ -262,16 +262,16 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 ## 8. Revision history
 
 - **2026-10-12 — r1.** Initial draft.
-- **2026-10-12 — r2 (this revision).** Adversarial review by Max (PR #2) + David's routing corrections. Disposition: **all findings accepted and fixed** — H1 (E0 floor is 2 domains, not 3), H2 (S0 domain guard + spread gate), H4 (`decision_id` idempotency), H5 (INSPIRE-save resolves the spark), M1 (E4 > E3 precedence), M2 (fork must widen the domain), M3 (provenance-source delete), M4 (Skip deviation stated), M5 (checklist wording), L1 (iteration is a version, not a lineage edge), L2 (undo-unavailable notice). **H3:** `VISION.md` named in the dependency note but **not owed a rewrite** (its §3/§4/§8.4 govern selection, not a readout; the one contradicting bullet was already rewritten in PR #3). **H6:** reconciled upstream (PR #3 + `6665504`). **L3** (S6 visual spec) routed to the design owner. Open Q3 and Q5 resolved.
+- **2026-10-12 — r2.** Adversarial review by Max (PR #2) + David's routing corrections. Disposition: **all findings accepted and fixed** — H1 (E0 floor is 2 domains, not 3), H2 (S0 domain guard + spread gate), H4 (`decision_id` idempotency), H5 (INSPIRE-save resolves the spark), M1 (E4 > E3 precedence), M2 (fork must widen the domain), M3 (provenance-source delete), M4 (Skip deviation stated), M5 (checklist wording), L1 (iteration is a version, not a lineage edge), L2 (undo-unavailable notice). **H3:** `VISION.md` named in the dependency note but **not owed a rewrite** (its §3/§4/§8 item 4 govern selection, not a readout; the one contradicting bullet was already rewritten in PR #3). **H6:** reconciled upstream (PR #3 + `6665504`). **L3** (S6 visual spec) routed to the design owner. Open Q3 and Q5 resolved.
 
 - **2026-10-12 — r3.** Max's re-review of r2: all 11 findings confirmed closed; 3 residuals + 1 nitpick folded in — **N1** (onboarding exit gates on ≥ 2 domains, `x/3` is progress not a gate — T04), **N2** (lifecycle diagram redrawn with the three terminal states incl. `RESOLVED-INSPIRED`), **N3** (§5.4 undo now covers the committed seeded save; resolution permanence and delete-does-not-un-resolve defined; T12 broadened), **N4** (`decision_id` must be persisted and reused on retry, never regenerated).
 
 - **2026-10-12 — r3.1.** Max/David re-review of r3: dropped the stale checklist line that still said the exit gates on ≥ 3 domains (the N1 edit left a duplicate — checklist now agrees with T04). Folded in David's in-thread **Open Q1** call: a **Good** idea that cannot be fully prefilled is saved **needs-completion** and **excluded from candidate selection** until complete (§4.3, T27) — owner override pending.
 
 - **2026-10-12 — r3.2.** Three `FLOW.md`-only touches logged by `ARCHITECTURE.md` §12, landed as one spec edit after the architecture loop closed (`docs/architecture` @ `69db27a`, PR #5, approved):
-  - **§12.5 → Q1** — a **Good** that cannot be fully prefilled is saved **needs-completion**, **excluded from candidate selection**, **and** the system **actively prompts the user to polish** at the right moments (§4.3 step 4, T27, §6 Q1). Owner override still open.
-  - **§12.6 → S0 taxonomy picker (R1)** — the S0 **Domain is picked from the shipped taxonomy** (T02), so the T04 gate counts **≥ 2 distinct *resolved* domains** — the same quantity the E0 check uses, deterministic and AI-free; free-text domains stay from S3 on (§5.2, §7 checklist).
-  - **§12.4** — a committed seeded save carries its **own `decision_id`**, making it idempotent and undoable, named in §2.2 (which §5.4/N3 already required).
+  - **§12 item 5 → Q1** — a **Good** that cannot be fully prefilled is saved **needs-completion**, **excluded from candidate selection**, **and** the system **actively prompts the user to polish** at the right moments (§4.3 step 4, T27, §6 Q1). Owner override still open.
+  - **§12 item 6 → S0 taxonomy picker (R1)** — the S0 **Domain is picked from the shipped taxonomy** (T02), so the T04 gate counts **≥ 2 distinct *resolved* domains** — the same quantity the E0 check uses, deterministic and AI-free; free-text domains stay from S3 on (§5.2, §7 checklist).
+  - **§12 item 4** — a committed seeded save carries its **own `decision_id`**, making it idempotent and undoable, named in §2.2 (which §5.4/N3 already required).
 
 - **2026-10-12 — r3.2.1.** Cross-ref fix (David's review of r3.2): §5.2 cited `§7/T02`; **T02 lives in §4.2** — corrected to `§4.2/T02`. No semantic change.
 
@@ -279,4 +279,4 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 
 - **2026-10-13 — r3.3.** Owner decision on **Open Q6 → option (a):** the S0 domain input is the shipped-taxonomy **picker plus an `Other → free text` escape** — a picked domain stays **resolved** (deterministic, AI-free), a typed lane is **provisional** and never counts toward the `≥ 2` gate until the worker resolves it on the first run (`ARCHITECTURE.md` §3.2). Landed in **§4.2/T02** (guard), **§5.2** (floor), **§7** (checklist); Q6 closed. Also the **§4.1 E0** nit: the E0 row's own parenthetical now reads *2 distinct **resolved** domains* so E0's definition is uniform in-file. Docs-only; no state-machine change. Post-approval clause fix (T04): the rationale now reads *picked resolves against the shipped taxonomy; typed stays provisional* — stale premise removed, conclusion unchanged.
 
-*Draft — Ari (AstroLab agent), 2026-10-12. Review: two adversarial passes by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
+*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.3, 2026-10-13. Review: two adversarial passes by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*

@@ -40,7 +40,7 @@ CREATE TABLE idea (
   CHECK (lineage_kind = 'FORK' OR lineage_parent_id IS NULL)
 );
 
-CREATE TABLE idea_version (                        -- iteration history, same node (PRD §3.2.1)
+CREATE TABLE idea_version (                        -- iteration history, same node (PRD §3.2 item 1)
   idea_id      TEXT NOT NULL REFERENCES idea(id),
   version      INTEGER NOT NULL,
   hypothesis   TEXT NOT NULL,

@@ -1,9 +1,9 @@
 # Architecture: Astrolab (MVP v1.0)
 
-> **Status:** Draft for review — not yet merged.
+> **Status:** Merged on `main`.
 > **Scope:** The technical design the PRD defers to. `docs/PRD.md` §4 names **no** technologies and
 > re-homes every one here: *"a separate security/architecture document and ADRs."* This is it.
-> **Grounded in the merged specs:** `docs/PRD.md` v2.0.0 · `docs/VISION.md` · `docs/FLOW.md` r3.1 ·
+> **Grounded in the merged specs:** `docs/PRD.md` v2.0.0 · `docs/VISION.md` · `docs/FLOW.md` r3.3 ·
 > `DESIGN.md` (Nightfall) · `README.md`.
 > **Vocabulary:** the engine is **the Spark**; its outputs are **sparks**. *(Never "collision.")*
 
@@ -17,11 +17,11 @@ choice is load-bearing it is recorded as an **ADR** in `docs/adr/` and summarise
 
 **Two hard constraints inherited from the docs, not reinterpreted here:**
 
-- **No vector database / ANN index in the MVP** (`PRD.md` §3.3.7). Candidates are compared directly at
+- **No vector database / ANN index in the MVP** (`PRD.md` §3.3 item 7). Candidates are compared directly at
   personal vault scale.
-- **No user-facing similarity or retrieval surface** (`VISION.md` §8.4; `DESIGN.md` §7). Nothing the user
+- **No user-facing similarity or retrieval surface** (`VISION.md` §8 item 4; `DESIGN.md` §7). Nothing the user
   sees scores, ranks, or explains the similarity of two ideas. Any closeness machinery is *selection-
-  internal* (`PRD.md` §3.3.2).
+  internal* (`PRD.md` §3.3 item 2).
 
 **MVP posture:** single-user, single-tenant, private. Everything below is sized to one creator's vault
 (hundreds of ideas, not millions), and to shipping the creative loop — *Capture → Spark → Fork* — not
@@ -95,7 +95,7 @@ idea(
   created_at, updated_at  TEXT
 )
 
-idea_version(                          -- iteration history, same node (PRD §3.2.1)
+idea_version(                          -- iteration history, same node (PRD §3.2 item 1)
   idea_id  TEXT FK, version INTEGER, hypothesis, problem, monetization, domain_tags, created_at,
   PRIMARY KEY(idea_id, version)
 )
@@ -104,7 +104,7 @@ idea_version(                          -- iteration history, same node (PRD §3.
 - **Iteration** writes a new `idea_version` row and bumps `idea.current_version`; it creates **no** lineage
   edge (`FLOW.md` §2.3, L1).
 - **Fork** inserts a new `idea` with `lineage_kind=FORK` and `lineage_parent_id` = the source. **Lineage is
-  single-parent, forever** (`PRD.md` §2, §3.2.2).
+  single-parent, forever** (`PRD.md` §2, §3.2 item 2).
 - `NEEDS_COMPLETION`: a spark-derived idea whose mandatory fields could not be fully prefilled (`FLOW.md`
   §4.3, T27). It is **excluded from spark candidate selection** until complete (ADR-0002).
 
@@ -195,7 +195,7 @@ domain_map(tag TEXT PK, cluster_id TEXT)                -- free-text tag → clu
 A small shipped taxonomy (§3.2). Not an embedding store; not queryable by similarity.
 
 **Why SQLite:** single user, one file, relational edges (lineage, provenance, idempotency constraint),
-trivial file-level backup and export (NFR-D1), and **no vector index** (PRD §3.3.7). Postgres is the
+trivial file-level backup and export (NFR-D1), and **no vector index** (PRD §3.3 item 7). Postgres is the
 documented scale-out path once multi-user ships (`PRD.md` §6) — ADR-0001.
 
 ---
@@ -203,7 +203,7 @@ documented scale-out path once multi-user ships (`PRD.md` §6) — ADR-0001.
 ## 3. Spark engine
 
 The engine turns a vault into offered sparks. It is **selection-internal**: it computes two axes, uses them to
-*choose*, and never surfaces either (`PRD.md` §3.3.2–3.3.4). It runs entirely in the **worker**, never in the
+*choose*, and never surfaces either (`PRD.md` §3.3 items 2–4). It runs entirely in the **worker**, never in the
 API path (NFR-A1/P1).
 
 ### 3.1 Two-stage, ANN-free, O(N + gated) AI calls
@@ -215,7 +215,7 @@ API path (NFR-A1/P1).
 | **Adjudicate** | once per **gated** pair | **yes** (1 call) | O(pairs that pass the gate) |
 
 This is the key sizing decision (ADR-0002): AI cost is **O(N + gated)**, not O(N²). The O(N²) work is a
-cheap local filter, which is exactly what "compares pairs directly" (`PRD.md` §3.3.7) permits. "Gated" is the
+cheap local filter, which is exactly what "compares pairs directly" (`PRD.md` §3.3 item 7) permits. "Gated" is the
 set that clears both thresholds — bounded well below N² by the gate, and the quantity the thresholds tune.
 
 ### 3.2 Axis 1 — domain distance (deterministic, worker-only)
@@ -230,7 +230,7 @@ happens in the **worker**, during a run:
    vault path.
 3. **Distance** = **taxonomy hops** between the two ideas' clusters (`domain_cluster.adjacency`); `0` for
    same-cluster. Two ideas whose every tag resolves to one cluster are **same-domain** → cliché
-   (`PRD.md` §3.3.3).
+   (`PRD.md` §3.3 item 3).
 
 **The `x/3` summary stays AI-free.** `GET /v1/vault/summary` returns **two** deterministic counts from
 `domain_map` alone: **resolved** clusters (tags present in the shipped seed map) and **provisional** clusters
@@ -250,7 +250,7 @@ exact class `FLOW.md` **H2** fixed. Gating on `resolved` makes the gate and the 
 and no AI**; a typed `Other` lane is **provisional** — its own cluster, and it **never opens the gate** —
 normalised by the worker once, on the first run. Free-text domain input remains available from **S3 onward**,
 where a provisional cluster is harmless — the vault is already warm and has run once. This changes the S0 input
-contract, so it is logged as `FLOW.md` spec touches in §12 (§12.6).
+contract, so it is logged as `FLOW.md` spec touches in §12 (§12 item 6).
 
 No embeddings, no ANN — a small curated table. Domain is "the axis along which distance is measured"
 (`PRD.md` §2), and this measures it deterministically on the vault path.
@@ -259,17 +259,17 @@ No embeddings, no ANN — a small curated table. Domain is "the axis along which
 
 1. **Extract** (Stage 1): one AI call per idea returns a normalised **mechanism descriptor** — a small
    structured object, e.g. `{verb, object_class, constraint, transferable_structure}` — cached in
-   `idea_mechanism`. This is "identifying each idea's transferable structure" (`PRD.md` §3.3.6).
+   `idea_mechanism`. This is "identifying each idea's transferable structure" (`PRD.md` §3.3 item 6).
 2. **Gate**: alignment = a deterministic similarity over the two descriptors (normalised field/token match).
    Pairs must clear **both** `min_domain_distance` and `min_alignment` (`config`).
 3. **Adjudicate** (Stage 2, AI): for pairs that pass the gate, one call confirms the shared mechanism is real
-   *and* yields the spark's **direction / claim / first step / what it takes** (`PRD.md` §3.3.4). Pairs the
+   *and* yields the spark's **direction / claim / first step / what it takes** (`PRD.md` §3.3 item 4). Pairs the
    model rejects become **suppressed (noise)**.
 
 ### 3.4 Thresholds
 
 `domain_distance` / `alignment` cut-offs live in `config`, seeded with defaults and tuned empirically
-(`PRD.md` §3.3.3: *"tuning parameters, not fixed requirements"*). Changing a threshold never changes the
+(`PRD.md` §3.3 item 3: *"tuning parameters, not fixed requirements"*). Changing a threshold never changes the
 schema or the API.
 
 ### 3.5 Cliché / noise suppression and re-offer rules
@@ -277,7 +277,7 @@ schema or the API.
 - **Cliché** (high alignment, low distance) and **noise** (high distance, low alignment) are dropped by the
   gate — the two quadrants the product exists to avoid (`VISION.md` §3).
 - A **dismissed** pair is written to `suppressed_pair`; it is **not re-offered unchanged**
-  (`PRD.md` §3.3.5). A materially changed vault may surface a *different* pair (`FLOW.md` §5.3).
+  (`PRD.md` §3.3 item 5). A materially changed vault may surface a *different* pair (`FLOW.md` §5.3).
 - An **accepted** pair is retired from the deck; only **one live offer per pair** exists (`spark` unique key).
 - Ideas with `status = NEEDS_COMPLETION` or **no domain** are excluded from candidate generation
   (`PRD.md` §2).
@@ -391,11 +391,11 @@ contradiction, since FLOW §5.4 already requires the capability.)*
 
 - **Domain-mandatory capture** (`FLOW.md` T02; `PRD.md` §2): `POST /v1/ideas` rejects an idea with no domain.
   An idea without a domain cannot take part in a spark, so allowing one would silently defeat the bootstrap.
-- **Spread gate** (`FLOW.md` T04; `PRD.md` §3.4.2 / NFR-U1): the onboarding exit is available at **≥ 2
+- **Spread gate** (`FLOW.md` T04; `PRD.md` §3.4 item 2 / NFR-U1): the onboarding exit is available at **≥ 2
   distinct *resolved* domains** (the spark floor, §3.2), with S0 domain input drawn from the shipped taxonomy
   (plus the `Other → free text` escape) so the count is deterministic and AI-free; `≥ 3` is shown as `x/3`
   **progress**, not a gate. A provisional (unmapped or typed) tag never counts toward the gate — see R1, §3.2.
-- **No synthetic seeds, no note import** (`PRD.md` §3.4.3): neither the engine nor the API generates ideas
+- **No synthetic seeds, no note import** (`PRD.md` §3.4 item 3): neither the engine nor the API generates ideas
   on the user's behalf.
 
 ---
@@ -451,7 +451,7 @@ Load-bearing decisions, one file each, in `docs/adr/`:
 | ADR | Decision | Closes |
 | :--- | :--- | :--- |
 | **0001** | SQLite as the MVP store; Postgres as the scale-out path | §2.4, NFR-D1 |
-| **0002** | Two-stage, ANN-free spark engine; AI cost O(N + gated) | §3, PRD §3.3.7 |
+| **0002** | Two-stage, ANN-free spark engine; AI cost O(N + gated) | §3, PRD §3.3 item 7 |
 | **0003** | One AI-provider interface + swappable adapter; structured output; no-training/zero-retention | §5, NFR-PRIV1 |
 | **0004** | Async in-process queue; vault code never imports the AI boundary | §4, NFR-A1/P1 |
 | **0005** | Client = React/TS mobile-first PWA (one language with the server) | §9 |
@@ -519,17 +519,17 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
   — §4, §6).
 - **2026-10-12 — r2.1.** Residual **K** prose fix: dropped the stale `UNIQUE(spark_id, id)` phrase in §2.3 so
   the prose matches the schema (PK on `id` is the idempotency key). Logged the Q1 FLOW §4.3/T27 polish-prompt
-  follow-up (§12.5).
+  follow-up (§12 item 5).
 - **2026-10-12 — r3.** Review round 2 residual **R1** closed (option a): **§3.2** now returns **resolved** and
   **provisional** cluster counts and the spread gate / `x/3` read **`resolved` only** — a provisional tag never
   opens the gate, so the gate and the post-run `E0` count are the same quantity and a false pass is
   impossible. **S0 domain input is a pick from the shipped taxonomy** (deterministic, AI-free; free-text from
   S3 on). Aligned **§6** (S0 row, S0→S1 exit), **§7** (spread gate) and **§11** (U1 verification: ≥ 2 distinct
-  *resolved* domains, and E0 not Cold on first run). Added the `FLOW.md` §7 spec touch (§12.6).
+  *resolved* domains, and E0 not Cold on first run). Added the `FLOW.md` §7 spec touch (§12 item 6).
 
 - **2026-10-13 — r3.1.** Follow-up PR (docs-only, `docs/arch-escape`) recording owner decisions:
 
-  - **§12.1 — resolved: hosted.** Provider **OpenRouter**, initial model **`deepseek/deepseek-v4-flash`**
+  - **§12 item 1 — resolved: hosted.** Provider **OpenRouter**, initial model **`deepseek/deepseek-v4-flash`**
     (env-overridable). **NFR-PRIV1 closed by routing, not a vendor term** (Max's verdict, re-verified by David):
     every call pins `provider: { zdr: true }` so routing is limited to ZDR-classified endpoints; the control is
     **provider-attested, not independently audited**, and no paid tier is needed (§5, §11).
@@ -538,7 +538,7 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
     time; residuals stated (metadata stored; OpenRouter transiently sees the prompt).
   - **§3.2 / §6 / §7 — S0 `Other → free text` escape** (owner-approved 2026-10-13): a typed lane is
     **provisional** and never opens the spread gate; free-text from S3 on is unchanged.
-  - **§12 reconcile** — §12.4 and §12.5 marked **landed in `FLOW.md` r3.2**; §12.6 marked **r3.2 (picker) +
+  - **§12 reconcile** — §12 item 4 and §12 item 5 marked **landed in `FLOW.md` r3.2**; §12 item 6 marked **r3.2 (picker) +
     r3.3 (escape)**.
   - **ADR-0003** — provider pinned (OpenRouter + `deepseek/deepseek-v4-flash`); the zero-retention claim is
     stated as a **requirement under verification**, not as satisfied.
@@ -550,4 +550,4 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
   so it ships in the `0001_init` migration with **F3**. §2 now reads as the complete table set. No other
   schema, API, or state-machine change.
 
-*Draft — Ari (AstroLab agent), 2026-10-12. Review: adversarial passes by Max. Branch `docs/architecture`.*
+*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.2, 2026-10-13. Review: adversarial passes by Max. Branch `docs/architecture`.*

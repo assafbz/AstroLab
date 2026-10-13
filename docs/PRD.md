@@ -56,7 +56,7 @@ Every idea is a structured knowledge unit, not arbitrary rich text.
 - **Monetization / Value Angle (Mandatory):** How value is captured — revenue model, unit economics, or cost savings.
 - **Domain Tag(s) (Mandatory):** One or more cross-disciplinary tags (e.g., `#fintech`, `#audio-dsp`, `#logistics`, `#developer-tooling`). Domain is the axis along which the distance between ideas is measured; **an idea without a domain cannot take part in a spark.**
 - **Lineage:** `Root`, `Iteration of ⟨X⟩`, or `Fork of ⟨Y⟩` — strictly single-parent.
-- **Provenance (optional):** `Sparked from ⟨A⟩ + ⟨B⟩` — the ideas a spark was generated from. Recorded as muted metadata, **not** part of Lineage: accepting a spark creates a **new root idea** (Sec. 3.3.5).
+- **Provenance (optional):** `Sparked from ⟨A⟩ + ⟨B⟩` — the ideas a spark was generated from. Recorded as muted metadata, **not** part of Lineage: accepting a spark creates a **new root idea** (Sec. 3.3 item 5).
 - **Visibility Scope:** `PRIVATE` only in the MVP. Sharing scopes (Circle / Company / Public) are deferred.
 
 Every field above is part of the machine-readable "anatomy" that makes ideas comparable to one another.
@@ -92,7 +92,7 @@ The Spark surfaces non-obvious, coherent sparks from the user's **own** vault.
    | **Domain distance** | How unrelated the two ideas' domains are. | **High** — surprise. |
    | **Structural alignment** | Whether they share a transferable *mechanism* (relational structure), independent of domain. | **High** — combinability. |
 
-   These axes are **selection internals**: tuning parameters for finding non-obvious candidates. They are never surfaced as UI readouts (Sec. 3.3.4).
+   These axes are **selection internals**: tuning parameters for finding non-obvious candidates. They are never surfaced as UI readouts (Sec. 3.3 item 4).
 
 3. **Surface rule.** A pair is surfaced **only** when both axes are high (far apart **and** structurally aligned). The engine must actively suppress:
 
@@ -157,9 +157,9 @@ Removed from earlier drafts (and re-homed as design decisions, not requirements)
 
 ## 5. Success Metrics & KPIs
 
-- **North Star Metric (NSM):** **Sparks accepted per active user per month** — the count of non-obvious sparks that became ideas in the vault (Sec. 3.3.5, *Good*), especially ideas landing in a *new* domain.
+- **North Star Metric (NSM):** **Sparks accepted per active user per month** — the count of non-obvious sparks that became ideas in the vault (Sec. 3.3 item 5, *Good*), especially ideas landing in a *new* domain.
 - **Vault Diversity:** Distinct domains represented per user (spark quality depends on breadth, not volume).
-- **Onboarding Activation:** Percentage of new users who complete onboarding with a vault spanning **≥ 3 distinct domains** (proposed target: ≥ 60%; to confirm).
+- **Onboarding Activation:** Percentage of new users whose vault, on completing onboarding, clears the **gate** — **≥ 2 distinct *resolved* domains**, the spark floor below which no spark is possible (`FLOW.md` §5.2) — tracked against the **target** of **≥ 3 distinct domains** (proposed target: ≥ 60% reaching the target; to confirm). *Gate = 2 resolved domains; 3 is the target.*
 - **Lineage Activity:** Forks and iterations generated per user (is the flywheel turning?).
 - **Retention:** Weekly return rate of users whose vault has reached a spark-viable size.
 

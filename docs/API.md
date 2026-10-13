@@ -16,7 +16,7 @@
 ## 0. Scope & non-goals
 
 - HTTP/JSON over HTTPS, bearer-authenticated. One error envelope. No scores, distances, alignments,
-  or "related ideas" anywhere in any response (`PRD.md` §3.3.4; `DESIGN.md` §7; `VISION.md` §8.4).
+  or "related ideas" anywhere in any response (`PRD.md` §3.3 item 4; `DESIGN.md` §7; `VISION.md` §8 item 4).
 - The **server** enforces the invariants (domain-mandatory, single-parent lineage, provenance ≠
   lineage, one live offer per pair, mandatory-field validation). The client never encodes them
   (`ARCHITECTURE.md` §6 last line).
@@ -109,7 +109,7 @@ complete (`FLOW.md` §4.3 step 4 / T27).
   "domain_tags": ["audio-dsp"], "created_at": "2026-10-13T05:14:05Z" }
 ```
 No `mechanism`, no `domain_distance`, no `structural_alignment`, no source idea ids — selection
-internals never surface (`PRD.md` §3.3.2–3.3.4; `ARCHITECTURE.md` §2.3).
+internals never surface (`PRD.md` §3.3 items 2–4; `ARCHITECTURE.md` §2.3).
 
 ### 3.4 `SparkDetail` (S1b — `ARCHITECTURE.md` §6)
 `Spark` plus:
@@ -188,7 +188,7 @@ Filters: `domain` (exact tag match), `lineage` ∈ `ROOT|ITERATION|FORK`, `statu
   "provenance": [ { "source_idea_id": "…", "spark_id": "…" } ],
   "referenced_by": { "forks": ["…"], "derived": ["…"] } }
 ```
-- `versions` = history under the same node (`PRD.md` §3.2.1). `lineage` = the single-parent ancestor
+- `versions` = history under the same node (`PRD.md` §3.2 item 1). `lineage` = the single-parent ancestor
   chain. `provenance` = **muted** metadata, never merged into `lineage` (`FLOW.md` §2.3).
 - `referenced_by` supplies the T26 delete warning: `forks` = ideas whose `lineage_parent_id` is this
   idea; `derived` = ideas that reference this idea as a provenance source. Empty arrays when none.
@@ -305,7 +305,7 @@ committed idea is present; no vendor format, no proprietary ids needed to read i
    'OFFERED'` (`ARCHITECTURE.md` §2.3, §3.5).
 5. **Mandatory-field validation on every write** (`PRD.md` §2; `ARCHITECTURE.md` §6).
 6. **No path to scores/similarity** — no response carries a distance, alignment, or "related" readout
-   (`PRD.md` §3.3.4).
+   (`PRD.md` §3.3 item 4).
 
 ---
 
