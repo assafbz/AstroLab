@@ -1,0 +1,101 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--brass-highlight);
+}
+
+:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  /* Never horizontal scroll (DESIGN.md §5). */
+  overflow-x: hidden;
+}
+
+.screen {
+  flex: 1;
+  /* 16px gutters, grown to the device safe area where it is larger (DESIGN.md §5). */
+  padding: var(--gutter);
+  padding-top: max(var(--gutter), env(safe-area-inset-top));
+  padding-right: max(var(--gutter), env(safe-area-inset-right));
+  padding-left: max(var(--gutter), env(safe-area-inset-left));
+}
+
+.tabbar {
+  display: flex;
+  background: var(--nav);
+  border-top: 1px solid var(--hairline);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.tab {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--tap-target);
+  color: var(--muted);
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+/* Active tab = brass dot + brass label (DESIGN.md §4). */
+.tab[aria-current="page"] {
+  color: var(--brass-highlight);
+}
+
+.tab[aria-current="page"]::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--brass);
+}
+
+.placeholder {
+  max-width: 34rem;
+  margin: 0 auto;
+}
+
+.placeholder__id {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.placeholder h1 {
+  margin: 0.25rem 0 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.placeholder p:last-child {
+  margin: 0;
+  color: var(--muted);
+}

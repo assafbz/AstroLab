@@ -1,0 +1,37 @@
+/* Nightfall tokens — lifted from DESIGN.md §2 (colour, geometry) and §5 (layout).
+   Indigo is structure; brass is the one accent. A second accent is banned (DESIGN.md §2, §7). */
+:root {
+  /* Surfaces and structure */
+  --canvas: #080a12;
+  --card: #10131f;
+  --raised: #1e2336;
+  --hairline: #2a3049;
+  --outline: #39405e;
+  --nav: #0a0c15;
+  --indigo: #4a55a0;
+
+  /* Text */
+  --ink: #eaedf7;
+  --muted: #a9b0c8;
+  --dim: #7c87a3;
+  --faint: #5c6684;
+
+  /* The single accent — aged brass */
+  --brass: #d69a4e;
+  --brass-highlight: #f1cb8c;
+  --brass-deep: #7e5218;
+  --on-brass: #0a0c15;
+
+  /* Validation and delete only — never decorative (DESIGN.md §2) */
+  --destructive: #e5484d;
+
+  /* Geometry (DESIGN.md §5) */
+  --radius: 8px;
+  --gutter: 16px;
+  --tap-target: 44px;
+
+  /* Type (DESIGN.md §3). Geist / JetBrains Mono are named but not self-hosted yet
+     (shortcut: add the webfonts when a screen needs them, not for the shell). */
+  --font-body: "Geist", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", monospace;
+}
