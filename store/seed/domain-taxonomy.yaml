@@ -1,0 +1,140 @@
+devtools:
+  name: "Developer tools"
+  tags: [devtools, developer-tools, ci-cd, devops, observability, testing, sdk, apis, codegen, deployment]
+data-infra:
+  name: "Data infrastructure"
+  tags: [database, databases, analytics, data, pipelines, etl, warehouse, event-streaming, data-platform, data-infrastructure, bi-tools]
+ai-ml:
+  name: "AI & ML"
+  tags: [ai, machine-learning, ml, llm, llms, agents, computer-vision, mlops, models, prompts, nlp]
+cybersecurity:
+  name: "Cybersecurity"
+  tags: [security, cybersecurity, appsec, identity, pentest, threat, zero-trust, encryption, fraud-detection]
+fintech:
+  name: "Fintech"
+  tags: [payments, banking, lending, insurance, wealth, neobank, credit, invoicing, payroll, underwriting]
+marketplaces:
+  name: "Marketplaces"
+  tags: [marketplaces, two-sided, matching, listings, classifieds, gig, supply-demand, b2b-marketplace]
+retail-commerce:
+  name: "Retail & commerce"
+  tags: [retail, ecommerce, d2c, shops, subscriptions, cpg, brands, checkout, merchandising]
+sales-support:
+  name: "Sales & support"
+  tags: [sales, customer-support, helpdesk, cx, customer-success, call-centers, quoting, sales-tools]
+marketing-growth:
+  name: "Marketing & growth"
+  tags: [marketing, advertising, seo, growth, crm, brand, content-marketing, email-marketing]
+health:
+  name: "Health"
+  tags: [health, healthcare, clinical, wellness, medtech, mental-health, telehealth, patient, eldercare, diagnostics]
+biotech:
+  name: "Biotech"
+  tags: [biotech, biology, genomics, drug-discovery, lab, bioinformatics, longevity, synbio]
+agriculture-food:
+  name: "Agriculture & food"
+  tags: [agritech, farming, agriculture, food, restaurants, grocery, foodtech, vertical-farming, fishing]
+personal-life:
+  name: "Personal & lifestyle"
+  tags: [parenting, fitness, home, pets, hobbies, cooking, personal-finance, journaling]
+mobility:
+  name: "Mobility & logistics"
+  tags: [mobility, transportation, logistics, fleet, autonomous, delivery, shipping, freight, last-mile]
+manufacturing:
+  name: "Manufacturing"
+  tags: [manufacturing, industrial, factory, robotics, supply-chain, 3d-printing, quality-control, machining]
+hardware-iot:
+  name: "Hardware & IoT"
+  tags: [hardware, iot, embedded, sensors, wearables, devices, firmware, electronics]
+climate-energy:
+  name: "Climate & energy"
+  tags: [climate, energy, renewables, grid, carbon, sustainability, solar, storage, emissions]
+space-defense:
+  name: "Space & defense"
+  tags: [space, aerospace, defense, satellites, drones, launch, spacetech, earth-observation]
+education:
+  name: "Education"
+  tags: [education, edtech, learning, schools, courses, tutoring, upskilling, higher-ed, teacher-tools]
+hr-work:
+  name: "Work & HR"
+  tags: [hr, recruiting, hiring, workplace, future-of-work, teams, employee, talent, onboarding-hr]
+legal-compliance:
+  name: "Legal & compliance"
+  tags: [legal, contracts, gdpr, regulation, policy, compliance, privacy-law, ip]
+public-sector:
+  name: "Public sector & civic"
+  tags: [government, govtech, civic, cities, public-services, nonprofits, democracy, municipal]
+enterprise-ops:
+  name: "Business operations"
+  tags: [operations, productivity, workflow, bpm, erp, admin, collaboration, back-office, procurement, business-operations]
+consumer-social:
+  name: "Consumer & social"
+  tags: [social, community, creator, messaging, dating, forums, social-apps, influencers]
+media-entertainment:
+  name: "Media & entertainment"
+  tags: [media, video, music, gaming, streaming, sports, publishing, podcasts, news]
+travel:
+  name: "Travel & hospitality"
+  tags: [travel, hotels, tourism, booking, flights, hospitality, experiences, travel-tech]
+real-estate:
+  name: "Real estate & construction"
+  tags: [real-estate, proptech, construction, housing, rentals, architecture, property, facilities]
+arts-culture:
+  name: "Arts & culture"
+  tags: [art, design, crafts, museums, heritage, fashion, culture, galleries]
+adjacency:
+  hops_1:
+    - [fintech, marketplaces]
+    - [fintech, real-estate]
+    - [fintech, personal-life]
+    - [fintech, legal-compliance]
+    - [retail-commerce, marketing-growth]
+    - [retail-commerce, marketplaces]
+    - [retail-commerce, consumer-social]
+    - [retail-commerce, agriculture-food]
+    - [retail-commerce, arts-culture]
+    - [retail-commerce, mobility]
+    - [sales-support, marketing-growth]
+    - [sales-support, enterprise-ops]
+    - [devtools, data-infra]
+    - [devtools, ai-ml]
+    - [devtools, cybersecurity]
+    - [data-infra, ai-ml]
+    - [ai-ml, cybersecurity]
+    - [health, biotech]
+    - [health, personal-life]
+    - [education, hr-work]
+    - [education, consumer-social]
+    - [manufacturing, hardware-iot]
+    - [manufacturing, mobility]
+    - [hardware-iot, space-defense]
+    - [climate-energy, mobility]
+    - [climate-energy, agriculture-food]
+    - [climate-energy, real-estate]
+    - [media-entertainment, consumer-social]
+    - [media-entertainment, arts-culture]
+    - [media-entertainment, marketing-growth]
+    - [travel, personal-life]
+    - [legal-compliance, public-sector]
+    - [legal-compliance, enterprise-ops]
+    - [hr-work, enterprise-ops]
+    - [public-sector, health]
+    - [public-sector, education]
+    - [biotech, agriculture-food]
+  hops_2:
+    - [fintech, ai-ml]
+    - [health, ai-ml]
+    - [education, ai-ml]
+    - [hr-work, ai-ml]
+    - [climate-energy, manufacturing]
+    - [climate-energy, public-sector]
+    - [manufacturing, space-defense]
+    - [devtools, hardware-iot]
+    - [data-infra, cybersecurity]
+    - [marketplaces, mobility]
+    - [travel, retail-commerce]
+    - [real-estate, public-sector]
+    - [education, personal-life]
+    - [media-entertainment, ai-ml]
+    - [space-defense, public-sector]
+    - [arts-culture, education]

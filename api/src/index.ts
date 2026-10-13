@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 
-import { migrate, MIGRATIONS, openStore } from "@astrolab/store";
+import { migrate, MIGRATIONS, openStore, seedDomainTaxonomy } from "@astrolab/store";
 
 import { createApp } from "./server.js";
 
@@ -12,6 +12,9 @@ if (dbPath !== ":memory:") mkdirSync(dirname(dbPath), { recursive: true });
 // posture is the store's, not a second boot site's (store/README.md), then brought up to the schema.
 const db = openStore(dbPath);
 migrate(db, MIGRATIONS);
+// O1 (#21): the seed taxonomy is data the loader applies at boot — idempotent and forward-only, so a
+// second boot is a no-op, and `domain_map` is populated before the first gate reads it.
+seedDomainTaxonomy(db);
 
 const port = Number(process.env.API_PORT ?? 8080);
 
