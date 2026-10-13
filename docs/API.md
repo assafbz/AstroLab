@@ -35,7 +35,7 @@
 | Timestamps | ISO-8601 UTC, e.g. `2026-10-13T05:14:05Z` |
 | IDs | opaque strings (uuid). Never parse them client-side |
 | Auth | `Authorization: Bearer <token>` on every `/v1` route, where `<token>` is the **value** of the env var **`API_TOKEN`**; `/healthz` is unauthenticated |
-| Auth order | checked **before** routing, for the whole `/v1` namespace: an unauthenticated request to *any* `/v1` path — a known route, an unknown one, or the bare prefix — is `401 unauthorized`. Routing runs only with a valid token, so an unauthenticated caller cannot tell which routes exist. The check **fails closed**: with `API_TOKEN` unset or empty, every `/v1` request is `401`. `/healthz` is the exception — liveness never depends on the secret, or a health check would fail exactly when it is most needed |
+| Auth order | checked **before** routing, for the whole `/v1` namespace: an unauthenticated request to *any* `/v1` path — a known route, an unknown one, or the bare prefix — is `401 unauthorized`. Routing runs only with a valid token, so an unauthenticated caller cannot tell which routes exist. The check **fails closed**: with `API_TOKEN` unset or empty, every `/v1` request is `401`. `/healthz` is the exception — liveness never depends on the secret, or a health check would fail exactly when it is most needed. The namespace test runs on **both the raw path and its normalised form** — percent-decoded (a malformed escape is caught, not thrown: the path is still classified), then runs of `/` collapsed — and the router matches that same normalised string, so no encoded or duplicated-slash spelling of a `/v1` path reaches a route without a token |
 | Secret source | env vars **`API_TOKEN`** (bearer) and `AI_PROVIDER` / `AI_MODEL` come from the environment only, never the repo (`ARCHITECTURE.md` §9). `API_TOKEN` is the **env var name**, not the token value |
 | Unknown query param | ignored |
 | Unknown enum value | `422 validation_failed` |
@@ -313,7 +313,7 @@ committed idea is present; no vendor format, no proprietary ids needed to read i
 ## 6. Contract decisions to confirm (flagged, not silently invented)
 
 The shapes below are not spelled out in `ARCHITECTURE.md` §6 — the first two are this doc's proposal
-(confirm or correct before the client lane relies on them); the third is settled and recorded here
+(confirm or correct before the client lane relies on them); the rest are settled and recorded here
 rather than left to the implementation:
 
 - **`referenced_by` on Idea detail (§4.5)** — the T26 delete warning ("names the affected forks / the
@@ -325,7 +325,24 @@ rather than left to the implementation:
   **before** routing, for the whole `/v1` namespace (§1), and any path or method that is not a defined
   route is the `not_found` envelope (`404`): there is no third case. Both are observable behaviour
   `ARCHITECTURE.md` §6 does not state, so they are written down here.
+- **The `/v1` namespace closes over path spelling (settled in V1 `#12`)** — the gate and the router
+  share one normaliser (§1): percent-decode (failure-tolerant), then collapse runs of `/`. So
+  `/v1%2Fideas` and `//v1/ideas` are `401` without a token, not `404`. The normaliser does **not**
+  resolve `.`/`..`, so `/x/../v1/ideas` is gated by neither form — safe only because the router
+  matches the same normalised string and no such spelling reaches a handler. Resolving dot segments
+  would go in the one normaliser, or the closure reopens.
+- **A pre-handler `400` is a limit, not a shape (recorded in V1 `#12`)** — a request line `llhttp`
+  cannot parse (`FOO /v1/ideas`) is rejected by Node with a bare `400` *before* the handler, so it
+  cannot carry the envelope. §2's shape holds for every request our code answers; making it universal
+  needs a `server.on("clientError")` handler and a sixth status code §2 does not have. Recorded
+  rather than papered over.
+- **`POST /v1/ideas`, the seeded pair and the idempotent repeat (settled in V1 `#12`)** — §4.2 names
+  a seeded save by "both present", so `origin_spark_id` and `decision_id` are **both-or-neither**:
+  exactly one present is `422` (ignoring the half-present one would drop provenance silently). An
+  unknown `origin_spark_id` is `404 not_found` (§2's "unknown … spark"). A repeat on `decision_id`
+  writes nothing but returns the first `Idea` with the same `201` — §4.2's only named success.
 
 ---
 
-*Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`.*
+*Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`;
+carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`.*
