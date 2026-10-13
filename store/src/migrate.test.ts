@@ -17,7 +17,8 @@ afterEach(() => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
-// F2 ships the runner, not the schema: `0001_init` is F3's (docs/SCHEMA.md). These fixtures stand in.
+// F2 ships the runner, not the schema: these fixtures exercise it with a two-step change. F3's real
+// `0001_init` is in `../src/migrations.js`.
 const FIXTURES: Migration[] = [
   { version: 1, name: "0001_init", sql: "CREATE TABLE idea (id TEXT PRIMARY KEY)" },
   {

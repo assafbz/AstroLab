@@ -32,6 +32,10 @@ Two details of that setup are load-bearing, because the API and the worker boot 
   loser finds the file already in WAL, where the pragma is a no-op.
 - Consequently a bare `new DatabaseSync(path)` at a second boot site would reintroduce that race: open
   the file through `openStore`.
+- That retry bounds the boot race by the **retry window** (~300 ms: 5 attempts, 20 ms doubling to a
+  250 ms ceiling), **not** by `busy_timeout` — a loser whose conversion is blocked past the budget
+  still fails to boot. A real fresh-file conversion is sub-millisecond, so the budget is generous;
+  it is a deliberate limit, not a wall.
 
 ## Writing
 
@@ -54,14 +58,15 @@ Forward-only and versioned: there is no `down`. The applied version is SQLite's 
 and each pending migration runs in its own transaction, so a failure leaves the file exactly where it was.
 
 ```ts
-import { migrate, type Migration } from "@astrolab/store";
+import { migrate, MIGRATIONS } from "@astrolab/store";
 
-const MIGRATIONS: Migration[] = [{ version: 1, name: "0001_init", sql: "…" }];
 migrate(db, MIGRATIONS);
 ```
 
-`0001_init` — the twelve tables of `ARCHITECTURE.md` §2 — is F3's (#10); the DDL of record is
-`docs/SCHEMA.md`. Running against a store *newer* than the build throws rather than guessing.
+`0001_init` — the twelve tables of `ARCHITECTURE.md` §2 — ships in `src/migrations.ts` (`MIGRATIONS`,
+`SCHEMA_VERSION`); the DDL of record is `docs/SCHEMA.md`. It deliberately does not set
+`PRAGMA foreign_keys`: that is per-connection and a no-op inside a transaction, so `openStore` owns it.
+Running against a store *newer* than the build throws rather than guessing.
 
 `migrate` is safe to call from both processes at boot: the applied version is re-read **inside** the
 transaction, so a process that loses the write-lock race skips the migration instead of re-applying its
