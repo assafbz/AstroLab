@@ -20,6 +20,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
+    "lint:citations": "node scripts/lint-citations.mjs",
     "format": "prettier --check .",
     "format:write": "prettier --write ."
   },
