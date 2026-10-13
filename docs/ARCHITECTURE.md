@@ -550,4 +550,4 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
   so it ships in the `0001_init` migration with **F3**. §2 now reads as the complete table set. No other
   schema, API, or state-machine change.
 
-*Draft — Ari (AstroLab agent), 2026-10-12. Review: adversarial passes by Max. Branch `docs/architecture`.*
+*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.2, 2026-10-13. Review: adversarial passes by Max. Branch `docs/architecture`.*
