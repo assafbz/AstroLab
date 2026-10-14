@@ -248,6 +248,24 @@ Request: the mandatory fields (`hypothesis`, `problem`, `monetization`, `domain_
 `200` → `Idea` with `current_version` bumped. Writes a new `idea_version`; creates **no** lineage edge
 (`FLOW.md` §2.3 / L1; T23). Validation as §4.2.
 
+Readings this doc had not pinned (settled in V3 `#14`):
+
+- **`200`, not `201`** — an iterate updates the node it names: the id is the client's, there is no
+  `Location`, and nothing new becomes addressable. Capture and fork create and answer `201`; this is
+  the one mutating route whose success is not a creation.
+- **The version row and the node bump commit in one `vaultMutation`.** Iterate is candidate-affecting
+  (`ARCHITECTURE.md` §4), so the revision stamps and a run enqueues in the same transaction — the same
+  trigger §4.8 records, reached through the same `vaultMutation(db, body)` primitive (`SCHEMA.md` §1c).
+- **An unknown id is `not_found` and writes nothing** — the read throws inside the transaction before
+  any row is written, so no version is appended and no revision stamps (V5's rule, §4.8).
+- **`status` is not touched.** A `NEEDS_COMPLETION` idea stays `NEEDS_COMPLETION`; completing it is the
+  K8 `#42` path. Iterate refines content, it does not clear the flag.
+- **`lineage_kind` and `lineage_parent_id` are not touched.** Iterating a `FORK` leaves it a `FORK` on
+  the same parent — iteration is a version, not a branch (`FLOW.md` §2.3 / L1).
+- **Only `POST` on `{id}/iterate` is a route.** `GET`/`DELETE` on `…/iterate`, a `POST` on the detail
+  path, and any deeper path (`/v1/ideas/a/b`) are the `not_found` envelope (§2), by the rule the read
+  path already records.
+
 ### 4.7 `POST /v1/ideas/{id}/fork` — S5 Fork
 Request: `{ "mutation_delta": "…", "domain_tags": ["…"] }`.
 Guard: `mutation_delta` non-empty **and** the fork's domain set differs from the parent's
@@ -446,6 +464,12 @@ rather than left to the implementation:
   narrowed the `CHECK` to `ROOT | FORK` and §3.1/§4.4 drop the value, so **`?lineage=ITERATION` is the
   `422 validation_failed` envelope** — an out-of-vocabulary filter value (§1), not a filter that
   matches nothing.
+- **The iterate ordering (settled in V3 `#14`)** — **body validation precedes the id lookup**, so a
+  malformed body on an unknown id is the `422 validation_failed` envelope, not `404 not_found`. The
+  body contract is checked before any row is consulted — the same ordering as capture (§4.2) — and
+  the alternative (id first) would make one malformed request *sometimes* `422` and *sometimes* `404`,
+  decided by whether the id happened to exist. §4.6 records the endpoint's other readings. Pinned in
+  `api/src/server.test.ts` — the malformed/unknown pair, so the ordering cannot silently flip.
 
 ---
 

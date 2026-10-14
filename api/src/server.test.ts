@@ -546,6 +546,26 @@ test("iterate of an unknown id is the not_found envelope, and writes nothing", a
   expect(db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get()).toEqual(before);
 });
 
+test("iterate checks the body before the id — malformed on an unknown id is 422, not 404 (§6)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  // The id does not exist; only the order of the two checks decides this answer. A malformed body
+  // is the failure, whatever the id, so the request never reaches the lookup.
+  expectEnvelope(
+    await call("POST", "/v1/ideas/9f1c-missing/iterate", { ...auth, json: {} }),
+    422,
+    "validation_failed",
+  );
+  // The same unknown id with a valid body is the not_found envelope — the id is consulted second,
+  // not ignored. Both attempts leave the vault untouched.
+  expectEnvelope(
+    await call("POST", "/v1/ideas/9f1c-missing/iterate", { ...auth, json: EDITED }),
+    404,
+    "not_found",
+  );
+  expect(db.prepare("SELECT count(*) AS n FROM idea").get()).toEqual({ n: 0 });
+  expect(db.prepare("SELECT count(*) AS n FROM spark_run").get()).toEqual({ n: 0 });
+});
+
 test("iterate validation failures are the 422 envelope, one per branch", async () => {
   const auth = { authorization: `Bearer ${TOKEN}` };
   const id = await capture(auth);
