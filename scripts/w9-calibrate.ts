@@ -228,17 +228,38 @@ async function main(): Promise<void> {
     if (cached < ideas.length) {
       throw new Error(`p2: ${cached}/${ideas.length} descriptors cached — run \`p1\` first.`);
     }
-    const run = runFor(db, createAdapterFromEnv());
-    const union = await run.union(); // deterministic from the cached descriptors; no calls
+    // The union is deterministic from the descriptors and must be provably **0 calls**, so it runs on
+    // the throwing stub — never the live adapter. A row whose `source_hash` no longer matches (vault
+    // text, `EXTRACTOR_VERSION`, or `AI_MODEL` moved since P1) then fails closed *here*, before either
+    // key is checked, instead of firing a live extraction per stale idea: `cachedCount` counts rows, not
+    // valid rows, so it cannot stand in for this (Max, #102).
+    const dry = runFor(db, noProvider);
+    const union = await dry.union().catch((error: unknown): never => {
+      throw new Error(
+        "p2: refusing — the descriptor cache is not warm (a stale row would extract on the live " +
+          `adapter). Re-run \`p1\`. [${error instanceof Error ? error.message : String(error)}]`,
+      );
+    });
+
     requireConfirm("p2", readConfirm(argv), union.length);
     requireLive("p2");
+
+    // Only the ratified spend gets the adapter, and only after both keys passed. The union pass above
+    // proved every descriptor is cached, so this pass fires adjudication calls — and no extraction.
+    const run = runFor(db, createAdapterFromEnv());
+    const adjudication = await run.adjudicate();
+    if (run.extractCalls !== 0) {
+      throw new Error(`p2: ${run.extractCalls} extraction calls during adjudication — expected 0`);
+    }
     if (run.adjudicateCalls > union.length) {
       throw new Error(`p2: cap exceeded (${run.adjudicateCalls} > ${union.length})`);
     }
-    const adjudication = await run.adjudicate();
     const artifact = {
       union: union.length,
+      // The dry pass's extraction count — the P2 posting cites this, and it must read 0 (Max/David, #102).
+      unionExtractCalls: dry.extractCalls,
       adjudicateCalls: run.adjudicateCalls,
+      extractCalls: run.extractCalls,
       confirmed: adjudication.confirmed.map((spark) => spark.key),
       rejected: adjudication.rejected.map((pair) => pair.key),
     };
