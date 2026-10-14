@@ -39,6 +39,15 @@ export function tagNormalisationUser(tag: string, clusters: readonly ClusterOpti
   ].join("\n");
 }
 
+/**
+ * The extraction **user** prompt: the idea text, labelled.
+ *
+ * **Model input, not contract identity.** This template is deliberately *not* part of
+ * `EXTRACTOR_VERSION`'s derived basis — that basis is `EXTRACTION_SYSTEM` + `DESCRIPTOR_SCHEMA`
+ * (`worker/src/engine/mechanism.ts`). It varies only with the idea text, which `source_hash` already
+ * covers, so reword it only as a deliberate code change: editing it does **not** invalidate a cached
+ * descriptor, and nothing else in the engine would notice. This note is the record (#28-obs2 D7).
+ */
 export function extractionUser(idea: IdeaText): string {
   return [
     `Hypothesis: ${idea.hypothesis}`,
