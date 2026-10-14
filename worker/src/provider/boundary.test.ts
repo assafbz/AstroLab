@@ -296,9 +296,10 @@ describe("Axis 2 stays in the worker; thresholds stay out of schema and API (#30
     expect(hits(/gatedPairs/)).toContain("worker/src/engine/gate.ts");
     expect(hits(/GateConfig/)).toContain("store/src/config.ts");
     for (const pkg of SURFACES) {
-      expect(FILES.some((file) => file.rel.startsWith(`${pkg}/`)), `no files under ${pkg}/`).toBe(
-        true,
-      );
+      expect(
+        FILES.some((file) => file.rel.startsWith(`${pkg}/`)),
+        `no files under ${pkg}/`,
+      ).toBe(true);
     }
   });
 

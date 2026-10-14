@@ -86,7 +86,8 @@ function candidates(db: DatabaseSync, cut: VaultCut): Array<{ id: string; tags: 
   return rows
     .map((row) => ({ id: row.id, tags: JSON.parse(row.domain_tags) as unknown }))
     .filter(
-      (row): row is { id: string; tags: string[] } => Array.isArray(row.tags) && row.tags.length > 0,
+      (row): row is { id: string; tags: string[] } =>
+        Array.isArray(row.tags) && row.tags.length > 0,
     );
 }
 
@@ -101,7 +102,8 @@ export function createGate(
       const limits = config ?? readGateConfig(db);
 
       // Stage 1, materialised once per candidate — O(N), and not part of the scan (§3.1).
-      const materialised: Array<{ id: string; descriptor: MechanismDescriptor; tags: string[] }> = [];
+      const materialised: Array<{ id: string; descriptor: MechanismDescriptor; tags: string[] }> =
+        [];
       for (const candidate of candidates(db, cut)) {
         const descriptor = await mechanisms.descriptorFor(candidate.id);
         if (descriptor === null) continue; // deleted between the cut and now
@@ -111,8 +113,8 @@ export function createGate(
       const pairs: GatedPair[] = [];
       for (let i = 0; i < materialised.length; i++) {
         for (let j = i + 1; j < materialised.length; j++) {
-          const a = materialised[i];
-          const b = materialised[j];
+          const a = materialised[i]!;
+          const b = materialised[j]!;
           const gap = await distance.between(a.tags, b.tags);
           const alignment = descriptorSimilarity(a.descriptor, b.descriptor);
           // D2: `null` is farthest, never 0; both axes must clear.

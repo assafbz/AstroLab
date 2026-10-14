@@ -56,7 +56,9 @@ describe("descriptorSimilarity — W5 D1", () => {
   });
 
   test("is case-, punctuation- and whitespace-insensitive", () => {
-    expect(descriptorSimilarity(descriptor({ verb: "Route" }), descriptor({ verb: "route" }))).toBe(1);
+    expect(descriptorSimilarity(descriptor({ verb: "Route" }), descriptor({ verb: "route" }))).toBe(
+      1,
+    );
     expect(
       descriptorSimilarity(
         descriptor({ constraint: "peak-load  spikes" }),
@@ -85,9 +87,9 @@ describe("descriptorSimilarity — W5 D1", () => {
       transferable_structure: "",
     };
     expect(descriptorSimilarity(blank, blank)).toBe(0);
-    expect(descriptorSimilarity(descriptor({ constraint: "" }), descriptor({ constraint: "" }))).toBe(
-      0.75,
-    );
+    expect(
+      descriptorSimilarity(descriptor({ constraint: "" }), descriptor({ constraint: "" })),
+    ).toBe(0.75);
   });
 
   test("one-empty field contributes 0", () => {

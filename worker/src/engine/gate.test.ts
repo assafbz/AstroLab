@@ -199,13 +199,17 @@ describe("createGate — cost posture (D4): the pairwise scan makes no AI calls"
     seedDomainTaxonomy(db);
     let run = 0;
 
-    async function aiCallsFor(n: number): Promise<{ extract: number; normalise: number; between: number }> {
+    async function aiCallsFor(
+      n: number,
+    ): Promise<{ extract: number; normalise: number; between: number }> {
       run += 1;
       const ids = Array.from({ length: n }, (_, i) => `r${run}-i${i}`);
       // Unmapped tags, so each is normalised exactly once (if the gate normalised per pair, this
       // count would track pairs, not tags).
       for (const id of ids) seedIdea(db, id, [`unmapped-${id}`]);
-      const { cache, calls } = countingCache(Object.fromEntries(ids.map((id) => [id, descriptor()])));
+      const { cache, calls } = countingCache(
+        Object.fromEntries(ids.map((id) => [id, descriptor()])),
+      );
       const normalised: string[] = [];
       const normalizer = {
         async normalizeTag(tag: string, clusters: readonly ClusterOption[]): Promise<string> {
