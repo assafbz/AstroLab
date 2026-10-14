@@ -22,6 +22,10 @@ export { isoTimestamp } from "./iso.js";
 // The `idea_mechanism` cache writes directly, never through `vaultMutation` — it is derived state,
 // not a vault table. The reason is in the module: `store/src/mechanism.ts`.
 export { readDescriptors, upsertDescriptor, type IdeaMechanism } from "./mechanism.js";
+// `suppressed_pair` is the same kind of table — not one of §4's four trigger tables — and it has two
+// writers in two packages (the engine's noise, the API's dismissal), so its SQL lives here too. The
+// reasons, including why `CLICHE` has no writer, are in the module: `store/src/suppression.ts`.
+export { clearSuppression, recordDismissal, recordNoise } from "./suppression.js";
 export { migrate, schemaVersion, type Migration } from "./migrate.js";
 export { MIGRATIONS, SCHEMA_VERSION } from "./migrations.js";
 export { isBusyError, withRetry, type RetryOptions } from "./retry.js";
