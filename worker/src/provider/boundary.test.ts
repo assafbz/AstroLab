@@ -368,3 +368,72 @@ describe("Stage 2's adjudication stays in the worker (PRD §3.3 item 4; API §0)
     expect(offenders).toEqual([]);
   });
 });
+
+describe("Done 5 — no synthetic seeds, no note import (ARCH §7; PRD §3.4 item 3) — W7", () => {
+  // The negative requirement: **neither the engine nor the API generates ideas on the user's behalf**,
+  // and **nothing imports a user's notes**. Nothing in the product *does* the forbidden thing, so there
+  // is no positive surface to test — the risk is that a check nobody wrote regresses silently the first
+  // time someone reaches for the obvious shortcut. Three arms, each with a leg proving it is not
+  // vacuous (a typo'd pattern or a narrowed walk passes forever — `mem/astrolab-guard-scope`).
+  //
+  // The API is the user-intent path: `api/src/capture.ts` mints a root from a form the user filled, and
+  // `api/src/delete.ts` removes one. Both are *the user's* action, both are allowed, and their being
+  // seen is the positive control that the matcher bites. The engine and the client mint nothing.
+
+  test("A: no source outside api/ writes an idea table", () => {
+    // `\b` after the table name so `idea_mechanism` (a cache row, written by the worker) is not pulled
+    // in: `\b` fails between `idea` and `_`.
+    const IDEA_WRITE = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:idea|idea_version)\b/i;
+    const writers = FILES.filter((file) => IDEA_WRITE.test(file.text)).map((file) => file.rel);
+
+    // Positive control: the user-intent path is the writer, and the walk reaches it.
+    expect(writers).toContain("api/src/capture.ts");
+
+    const offenders = FILES.filter(
+      (file) => !file.rel.startsWith("api/") && IDEA_WRITE.test(file.text),
+    ).map((file) => file.rel);
+    expect(offenders).toEqual([]);
+  });
+
+  test("B: the only file-reading call in a workspace src/ is the shipped taxonomy", () => {
+    // "Imports existing notes" (`PRD.md` §3.4 item 3) is a file *read*. A live product can read exactly
+    // one file — `store/src/domain-seed.ts`'s shipped taxonomy (`ARCHITECTURE.md` §3.2). The build
+    // scripts under `scripts/` are tooling, not a package's `src/`; `worker/src/boot.ts` creates a
+    // directory (a write), not a read.
+    // The **call**, not the name: importing `readFileSync` reads nothing, and a comment that mentions
+    // it is not a read — so the paren is what makes this the claim it says it is.
+    const READ = /(?:readFileSync|readFile|createReadStream|readdirSync)\s*\(/;
+    const readers = FILES.filter((file) => READ.test(file.text)).map((file) => file.rel);
+
+    // Exact, not "contains": a second reader is the bug, whatever it reads.
+    expect(readers).toEqual(["store/src/domain-seed.ts"]);
+    // Non-vacuity: the walk excludes test files, and every other reader in the repo is a test — so if
+    // the walk ever started including one, this list would grow and the test would say so.
+    expect(FILES.some((file) => file.rel.endsWith(".test.ts"))).toBe(false);
+  });
+
+  test("C: no exported provider operation returns an idea-shaped payload", () => {
+    // The engine's only route to *mint* an idea would be a provider op whose output is one. The
+    // provider's *inputs* carry idea text on purpose (`IdeaText` is the operation payload, §5); the
+    // claim is about what an operation *returns*. `MechanismDescriptor` (extract) and `SparkDraft`
+    // (adjudicate) are the two returns; neither may carry an idea's identity fields.
+    const providerTypes = FILES.find((file) => file.rel === "worker/src/provider/types.ts");
+    expect(providerTypes).toBeDefined();
+    const body = (name: string): string => {
+      const match = providerTypes?.text.match(
+        new RegExp(`export interface ${name} \\{[\\s\\S]*?\\n\\}`),
+      );
+      return match?.[0] ?? "";
+    };
+    const IDEA_FIELDS = /\b(?:hypothesis|problem|monetization|status|lineage_kind|domain_tags)\b/;
+
+    for (const returned of ["MechanismDescriptor", "SparkDraft"]) {
+      const text = body(returned);
+      expect(text, `${returned} not found in provider/types.ts`).not.toBe("");
+      expect(IDEA_FIELDS.test(text), returned).toBe(false);
+    }
+    // Positive control: the matcher and the field set are real — the input type does carry them, so a
+    // renamed field or a broken body-slicer cannot make the assertions above pass by matching nothing.
+    expect(IDEA_FIELDS.test(body("IdeaText"))).toBe(true);
+  });
+});
