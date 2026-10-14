@@ -343,6 +343,7 @@ disables the provider and runs the vault suite (ADR-0004).
 ```
 interface MechanismExtractor { extract(idea): MechanismDescriptor }   // §3.3 step 1
 interface SparkAdjudicator   { adjudicate(ideaA, ideaB, mechanisms): SparkDraft | null }  // §3.3 step 3
+interface TagNormalizer      { normalizeTag(tag, clusters): string }  // §3.2 step 2
 ```
 
 **Model choice.** The adapter is configured by env (`AI_PROVIDER`, `AI_MODEL`); MVP pins one hosted
@@ -350,12 +351,13 @@ frontier-class chat model behind the adapter, chosen for structured-output relia
 exact model is a **config value**, re-pointable without code change — the ADR records the *class* and the
 contract, not a vendor lock (ADR-0003).
 
-**Output contract.** Both calls request **structured output** (JSON) validated against a schema before storage;
+**Output contract.** Every call requests **structured output** (JSON) validated against a schema before storage;
 invalid output = a failed call, retried per §4, never stored.
 
 **Privacy (NFR-PRIV1).**
-- **Only the operation's payload is sent:** the idea text needed for extraction, or the two ideas' text +
-  descriptors for adjudication. No account identity, no vault listing, no unrelated ideas.
+- **Only the operation's payload is sent:** the idea text needed for extraction; the two ideas' text +
+  descriptors for adjudication; the one free-text tag and the offered `id — name` cluster list for tag
+  normalisation. No account identity, no vault listing, no unrelated ideas, no other tags.
 - **No training, no retention — enforced by routing, not assumed.** Every worker call sets
   `provider: { zdr: true }` (equivalently `data_collection: "deny"`), so OpenRouter routes only to endpoints it
   classifies as Zero Data Retention — which "are also unable to train on your data." OpenRouter itself stores

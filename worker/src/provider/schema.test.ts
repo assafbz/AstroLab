@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import {
   ADJUDICATION_SCHEMA,
   DESCRIPTOR_SCHEMA,
+  TAG_SCHEMA,
   parseAdjudication,
   parseDescriptor,
 } from "./schema.js";
@@ -97,13 +98,14 @@ describe("parseAdjudication — ARCHITECTURE.md §3.3 step 3", () => {
 });
 
 describe("the schemas the model is asked to fill", () => {
-  test("both are strict objects requiring exactly their fields", () => {
+  test("all three are strict objects requiring exactly their fields", () => {
     for (const [schema, fields] of [
       [DESCRIPTOR_SCHEMA, ["verb", "object_class", "constraint", "transferable_structure"]],
       [
         ADJUDICATION_SCHEMA,
         ["shared_mechanism", "direction", "claim", "what_it_takes", "first_step"],
       ],
+      [TAG_SCHEMA, ["cluster_id"]],
     ] as const) {
       expect(schema.type).toBe("object");
       expect(schema.additionalProperties).toBe(false);

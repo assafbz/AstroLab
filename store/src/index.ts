@@ -1,3 +1,10 @@
+export {
+  readClusterAdjacency,
+  readClusters,
+  readDomainMap,
+  upsertDomainTag,
+  type ClusterOption,
+} from "./domain-map.js";
 export { parseTaxonomy, seedDomainTaxonomy, TAXONOMY_PATH, type Taxonomy } from "./domain-seed.js";
 export { isoTimestamp } from "./iso.js";
 // The `idea_mechanism` cache writes directly, never through `vaultMutation` — it is derived state,

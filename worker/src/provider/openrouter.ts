@@ -1,19 +1,24 @@
 import {
   ADJUDICATION_SCHEMA,
   DESCRIPTOR_SCHEMA,
+  TAG_SCHEMA,
   parseAdjudication,
   parseDescriptor,
+  parseTagCluster,
   type JsonSchema,
 } from "./schema.js";
 import {
   ADJUDICATION_SYSTEM,
   EXTRACTION_SYSTEM,
+  TAG_NORMALISATION_SYSTEM,
   adjudicationUser,
   extractionUser,
+  tagNormalisationUser,
 } from "./prompts.js";
 import {
   InvalidOutputError,
   ProviderError,
+  type ClusterOption,
   type IdeaText,
   type MechanismPair,
   type Provider,
@@ -188,6 +193,17 @@ export function createOpenRouterAdapter({ model, transport }: OpenRouterAdapterO
         system: ADJUDICATION_SYSTEM,
         user: adjudicationUser(ideaA, ideaB, mechanisms),
         parse: parseAdjudication,
+      });
+    },
+
+    normalizeTag(tag: string, clusters: readonly ClusterOption[]) {
+      return call({
+        schemaName: "domain_cluster",
+        schema: TAG_SCHEMA,
+        system: TAG_NORMALISATION_SYSTEM,
+        user: tagNormalisationUser(tag, clusters),
+        // Membership is closed over the offered set, so a hallucinated id fails the call here.
+        parse: (raw) => parseTagCluster(raw, new Set(clusters.map((cluster) => cluster.id))),
       });
     },
   };

@@ -1,4 +1,4 @@
-import type { IdeaText, MechanismPair } from "./types.js";
+import type { ClusterOption, IdeaText, MechanismPair } from "./types.js";
 
 /**
  * The two prompts, kept beside the adapter that sends them and out of the engine's logic: what is asked
@@ -23,6 +23,21 @@ export const ADJUDICATION_SYSTEM = [
   "claim (one or two lines on why it matters), what_it_takes, first_step.",
   "If they do not, set every field to null.",
 ].join(" ");
+
+export const TAG_NORMALISATION_SYSTEM = [
+  "You classify one free-text domain tag into the nearest cluster.",
+  "Return JSON matching the given schema exactly, with no commentary.",
+  "Set cluster_id to exactly one id from the list provided by the user.",
+].join(" ");
+
+/** The tag, then the offered clusters as `id — name` lines. The id, never the display name, is asked for. */
+export function tagNormalisationUser(tag: string, clusters: readonly ClusterOption[]): string {
+  return [
+    `Tag: ${tag}`,
+    "Clusters:",
+    ...clusters.map((cluster) => `${cluster.id} — ${cluster.name}`),
+  ].join("\n");
+}
 
 export function extractionUser(idea: IdeaText): string {
   return [

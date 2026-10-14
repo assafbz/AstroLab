@@ -6,14 +6,18 @@
 export {
   ADJUDICATION_SYSTEM,
   EXTRACTION_SYSTEM,
+  TAG_NORMALISATION_SYSTEM,
   adjudicationUser,
   extractionUser,
+  tagNormalisationUser,
 } from "./prompts.js";
 export {
   ADJUDICATION_SCHEMA,
   DESCRIPTOR_SCHEMA,
+  TAG_SCHEMA,
   parseAdjudication,
   parseDescriptor,
+  parseTagCluster,
   type JsonSchema,
 } from "./schema.js";
 export {
@@ -34,6 +38,7 @@ export {
 export {
   InvalidOutputError,
   ProviderError,
+  type ClusterOption,
   type IdeaText,
   type MechanismDescriptor,
   type MechanismExtractor,
@@ -41,4 +46,5 @@ export {
   type Provider,
   type SparkAdjudicator,
   type SparkDraft,
+  type TagNormalizer,
 } from "./types.js";

@@ -454,3 +454,28 @@ test("the delete retracts a live offer naming the idea, and keeps a resolved one
   const left = db.prepare("SELECT id FROM spark ORDER BY id").all() as Array<{ id: string }>;
   expect(left).toEqual([{ id: "resolved" }]);
 });
+
+test("capture stores domain tags raw — no normalisation, no `domain_map` write (ARCH §3.2)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  seedDomainTaxonomy(db);
+
+  // An unmapped tag reaches the vault verbatim and stays provisional: the write path resolves no
+  // cluster and reaches no model (W4). Only capture's own trim applies — never a lower-case or a
+  // cluster lookup; the boundary guard is the structural half of this.
+  const created = await call("POST", "/v1/ideas", {
+    ...auth,
+    json: { ...VALID, domain_tags: ["defi-xyz", "  Raw Case "] },
+  });
+  expect(created.status).toBe(201);
+  expect((created.body as { domain_tags: string[] }).domain_tags).toEqual(["defi-xyz", "Raw Case"]);
+
+  const mapped = db
+    .prepare("SELECT count(*) AS n FROM domain_map WHERE tag IN ('defi-xyz', 'Raw Case')")
+    .get() as { n: number };
+  expect(mapped.n).toBe(0);
+  // And the summary still reads both as provisional — the vault path never collapsed them.
+  expect((await call("GET", "/v1/vault/summary", auth)).body).toMatchObject({
+    resolved_domains: 0,
+    provisional_domains: 2,
+  });
+});
