@@ -419,7 +419,10 @@ Readings this doc had not pinned (settled in K1 `#35`):
   always passes a distinct handle.)
 - **Connect primes, then states.** A subscriber's first frame is one baseline `state`, and the diff
   caches are primed from the current deck — so connecting does not replay the whole deck as `offer`
-  frames. A client subscribes, then reads §4.9 for the deck; the stream carries the changes after.
+  frames. The change signal is sampled **before** that snapshot, so a commit landing while the
+  connection is being set up is never lost: it is either in the baseline or on the next tick's diff,
+  never neither. A client subscribes, then reads §4.9 for the deck; the stream carries the changes
+  after.
 - **Per-subscriber, live-only.** The sampler exists only while a client is connected: no subscriber
   means no sampling, no buffering and no replay. A `state` change with no client connected is simply
   not observed; a reconnecting client gets the baseline `state` and re-reads §4.9. Heartbeat comment

@@ -1,5 +1,5 @@
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import type { Server } from "node:http";
+import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
@@ -9,6 +9,7 @@ import { MIGRATIONS, migrate, openStore, seedDomainTaxonomy } from "@astrolab/st
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { createApp } from "./server.js";
+import { handleSparkEvents } from "./spark-events.js";
 
 /**
  * K1 (#35) — `GET /v1/sparks/events`, the run-progress stream (`docs/API.md` §4.11).
@@ -254,9 +255,81 @@ describe("GET /v1/sparks/events — the run-progress stream (§4.11)", () => {
     await waitFor(() => stream.frames.some((frame) => frame.event === "offer"));
 
     workerDb.prepare("UPDATE spark SET status = 'RESOLVED-DISMISSED' WHERE id = 'sp-1'").run();
-    await waitFor(() => stream.frames.some((frame) => stateOf(frame) === "E3"));
+    // The **second** `E3`: `seedSpread` already leaves the vault at E3, so the baseline frame satisfies
+    // a bare "some frame is E3" and the assertion would run before the resolving tick. Waiting for the
+    // second one is what makes the barrier barrier — with it, re-emitting a departed id as an `offer`
+    // reddens the count below (mutation: emit every id that left the deck).
+    await waitFor(() => stream.frames.filter((frame) => stateOf(frame) === "E3").length >= 2);
     // The disappearance is a state change (E2 → E3), never a re-offer.
     expect(stream.frames.filter((frame) => frame.event === "offer")).toHaveLength(1);
+  });
+
+  test("a commit landing as the connect-time signal is sampled is not lost — signal before snapshot (§4.11)", async () => {
+    seedSpread(db);
+
+    // The race: the handler samples `PRAGMA data_version` and snapshots the deck in sequence, and a
+    // second process (the worker) commits *between* them — an interleaving the handler cannot prevent,
+    // since the sequence is synchronous but the writer is another OS process. Sampling the signal first
+    // closes it. A stub `watchDb` pins that interleaving deterministically: it commits on the worker's
+    // connection exactly as the connect-time sample is taken.
+    let committed = false;
+    const racyWatch = {
+      prepare: (sql: string) => {
+        const statement = watchDb.prepare(sql);
+        return {
+          get: () => {
+            if (!committed) {
+              committed = true;
+              insertSpark(workerDb, "sp-1", "a", "b");
+            }
+            return statement.get();
+          },
+        };
+      },
+    } as unknown as DatabaseSync;
+
+    // A minimal response double — this test drives the handler directly, so the fake records frames and
+    // hands back the `close` listener the handler registers, letting the test disconnect it.
+    const frames: string[] = [];
+    const closers: Array<() => void> = [];
+    const res = {
+      writeHead: () => undefined,
+      flushHeaders: () => undefined,
+      setTimeout: () => undefined,
+      write: (chunk: string) => {
+        frames.push(chunk);
+        return true;
+      },
+      end: () => undefined,
+      on: (event: string, listener: () => void) => {
+        if (event === "close") closers.push(listener);
+      },
+    };
+    const req = { socket: { setTimeout: () => undefined } };
+
+    handleSparkEvents(
+      req as unknown as IncomingMessage,
+      res as unknown as ServerResponse,
+      db,
+      racyWatch,
+      {
+        intervalMs: INTERVAL_MS,
+        heartbeatMs: HEARTBEAT_MS,
+      },
+    );
+    try {
+      await settle();
+      const states = frames
+        .map((raw) => parseFrame(raw))
+        .filter((frame): frame is Frame => frame !== null && frame.event === "state")
+        .map((frame) => stateOf(frame));
+      // The commit is in the **baseline**: with the signal sampled before the snapshot, the offer is
+      // seen and the state is E2 — never the stale E3. Sampling after the snapshot loses it: the
+      // baseline reads E3 and the already-moved signal keeps every later tick silent.
+      expect(states[0]).toBe("E2");
+    } finally {
+      for (const listener of closers) listener();
+    }
   });
 
   test("an idle stream carries a heartbeat comment so an intermediary does not reap it (§4.11)", async () => {

@@ -87,15 +87,23 @@ export function handleSparkEvents(
   req.socket.setTimeout(0);
   res.setTimeout(0);
 
+  // Sample the change signal **before** taking the baseline snapshot below. Taken the other way round,
+  // a commit landing between the two — a second process (the worker) can interleave here even though
+  // this connect sequence is synchronous — would be folded into `seen` *and* absent from the baseline,
+  // and the unchanged signal would keep every later tick silent: the change is lost. Signal first: any
+  // commit after this line moves the signal on a later tick, and one landing during the snapshot is
+  // re-read and diffed idempotently.
+  //
+  // One prepared `PRAGMA data_version`, reused: it reports fresh on every read (no cached row).
+  const dataVersion = watchDb.prepare("PRAGMA data_version");
+  let seen = currentVersion(dataVersion);
+
   // Prime the diff caches from the current state: connecting sends one baseline `state`, never a
   // replay of the whole deck as `offer` frames. The client reads §4.9 for the deck.
   let lastState = engineState(db);
   let lastOfferIds = new Set(liveOffers(db).map((spark) => spark.id));
   send(res, "state", lastState);
 
-  // One prepared `PRAGMA data_version`, reused: it reports fresh on every read (no cached row).
-  const dataVersion = watchDb.prepare("PRAGMA data_version");
-  let seen = currentVersion(dataVersion);
   let closed = false;
 
   const tick = (): void => {
