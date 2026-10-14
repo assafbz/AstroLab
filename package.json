@@ -18,7 +18,7 @@
     "dev:worker": "npm run dev --workspace worker",
     "dev:client": "npm run dev --workspace client",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
     "lint:citations": "node scripts/lint-citations.mjs",
