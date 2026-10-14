@@ -51,11 +51,10 @@ export function cutVault(db: DatabaseSync, revision: number): VaultCut {
 
 /**
  * W1's run body: exercise the lifecycle, reach no provider. It produces no candidates — the axes and
- * adjudication are W4–W7. W2 replaces this as the worker's default body.
+ * adjudication are W4–W7 — and takes no cut, because a stub that read the vault would only pretend to
+ * be an engine. W2 replaces this as the worker's default body.
  */
-export function stubRunBody(_cut: VaultCut): RunOutcome {
-  return { candidates: [] };
-}
+export const stubRunBody: RunBody = () => ({ candidates: [] });
 
 /**
  * One step of the loop: claim the newest pending run, cut the vault at its stamp, run the body,
