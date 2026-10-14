@@ -80,3 +80,15 @@ export interface VaultSummary {
   /** The S0→S1 spread gate: `resolved_domains >= floor`. E0 is the *engine's* state, not this. */
   eligible: boolean;
 }
+
+/**
+ * `docs/API.md` §4.16 — the `202` from `POST /v1/sparks/run`, the cold-start run trigger (O5 `#25`).
+ *
+ * `run_id` is the enqueued row and `vault_revision` the revision it runs at. Both are the server's; the
+ * client only anchors the POST off them (§3.6's `run` shape carries the same pair). The trigger is
+ * fire-and-forget (NFR-P1) — this payload is not awaited to decide anything on S0.
+ */
+export interface RunAccepted {
+  run_id: string;
+  vault_revision: number;
+}
