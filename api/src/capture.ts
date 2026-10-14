@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
-import { isoTimestamp, writeTransaction } from "@astrolab/store";
+import { isoTimestamp, stampAndEnqueue, writeTransaction } from "@astrolab/store";
 
 // The UTC shape lives in the store, because the run rows need the same one; re-exported here so
 // this module stays the API-side name for it.
@@ -83,11 +83,15 @@ export function parseCaptureInput(body: unknown): CaptureInput {
 
 /**
  * One capture, one transaction (docs/API.md §4.2): the idea, its first version, and — when seeded —
- * the provenance edges and the `INSPIRED` decision all land together or not at all. `vault_meta`
- * is bumped in the same transaction, so a candidate-affecting write can never go unstamped.
+ * the provenance edges and the `INSPIRED` decision all land together or not at all. `vault_meta` is
+ * bumped **and a run enqueued at that stamp** in the same transaction (`stampAndEnqueue`,
+ * ARCH §4), so a candidate-affecting write can never go unstamped or leave a stamp with no run.
  *
  * **Idempotent on `decision_id`**: a repeat returns the first result and writes nothing — not even
  * a revision bump. The lookup runs before any write, inside the transaction that would write.
+ *
+ * The engine is never called here (NFR-P1 / NFR-A1): the mutation commits and returns; the worker
+ * picks the run up out of band.
  */
 export function captureIdea(db: DatabaseSync, input: CaptureInput): Idea {
   return writeTransaction(db, () => {
@@ -117,12 +121,12 @@ export function captureIdea(db: DatabaseSync, input: CaptureInput): Idea {
          VALUES (?, ?, 'INSPIRED', ?, ?)`,
       ).run(decisionId, spark.id, idea.id, idea.created_at);
       db.prepare("UPDATE spark SET status = 'RESOLVED-INSPIRED' WHERE id = ?").run(spark.id);
-      bumpRevision(db);
+      stampAndEnqueue(db);
       return idea;
     }
 
     const idea = insertIdea(db, input);
-    bumpRevision(db);
+    stampAndEnqueue(db);
     return idea;
   });
 }
@@ -255,16 +259,4 @@ function findDecision(db: DatabaseSync, id: string): DecisionRow | null {
   const row = db.prepare("SELECT id, result_idea_id FROM decision WHERE id = ?").get(id) as
     DecisionRow | undefined;
   return row ?? null;
-}
-
-/**
- * docs/ARCHITECTURE.md §4 — every candidate-affecting mutation stamps the vault. The row is seeded
- * by `0002`; a miss means the vault has no counter at all, which must fail loudly rather than bump
- * nothing.
- */
-function bumpRevision(db: DatabaseSync): void {
-  const result = db.prepare("UPDATE vault_meta SET revision = revision + 1 WHERE id = 1").run();
-  if (Number(result.changes) !== 1) {
-    throw new Error("vault_meta singleton is missing");
-  }
 }

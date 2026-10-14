@@ -31,6 +31,13 @@ function count(db: DatabaseSync, table: string): number {
   return row.n;
 }
 
+/** The run queue as the API leaves it: the stamp carried, and the state (ARCH §4). */
+function pendingRuns(db: DatabaseSync): Array<{ vault_revision: number; status: string }> {
+  return db
+    .prepare("SELECT vault_revision, status FROM spark_run ORDER BY vault_revision")
+    .all() as Array<{ vault_revision: number; status: string }>;
+}
+
 function seedIdea(db: DatabaseSync, id: string): void {
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
@@ -237,6 +244,39 @@ describe("captureIdea", () => {
     const first = revision(db);
     captureIdea(db, blank);
     expect(revision(db)).toBe(first + 1);
+  });
+
+  test("a capture enqueues exactly one PENDING run at the stamp it just wrote (§4 trigger)", () => {
+    captureIdea(db, blank);
+
+    expect(pendingRuns(db)).toEqual([{ vault_revision: revision(db), status: "PENDING" }]);
+  });
+
+  test("a seeded capture enqueues a run too", () => {
+    seedIdea(db, "src-a");
+    seedIdea(db, "src-b");
+    seedSpark(db, "spark-1", "src-a", "src-b");
+
+    captureIdea(db, { ...blank, origin_spark_id: "spark-1", decision_id: "decision-1" });
+
+    expect(pendingRuns(db)).toEqual([{ vault_revision: revision(db), status: "PENDING" }]);
+  });
+
+  test("the idempotent repeat enqueues nothing (no bump, no run)", () => {
+    seedIdea(db, "src-a");
+    seedIdea(db, "src-b");
+    seedSpark(db, "spark-1", "src-a", "src-b");
+    const seeded: CaptureInput = {
+      ...blank,
+      origin_spark_id: "spark-1",
+      decision_id: "decision-1",
+    };
+
+    captureIdea(db, seeded);
+    const first = pendingRuns(db);
+    captureIdea(db, seeded);
+
+    expect(pendingRuns(db)).toEqual(first);
   });
 
   test("isoTimestamp is the contract's UTC shape (§1)", () => {
