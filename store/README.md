@@ -42,8 +42,8 @@ Two details of that setup are load-bearing, because the API and the worker boot 
 **A vault write goes through `vaultMutation`.** It runs the body inside one transaction, then stamps
 `vault_meta.revision` and enqueues a run at that stamp (`ARCHITECTURE.md` §4) — **iff the body wrote**, so
 a mutation that changed nothing (the idempotent `decision_id` repeat, `docs/API.md` §4.2) does not churn
-the revision. The body must be **synchronous**; an async one resolves after the commit, so it is rejected
-rather than silently unstamped.
+the revision. The body must be **synchronous**: an async one resolves after the commit and its writes
+would land unstamped, so it is a compile error — with a runtime check as the second layer for JS callers.
 
 ```ts
 import { vaultMutation } from "@astrolab/store";
