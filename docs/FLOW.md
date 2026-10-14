@@ -105,7 +105,7 @@ A spark instance moves through a small state machine of its own:
 
 | Ref | State | Condition | S1 shows |
 | :-- | :---- | :-------- | :------- |
-| **E0** | **Cold** | vault **below the spark floor: fewer than 2 distinct *resolved* domains** (or < 2 ideas). Every possible pair is same-domain → cliché → suppressed (`PRD.md` §3.3 item 3), so **no spark is possible**. *(2 distinct *resolved* domains already makes a spark possible; **≥ 3** is the product target, handled by the nudge below, not by E0.)* | Composed empty state, **not** an error: *"Sparks need breadth."* Progress `domains covered x/3` (mono) + **Add idea** CTA. |
+| **E0** | **Cold** | vault **below the spark floor: fewer than 2 distinct *resolved* domains** (or < 2 ideas). Every possible pair is same-domain → cliché → suppressed (`PRD.md` §3.3 item 3), so **no spark is possible**. *(2 distinct *resolved* domains already makes a spark possible; **≥ 3** is the product target, handled by the nudge below, not by E0.)* | Composed empty state, **not** an error: *"Sparks pair distant domains — add ideas from another field."* Progress `domains covered x/3` (mono) + **Add idea** CTA (copy: §5.2; drawn in `DESIGN.md` §9). |
 | **E1** | **Computing** | engine run in flight | Skeletal shimmer **cards** matching deck dimensions; staggered reveal. **No circular spinner** (DESIGN.md §4). Deck remains usable for already-offered sparks. |
 | **E2** | **Ready(n)** | n ≥ 1 unreviewed sparks | Deck: top card. List toggle if n > 1. |
 | **E3** | **Exhausted** | vault **at/above the floor** (≥ 2 domains), 0 unreviewed, none computing | Composed empty state: *"No sparks left — for now."* CTAs: **Add idea** (S2), **Fork an idea into a new domain** (encourages the flywheel). A **Recompute** affordance. When the vault holds exactly 2 domains, E3 adds a widening nudge toward the `x/3` target (`PRD.md` §5). |
@@ -283,4 +283,6 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 
 - **2026-10-14 — r3.5.** **G3 (#51) closed:** the deck's empty/error states land as **`DESIGN.md` §9** — the five engine states **E0–E4** composed into the deck band (E0 progress *not* failure; E1 skeletal shimmer, **no circular spinner**; E2 card + `n > 1` list toggle; E3 the `x / 3` widening nudge **at exactly 2 domains**; E4 the quiet, non-blocking Retry), plus the §4.1 precedence rules. The §2.1 **S1** row now cites it. Docs-only; no state-machine change.
 
-*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.5, 2026-10-14. Review: two adversarial passes by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
+- **2026-10-14 — r3.6.** **Max's #71-review nit:** §4.1's **E0** row quoted *"Sparks need breadth."* — a second copy of one state's message, diverging from §5.2 and `DESIGN.md` §9. Aligned the row to the canonical §5.2 copy so E0 quotes the same line as the other state rows (E3/E4). Docs-only; no state-machine change.
+
+*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.6, 2026-10-14. Review: two adversarial passes by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
