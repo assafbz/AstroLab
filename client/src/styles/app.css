@@ -225,6 +225,32 @@ a {
 }
 
 /* The sticky action bar (DESIGN.md §5) — Capture's save, and the only action on the screen. */
+/* S0's exits (stitch-prompts.md §7: "One brass CTA Add idea; a quiet mono skip for now";
+   FLOW.md T03/T04) — the gate's CTA keeps Add idea the one brass action, so it is a ghost, and the
+   skip stays quiet mono, pushed to the row's end. */
+.exits {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.exits .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 1.25rem;
+  text-decoration: none;
+}
+
+.exits__skip {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--dim);
+  text-decoration: none;
+}
+
 .actionbar {
   position: sticky;
   bottom: 0;

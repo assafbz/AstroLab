@@ -3,14 +3,16 @@ import { TABS, ideaIdFromPath, matchScreen, routeHref, useHashPath } from "./rou
 import { Capture } from "./screens/Capture.tsx";
 import { IdeaDetail } from "./screens/IdeaDetail.tsx";
 import { Onboarding } from "./screens/Onboarding.tsx";
+import { Sparks } from "./screens/Sparks.tsx";
 import { Vault } from "./screens/Vault.tsx";
 
 /**
  * The shell — the bottom nav, the shared frame, and the route table.
  *
- * V8 filled S2, S3 and S4 (plus the per-id S4 route) and O3 fills S0; S1/S5/S6 stay placeholders until
- * their own issues land. The per-id route is resolved **first**: `#/ideas/<id>` is not one of `SCREENS`
- * (whose S4 entry is the bare `#/ideas`), so `matchScreen` alone would call it a not-found.
+ * V8 filled S2, S3 and S4 (plus the per-id S4 route), O3 filled S0, and O4 `#24` gives S1 its E0
+ * branch (`screens/Sparks.tsx`; the deck is K2 `#36`). S5/S6 stay placeholders until their own issues
+ * land. The per-id route is resolved **first**: `#/ideas/<id>` is not one of `SCREENS` (whose S4 entry
+ * is the bare `#/ideas`), so `matchScreen` alone would call it a not-found.
  */
 export function App() {
   const path = useHashPath();
@@ -33,6 +35,8 @@ export function App() {
           <IdeaDetail id={ideaId} />
         ) : screen?.id === "S0" ? (
           <Onboarding />
+        ) : screen?.id === "S1" ? (
+          <Sparks />
         ) : screen?.id === "S2" ? (
           <Capture />
         ) : screen?.id === "S3" ? (

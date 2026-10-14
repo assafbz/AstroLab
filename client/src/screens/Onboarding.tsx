@@ -4,14 +4,15 @@ import { ApiError } from "../api/client.ts";
 import { vaultSummary } from "../api/vault.ts";
 import type { VaultSummary } from "../api/types.ts";
 import { DomainPicker } from "../components/DomainPicker.tsx";
+import { StarChart } from "../components/StarChart.tsx";
 import { HYPOTHESIS_MAX, counterText } from "../domain/capture.ts";
 import {
-  progress,
   promptFor,
   saveOnboardingIdea,
   validateOnboardingIdea,
   type OnboardingIdea,
 } from "../domain/onboarding.ts";
+import { spreadGate } from "../domain/spread-gate.ts";
 
 /**
  * S0 — Onboarding / bootstrap (`FLOW.md` §2.1 S0, §4.2 T01/T02; `PRD.md` §3.4 items 1–2).
@@ -148,6 +149,28 @@ export function Onboarding() {
         </p>
       ) : null}
 
+      {/*
+       * S0's two exits (`FLOW.md` §4.2 T03/T04). Both land **S1** (`#/`, the home `router.ts`
+       * already routes); neither is an in-place action, so both are anchors, like the tab bar.
+       *
+       * `See your sparks` is the gate — `spreadGate(summary)`, the server's `eligible`, and nothing
+       * else. While the summary is unread or unreachable the CTA is **absent rather than guessed**:
+       * the vault may or may not clear the floor, and a gate that rendered on a failed read would be
+       * a client-side guess dressed as server truth (R1). Skip is always there — T03 allows leaving
+       * onboarding early, and the deviation it records is descriptive (`PRD.md` §3.4 item 2 /
+       * NFR-U1) with no wire form; its only consequence is S1 landing in E0 (slice 3).
+       */}
+      <div className="exits">
+        {summary !== null && spreadGate(summary) ? (
+          <a className="button button--ghost" href="#/">
+            See your sparks
+          </a>
+        ) : null}
+        <a className="exits__skip" href="#/">
+          skip for now
+        </a>
+      </div>
+
       <div className="actionbar">
         <button type="button" className="button" onClick={() => void onAdd()} disabled={saving}>
           Add idea
@@ -158,13 +181,9 @@ export function Onboarding() {
 }
 
 /**
- * The `domains covered x / 3` readout and the star-chart mark (`FLOW.md` §5.2; `DESIGN.md` §6).
- *
- * **No arcs.** `DESIGN.md` §6 draws *"brass arcs … between points that are far apart"*, but no S0
- * endpoint exposes `domain_cluster.adjacency` (`ARCHITECTURE.md` §6 gives S0 `POST /v1/ideas` +
- * `GET /v1/vault/summary`) — and §6 bars the client from computing scores at all. So the mark renders
- * what the client can reach: the rings, one brass point per **resolved** domain and one pale point per
- * **provisional** one. It still *"visibly widens as domains are covered"*, which is the criterion.
+ * The readout's three states: loading, unreachable, resolved. The mark itself is
+ * `components/StarChart.tsx` — shared with S1's E0 composition (`DESIGN.md` §9) so the two screens
+ * render one mark, not two. This component owns only the read's outcome.
  */
 function ProgressMark(props: {
   summary: VaultSummary | null;
@@ -192,42 +211,5 @@ function ProgressMark(props: {
     );
   }
 
-  const p = progress(props.summary);
-  const covered = props.summary.resolved_domains;
-  const provisional = props.summary.provisional_domains;
-  const segments = Array.from({ length: p.target }, (_, index) => index < p.covered);
-
-  return (
-    <section className="progress" aria-label="Domains covered">
-      <p className="progress__label">Domains covered</p>
-      <p className="progress__value">
-        {p.covered} / {p.target}
-      </p>
-      <div className="progress__bar" aria-hidden="true">
-        {segments.map((filled, index) => (
-          <span
-            key={index}
-            className={filled ? "progress__seg progress__seg--filled" : "progress__seg"}
-          />
-        ))}
-      </div>
-      <div className="chart" aria-hidden="true">
-        <span className="chart__ring chart__ring--outer" />
-        <span className="chart__ring chart__ring--middle" />
-        <span className="chart__ring chart__ring--inner" />
-        <span className="chart__points">
-          {Array.from({ length: covered }, (_, index) => (
-            <span key={`c${index}`} className="star star--covered" />
-          ))}
-          {Array.from({ length: provisional }, (_, index) => (
-            <span key={`p${index}`} className="star star--provisional" />
-          ))}
-        </span>
-      </div>
-      <p className="sr-only">
-        Star chart: {covered} covered {covered === 1 ? "domain" : "domains"}, {provisional}{" "}
-        provisional.
-      </p>
-    </section>
-  );
+  return <StarChart summary={props.summary} />;
 }

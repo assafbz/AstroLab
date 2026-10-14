@@ -86,6 +86,19 @@ test("the readout and the chart are the summary's numbers — never a local tall
   expect(within(readout).getByText(/2 covered domains, 3 provisional/)).toBeTruthy();
 });
 
+test("the mark and the announcement print the readout's capped number — one displayed quantity", async () => {
+  // `resolved: 5` clears a `target: 3`: the readout caps at the target, and so must the mark and the
+  // sr announcement, or the screen shows `3 / 3` beside five points and "5 covered domains".
+  stubFetch({ ...SUMMARY, resolved_domains: 5, eligible: true });
+  const { container } = render(<Onboarding />);
+
+  const readout = await screen.findByLabelText("Domains covered");
+  expect(within(readout).getByText("3 / 3")).toBeTruthy();
+  expect(container.querySelectorAll(".star--covered")).toHaveLength(3);
+  expect(within(readout).getByText(/3 covered domains, 3 provisional/)).toBeTruthy();
+  expect(within(readout).queryByText(/5 covered domains/)).toBeNull();
+});
+
 test("the picker offers every shipped cluster under its name", async () => {
   stubFetch();
   render(<Onboarding />);
@@ -182,4 +195,49 @@ test("a failed summary read composes a retry state instead of a bare line", asyn
   fireEvent.click(within(empty).getByRole("button", { name: "Try again" }));
 
   expect(await screen.findByText("2 / 3")).toBeTruthy();
+});
+
+/**
+ * The exits (`FLOW.md` T03/T04). `See your sparks` is the gate; `Skip` is unconditional. Both are
+ * anchors onto S1 (`#/`) — the route `router.ts` already owns, so neither invents one.
+ */
+test("the gate's CTA appears iff the server says eligible; Skip is always there", async () => {
+  stubFetch();
+  render(<Onboarding />);
+  await screen.findByLabelText("Domains covered");
+
+  expect(screen.getByRole("link", { name: "See your sparks" }).getAttribute("href")).toBe("#/");
+  expect(screen.getByRole("link", { name: "skip for now" }).getAttribute("href")).toBe("#/");
+});
+
+test("a vault below the floor gets Skip and no gate CTA", async () => {
+  stubFetch({ ...SUMMARY, resolved_domains: 1, eligible: false });
+  render(<Onboarding />);
+  await screen.findByLabelText("Domains covered");
+
+  expect(screen.queryByRole("link", { name: "See your sparks" })).toBeNull();
+  expect(screen.getByRole("link", { name: "skip for now" })).toBeTruthy();
+});
+
+/** The gate follows `eligible`, not a local count: this payload is the discriminating pair. */
+test("the CTA follows the server's eligible, not the payload's count", async () => {
+  stubFetch({ ...SUMMARY, resolved_domains: 0, eligible: true });
+  render(<Onboarding />);
+  await screen.findByLabelText("Domains covered");
+
+  expect(screen.getByRole("link", { name: "See your sparks" })).toBeTruthy();
+});
+
+/** An unread / unreachable summary is never a guessed gate: the CTA is absent, Skip still works. */
+test("no gate CTA while the summary is unknown — it is absent, never guessed", async () => {
+  const mock: FetchStub = vi.fn(() =>
+    Promise.resolve(json({ error: { code: "internal_error", message: "no" } }, 500)),
+  );
+  vi.stubGlobal("fetch", mock);
+
+  render(<Onboarding />);
+  await screen.findByLabelText("Progress unavailable");
+
+  expect(screen.queryByRole("link", { name: "See your sparks" })).toBeNull();
+  expect(screen.getByRole("link", { name: "skip for now" })).toBeTruthy();
 });

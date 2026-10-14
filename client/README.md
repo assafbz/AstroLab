@@ -1,7 +1,8 @@
 # Client (V8)
 
-The mobile-first PWA. S2 Capture, S3 Vault and S4 Idea Detail are built (V8, `#19`), and S0 Onboarding
-is built (O3, `#23`); S1/S5/S6 are still the shell's placeholders until their own issues land.
+The mobile-first PWA. S2 Capture, S3 Vault and S4 Idea Detail are built (V8, `#19`), S0 Onboarding
+(O3, `#23`), and S1 Sparks' **E0 branch** (O4, `#24` — the deck is K2 `#36`); S5/S6 are still the
+shell's placeholders until their own issues land.
 
 - **Stack:** Vite + React + TypeScript (`docs/adr/0005-client-stack.md`).
 - **Design tokens:** `src/styles/tokens.css`, lifted from `DESIGN.md` §2 (colour and geometry) and §5 (layout).
@@ -20,7 +21,7 @@ labels.
 | Screen | Path | Status |
 | :--- | :--- | :--- |
 | S0 Onboarding | `#/onboarding` | built (O3) — the capture-and-stay loop |
-| S1 Sparks (home) | `#/` | placeholder |
+| S1 Sparks (home) | `#/` | built (O4) — E0 Cold; the deck is K2 `#36` |
 | S2 Capture | `#/capture` | built (V8) |
 | S3 Vault | `#/vault` | built (V8) |
 | S4 Idea detail | `#/ideas` | built (V8) — the bare path is a "choose an idea" landing |
@@ -42,7 +43,9 @@ S0, and **T05** sends a return launch straight to S1. S0 therefore carries its o
 (`#/onboarding`), not the root.
 
 The shell has no vault state, so it cannot make the T01/T05 choice itself — the **state-dependent
-entry** (`FLOW.md` §4.1 E0–E4) is still unbuilt. The shell's `/` is simply the home.
+entry** (`FLOW.md` §4.1 E0–E4) is still unbuilt. The shell's `/` is simply the home. O4 `#24` gave `/`
+its first real content on that path: S1 reads `GET /v1/vault/summary` and lands **E0 Cold** whenever
+the vault is below the spark floor, which is the same screen either S0 exit arrives on.
 
 A trailing slash resolves (`#/vault/` is not a not-found). An unknown path lands on the shell's
 own **not-found fallback** — the tab bar stays, the body reads "Not found" — never a blank screen.
@@ -80,8 +83,11 @@ Two contract notes the screens depend on:
 - **The mark has no distance arcs.** `DESIGN.md` §6 draws them between points "far apart", but no S0
   endpoint exposes `domain_cluster.adjacency` and `ARCHITECTURE.md` §6 bars the client from computing
   scores, so the mark is rings plus one brass point per resolved domain and one pale per provisional.
-- **The exits are not here.** T03 Skip and T04's "See your sparks" gate are O4 (`#24`), and so is the
-  first-run entry (T01/T05); S0 has no active tab because it is reached before the app's home.
+- **The exits are here (O4 `#24`).** T04's **See your sparks** renders iff `spreadGate(summary)` —
+  the server's `eligible`, read and never recomputed — and T03's quiet mono **skip for now** is always
+  present. Both are anchors onto `#/`, the home `router.ts` already owns. While the summary is unread
+  or unreachable the gate CTA is **absent rather than guessed**.
+- S0 has no active tab because it is reached before the app's home.
 
 ## Tests
 
@@ -92,10 +98,26 @@ user-visible claims: inline per-field errors and the 280 counter (T17), the thre
 the Vault (T19/T20/T29), the lineage chain and muted provenance (T21), and the delete confirm
 (T26).
 
+## S1 Sparks (O4 `#24`)
+
+- **The gate is the server's.** `src/domain/spread-gate.ts` returns `summary.eligible` —
+  `vault-summary.ts` computes it as `resolved_domains >= floor`, which *is* T04's "≥ 2 distinct
+  **resolved** domains". Recomputing it here would make the gate a second source of truth for one
+  boolean, so it is read. `provisional_domains` and `target` never enter the gate.
+- **E0 renders from a sufficient condition, not from a derived E0.** `FLOW.md` §5.2 makes the floor
+  *"the only condition"* that puts S1 in E0, so `!eligible` **implies** the engine's E0. The client
+  never derives E0's full definition (the `< 2 ideas` clause) from `VaultSummary` — that is the
+  engine's own read (`GET /v1/sparks/state`, W8 `#33`), and T03's *"else → E1 Computing"* waits for it
+  with K2 `#36`. Only the E0 branch is built; the other four states are K2's.
+- **The Skip deviation has no wire form.** T03 permits `Skip` and calls it *"recorded as a
+  deviation"*, but the frozen contract has no endpoint and no field for it (`ARCHITECTURE.md` §6 has
+  no row; `API.md` §3.2/§4.3 have no field). Nothing is persisted: the recorded fact is already the
+  vault's own `resolved_domains < floor`, and Skip's only consequence is S1 landing in E0.
+
 ### Deferred
 
-S1b (Spark Detail) is not in S0–S6 and has no route yet; the seeded capture path
-(`origin_spark_id`/`decision_id`) needs the spark deck; the S4 Iterate/Fork actions are V9
-(`#20`). The taxonomy picker landed with S0 (O3). The spread gate and the Skip deviation are O4
-(`#24`). Self-hosted Geist / JetBrains Mono are deferred — the token file falls back to system stacks
+S1b (Spark Detail) is not in S0–S6 and has no route yet; the deck and the engine's E0–E4 read are K2
+`#36` / W8 `#33` (so `#/` still shows the deck's placeholder wherever the gate is open), the seeded
+capture path (`origin_spark_id`/`decision_id`) needs the spark deck, and the S4 Iterate/Fork actions
+are V9 (`#20`). Self-hosted Geist / JetBrains Mono are deferred — the token file falls back to system stacks
 until a screen needs the real faces.
