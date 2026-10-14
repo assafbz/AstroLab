@@ -15,13 +15,18 @@ import {
 import { spreadGate } from "../domain/spread-gate.ts";
 
 /**
- * S0 — Onboarding / bootstrap (`FLOW.md` §2.1 S0, §4.2 T01/T02; `PRD.md` §3.4 items 1–2).
+ * S0 — Onboarding / bootstrap (`FLOW.md` §2.1 S0, §4.2 T01–T04; `PRD.md` §3.4 items 1–2).
  *
- * **The capture-and-stay loop.** T02 is `S0 → S0`: *Add idea* creates the node, the star chart widens,
- * `domains covered` updates, and the user stays here with the next prompt. The **exits** are not in
- * this issue — T03's Skip and T04's *"See your sparks"* gate are O4 `#24` ("spread gate + Skip
- * deviation"), and the launch entry (T01/T05) is O4's too. Nothing here computes a gate: the readout is
- * the summary's, so the gate O4 adds and this number stay the same quantity (R1).
+ * **The capture-and-stay loop, and the two exits.** T02 is `S0 → S0`: *Add idea* creates the node, the
+ * star chart widens, `domains covered` updates, and the user stays here with the next prompt. This
+ * screen also renders S0's exits — T03's *skip for now* and T04's *"See your sparks"*, both landing S1
+ * (`#/`, `router.ts`) — added by O4 `#24`; the launch entry (T01/T05) stays the shell's.
+ *
+ * **Nothing here computes a gate.** The readout renders the summary's own numbers, and the CTA's
+ * condition is `spreadGate(summary)` — the server's `eligible`, read, never a local tally — so the gate
+ * this screen opens and the number it shows cannot disagree (R1). While the summary is unread or
+ * unreachable the CTA is **absent rather than guessed**, and *skip for now* stays available: the
+ * deviation T03 records is descriptive and has no wire form.
  *
  * The rules live in `domain/onboarding.ts` (pure, tested directly); this file renders them.
  */

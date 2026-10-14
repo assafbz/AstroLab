@@ -162,9 +162,10 @@ reflects server-side reversibility (§5.4) at response time.
 ```
 - `state` ∈ `E0 Cold | E1 Computing | E2 Ready | E3 Exhausted | E4 Unavailable`.
 - `unreviewed` = `n` for `E2 Ready(n)`; the count the deck/list needs.
-- Precedence, server-computed: **`E0` dominates all**; then **`E4 > E3`**; **`E1` may coexist with
-  `E2`** (the `state` field reports the dominant one; `unreviewed` stays truthful so the deck can
-  still render offered cards during a run).
+- Precedence, server-computed: **`E0` dominates all**; then **`E4 > E3`**; then **`E1` dominates
+  whenever a run is in flight** (`PENDING` **or** `RUNNING`, §4.10) — `state` is `E1` even while
+  offered cards exist. **`E1` may coexist with `E2`** (the `state` field reports the dominant one;
+  `unreviewed` stays truthful so the deck can still render offered cards during a run).
 - `run` is `null` when nothing is in flight.
 
 ---
@@ -616,5 +617,6 @@ rather than left to the implementation:
 *Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`;
 carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`; by **V2** (`#13`),
 branch `feat/v2-vault-read-api`; by **O2** (`#22`), branch `feat/o2-vault-summary`; by **V5**
-(`#16`), branch `feat/v5-delete-api`; by **V3** (`#14`), branch `feat/v3-iterate-api`; and by **W8**
-(`#33`), branch `feat/w8-run-surface`.*
+(`#16`), branch `feat/v5-delete-api`; by **V3** (`#14`), branch `feat/v3-iterate-api`; by **W8**
+(`#33`), branch `feat/w8-run-surface`; and by the **#94 docs pass**, branch
+`docs/94-e0-definition-scope`.*
