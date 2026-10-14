@@ -35,15 +35,25 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-/** The summary read and the capture write answer differently; both are stubbed by path. */
+/** The summary read, the run trigger and the capture write answer differently; each is stubbed by path. */
 function stubFetch(summary: unknown = SUMMARY): FetchStub {
   const mock: FetchStub = vi.fn((url: string) => {
     if (url.startsWith("/v1/vault/summary")) return Promise.resolve(json(summary));
+    if (url === "/v1/sparks/run")
+      return Promise.resolve(json({ run_id: "r-1", vault_revision: 1 }, 202));
     return Promise.resolve(json(IDEA, 201));
   });
   vi.stubGlobal("fetch", mock);
   return mock;
 }
+
+/** The run-trigger calls the screen sent, in order. */
+function runCalls(mock: FetchStub) {
+  return mock.mock.calls.filter(([url]) => url === "/v1/sparks/run");
+}
+
+const seeSparks = () => fireEvent.click(screen.getByRole("link", { name: "See your sparks" }));
+const skip = () => fireEvent.click(screen.getByRole("link", { name: "skip for now" }));
 
 /** The stubbed `fetch`, typed so the recorded `(url, init)` pair is readable at the assertion. */
 type FetchStub = Mock<(url: string, init?: RequestInit) => Promise<Response>>;
@@ -240,4 +250,89 @@ test("no gate CTA while the summary is unknown — it is absent, never guessed",
 
   expect(screen.queryByRole("link", { name: "See your sparks" })).toBeNull();
   expect(screen.getByRole("link", { name: "skip for now" })).toBeTruthy();
+});
+
+/**
+ * T04's side effect (`FLOW.md` §4.2; `docs/API.md` §4.16). The run fires on the exit the user chose —
+ * the CTA press — and the trigger is fire-and-forget, so the anchor keeps its own navigation.
+ */
+test("pressing the gate CTA kicks the run once — T04's side effect, on the chosen exit", async () => {
+  const mock = stubFetch();
+  const { container } = render(<Onboarding />);
+  await screen.findByLabelText("Domains covered");
+
+  seeSparks();
+
+  await vi.waitFor(() => expect(runCalls(mock)).toHaveLength(1));
+  const [url, init] = runCalls(mock)[0]!;
+  expect(url).toBe("/v1/sparks/run");
+  expect(init!.method).toBe("POST");
+  // §4.16 reads no body — the trigger must not send one.
+  expect(init!.body).toBeUndefined();
+  // Fire-and-forget, not an in-place action: the CTA is still the S1 anchor it always was.
+  expect(container.querySelector(".exits a")!.getAttribute("href")).toBe("#/");
+});
+
+/** T03 has no side effect — a run fired from `Skip` would be a run the user did not choose. */
+test("Skip never kicks a run", async () => {
+  const mock = stubFetch();
+  render(<Onboarding />);
+  await screen.findByLabelText("Domains covered");
+
+  skip();
+
+  // Give any errant fire a chance to land before asserting its absence.
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(runCalls(mock)).toHaveLength(0);
+});
+
+/** The trigger is the press, never the mount — an auto-run on the S0→S1 exit would fire for Skip too. */
+test("rendering S0 alone fires no run — the trigger is the press", async () => {
+  const mock = stubFetch();
+  render(<Onboarding />);
+  await screen.findByLabelText("Domains covered");
+
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(runCalls(mock)).toHaveLength(0);
+});
+
+/**
+ * Fire-and-forget (NFR-P1; `docs/API.md` §4.16 — *"the request never waits"*). The CTA stays the anchor
+ * it always was: the handler fires the run and returns, leaving the anchor's own `href="#/"` navigation
+ * intact. A handler that took over navigation — `preventDefault()` then navigating only after the POST
+ * settles — would make the exit wait on the engine, and does not.
+ */
+test("the trigger is fire-and-forget — the CTA's own navigation is not intercepted", async () => {
+  const mock = stubFetch();
+  const { container } = render(<Onboarding />);
+  await screen.findByLabelText("Domains covered");
+
+  const anchor = container.querySelector(".exits a")!;
+  const press = new MouseEvent("click", { bubbles: true, cancelable: true });
+  anchor.dispatchEvent(press);
+
+  // The anchor navigates itself; the handler fired the run without taking over navigation.
+  expect(press.defaultPrevented).toBe(false);
+  expect(anchor.getAttribute("href")).toBe("#/");
+  await vi.waitFor(() => expect(runCalls(mock)).toHaveLength(1));
+});
+
+/** The single-flight guard (`domain/run-trigger.ts`) holds at the screen: a double-press sends one POST. */
+test("a double-press of the CTA sends one run", async () => {
+  const pending = new Promise<Response>(() => {});
+  const mock: FetchStub = vi.fn((url: string) => {
+    if (url.startsWith("/v1/vault/summary")) return Promise.resolve(json(SUMMARY));
+    if (url === "/v1/sparks/run") return pending;
+    return Promise.resolve(json(IDEA, 201));
+  });
+  vi.stubGlobal("fetch", mock);
+
+  render(<Onboarding />);
+  await screen.findByLabelText("Domains covered");
+
+  seeSparks();
+  seeSparks();
+  seeSparks();
+
+  expect(runCalls(mock)).toHaveLength(1);
 });

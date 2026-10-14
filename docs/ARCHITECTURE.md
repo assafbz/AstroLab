@@ -507,8 +507,10 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
 2. **Mechanism descriptor schema.** The exact fields of the descriptor (§3.3) are a tuning artifact; the
    contract (structured, cached, locally comparable) is the decision. Confirm the field set with the first
    calibration run.
-3. **Cold-start ordering.** Whether onboarding triggers the first run automatically or on "See your sparks"
-   is a UX call already implied by `FLOW.md` T04; noted for completeness.
+3. ~~**Cold-start ordering.**~~ **Resolved — closed by O5 (`#25`), 2026-10-14.** The run fires on the exit
+   the user chose: *See your sparks* presses `POST /v1/sparks/run` (`docs/API.md` §4.16), *Skip* carries no
+   side effect, and the S0→S1 exit never auto-runs. `FLOW.md` T04 carries the rule; the client holds only a
+   press-scoped single-flight guard (`client/src/domain/run-trigger.ts`) — no persisted fired-flag.
 4. ~~FLOW §2.2 wording.~~ **Landed in `FLOW.md` r3.2.** The committed seeded save carries the same client-generated
    `decision_id` as a deck decision (§6) — FLOW §5.4/N3 already required the capability and the one-line FLOW
    §2.2 clarification is in the spec (r3.2).
@@ -590,4 +592,9 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
   route already uses, and this document is the source of record, so the row was the defect. No
   state-machine change.
 
-*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.4, 2026-10-14. Review: adversarial passes by Max. Branch `docs/architecture`.*
+- **2026-10-14 — r3.5.** **O5 (`#25`) — §12 item 3 (cold-start ordering) closed.** The onboarding run is
+  triggered by the exit the user chose: *See your sparks* presses `POST /v1/sparks/run` (`docs/API.md`
+  §4.16), *Skip* carries no side effect, and the S0→S1 exit never auto-runs. Client-only: a press-scoped
+  single-flight guard (`client/src/domain/run-trigger.ts`), no server invariant and no state-machine change.
+
+*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.5, 2026-10-14. Review: adversarial passes by Max. Branch `docs/architecture`.*
