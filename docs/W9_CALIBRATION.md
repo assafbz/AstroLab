@@ -113,9 +113,9 @@ by design: every tag is a shipped cluster key).
    maximises yield (what the deck is for). A change to the selection rule is an **owner call** — this
    curve is the evidence that would justify one.
 6. **Terminal branch — if no τ *in the swept range* {0.35…0.65} clears both conditions, that range
-   FAILS: no threshold moves, `min_alignment` stays at its provisional default, and the failure is
-   recorded.** The FAIL is scoped to the swept range — the free action **(1)** runs **before** the run is
-   declared failed, and it can still set **τ\***. Named next actions, in order:
+   FAILS: nothing moves inside the swept range.** The FAIL is scoped to the swept range — the free action
+   **(1)** runs **before** the run is declared failed, and it can still set **τ\*** (and step 7 seed it).
+   Named next actions, in order:
    1. **Re-score upward at no cost — this fires first, inside the swept FAIL.** The pairs at τ > 0.65 are
       already inside the adjudicated union, so extending the sweep **upward** spends **0** additional
       calls. If a τ there clears both conditions, **τ\* is that value and the run passes**, recorded with
@@ -127,7 +127,8 @@ by design: every tag is a shipped cluster key).
    4. **Extending below 0.35 is a NEW posted phase** (`28 + M_wide` calls), never a silent widening: the
       spend rule binds the failure path exactly as it binds the pass path.
    5. Only when (1) has failed and (2)/(3) are the open finding is the run **recorded as a failed
-      calibration** — the terminal state, with the shipped default untouched.
+      calibration** — the terminal state, where **`min_alignment` stays at its provisional default** and
+      the failure is recorded in issue #34's thread.
 7. **Record** — τ\* goes into `ARCHITECTURE.md` **§3.4** (Thresholds — the threshold's home; §12 item 2
    is the descriptor question), the **field-set verdict** into `ARCHITECTURE.md` **§12 item 2**;
    `min_alignment` is seeded to τ\*; the C5 fixture lands as a test fixture; the run's actuals (calls,
