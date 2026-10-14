@@ -22,8 +22,15 @@
  * | :-- | :-- | :-- |
  * | `post` | **0** | seed the fixture, check C1, print P1's posting (`promptChars`) |
  * | `p1 --confirm <promptChars>` | **28** | one extraction call per idea, cached in `idea_mechanism` |
- * | `p2 --confirm <M>` | **M** | adjudicate the union at τ ≥ 0.35, under the hard cap `M` |
- * | `report` | **0** | the union size `M` and the alignment distribution |
+ * | `report [--floor <f>]` | **0** | the union size `M` and the alignment distribution |
+ * | `widen [--floor <f>]` | **0** | the below-0.35 posting: floor, `M_wide`, the τ list, cost, the full matrix |
+ * | `p2 --confirm <M> [--floor <f>]` | **M** | adjudicate the union at the floor, under the hard cap `M` |
+ *
+ * `--floor` defaults to `W9_UNION_TAU` (`0.35`, the bar's ratified floor). The widened phase (bar §4
+ * step 6.4 — *"extending below 0.35 is a NEW posted phase"*) passes a lower floor, captures the posting
+ * with `widen`, and fires `p2 --floor <f> --confirm <M_wide>` only after David ratifies. `widen` is
+ * deliberately **0 calls**: it re-reads the cached descriptors and prints the numbers before anything
+ * spends.
  *
  * ## Why this lives in `scripts/` and not in `worker/src/`
  *
@@ -47,14 +54,21 @@ import { bootWorker } from "../worker/src/boot.js";
 import {
   coverageViolations,
   createCalibrationRun,
+  ideaTextOf,
   parseVault,
   p1Posting,
+  W9_UNION_TAU,
   W9_VAULT_PATH,
+  W9_WIDE_TAUS,
+  type CalibrationPair,
   type CalibrationRun,
   type W9Idea,
 } from "../worker/src/engine/calibration/w9-run.js";
 import {
+  ADJUDICATION_SYSTEM,
+  adjudicationUser,
   createAdapterFromEnv,
+  type IdeaText,
   type MechanismDescriptor,
   type Provider,
 } from "../worker/src/provider/index.js";
@@ -131,6 +145,18 @@ function readConfirm(argv: readonly string[]): number | undefined {
   return raw === undefined || !Number.isFinite(value) ? undefined : value;
 }
 
+/** `--floor <f>` — the union floor the widened phase (bar §4 step 6.4) adjudicates at. Default `0.35`. */
+function readFloor(argv: readonly string[]): number {
+  const index = argv.indexOf("--floor");
+  if (index === -1) return W9_UNION_TAU;
+  const raw = argv[index + 1];
+  const value = Number(raw);
+  if (raw === undefined || !Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(`--floor must be a number in [0, 1]; got ${JSON.stringify(raw ?? null)}`);
+  }
+  return value;
+}
+
 /** Firing takes a second, deliberate key: `W9_LIVE=1`. A matching `--confirm` alone is not "post then fire". */
 function requireLive(what: string): void {
   if (process.env.W9_LIVE !== "1") {
@@ -155,14 +181,89 @@ function requireConfirm(what: string, confirm: number | undefined, actual: numbe
   }
 }
 
-/** The run, wired with either the real adapter or the throwing stub, so each command's spend is explicit. */
-function runFor(db: DatabaseSync, provider: Provider): CalibrationRun {
+/**
+ * The run, wired with either the real adapter or the throwing stub, so each command's spend is explicit.
+ * `floor` is threaded to the driver's single union floor — the dry pass this harness caps against and
+ * the live pass it spends on therefore filter the identical set (never two filters kept in sync).
+ */
+function runFor(
+  db: DatabaseSync,
+  provider: Provider,
+  floor: number = W9_UNION_TAU,
+): CalibrationRun {
   return createCalibrationRun(db, {
     extractor: provider,
     adjudicator: provider,
     // `AI_MODEL` unset ⇒ the pinned `deepseek/deepseek-v4-flash`; the same value the adapter uses.
     model: process.env.AI_MODEL?.trim() || "deepseek/deepseek-v4-flash",
+    unionTau: floor,
   });
+}
+
+/** The pinned model's published price, read from OpenRouter `/models` (2026-10-14): $ per 1M tokens. */
+const PRICE_PER_M_PROMPT = 0.091;
+const PRICE_PER_M_COMPLETION = 0.182;
+/** Token estimate: chars ÷ 4 — DeepSeek's tokenizer is not local, so the posting labels this an estimate. */
+const CHARS_PER_TOKEN = 4;
+/** A per-call completion ceiling for the five-field adjudication schema. An upper bound, not a measurement. */
+const COMPLETION_TOKENS_PER_CALL = 200;
+
+/** One P2 call's prompt, exactly as the adapter builds it: `ADJUDICATION_SYSTEM` + `adjudicationUser`. */
+function p2PromptChars(
+  ideaA: IdeaText,
+  ideaB: IdeaText,
+  a: MechanismDescriptor,
+  b: MechanismDescriptor,
+): number {
+  return ADJUDICATION_SYSTEM.length + adjudicationUser(ideaA, ideaB, { a, b }).length;
+}
+
+/**
+ * The below-0.35 posting's cost basis (bar §5): the measured prompt size over the union pairs, the
+ * completion ceiling under the hard cap `M_wide`, and the two multiplied by the pinned model's price.
+ * `0` calls — it reads the vault and the cached descriptors, nothing more.
+ */
+function adjudicationCost(
+  db: DatabaseSync,
+  ideas: readonly W9Idea[],
+  union: readonly CalibrationPair[],
+) {
+  const textById = new Map(ideas.map((idea) => [idea.id, ideaTextOf(idea)]));
+  const descriptorById = new Map(
+    readDescriptors(
+      db,
+      ideas.map((idea) => idea.id),
+    ).map((row) => [row.idea_id, JSON.parse(row.descriptor) as MechanismDescriptor]),
+  );
+
+  let promptChars = 0;
+  for (const pair of union) {
+    const a = textById.get(pair.aId);
+    const b = textById.get(pair.bId);
+    const ma = descriptorById.get(pair.aId);
+    const mb = descriptorById.get(pair.bId);
+    if (a === undefined || b === undefined || ma === undefined || mb === undefined) {
+      throw new Error(`widen: missing text or descriptor for pair ${pair.key}`);
+    }
+    promptChars += p2PromptChars(a, b, ma, mb);
+  }
+
+  const promptTokens = Math.ceil(promptChars / CHARS_PER_TOKEN);
+  const completionCeilingTokens = union.length * COMPLETION_TOKENS_PER_CALL;
+  const promptCost = (promptTokens * PRICE_PER_M_PROMPT) / 1_000_000;
+  const completionCeiling = (completionCeilingTokens * PRICE_PER_M_COMPLETION) / 1_000_000;
+  return {
+    pricePerMTokens: { prompt: PRICE_PER_M_PROMPT, completion: PRICE_PER_M_COMPLETION },
+    charsPerToken: CHARS_PER_TOKEN,
+    completionTokensPerCallCeiling: COMPLETION_TOKENS_PER_CALL,
+    promptChars,
+    meanPromptChars: union.length === 0 ? 0 : promptChars / union.length,
+    promptTokens,
+    completionCeilingTokens,
+    promptCost,
+    completionCeiling,
+    ceiling: promptCost + completionCeiling,
+  };
 }
 
 async function main(): Promise<void> {
@@ -189,6 +290,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "report") {
+    const floor = readFloor(argv);
     const cached = cachedCount(db, ideas);
     if (cached < ideas.length) {
       throw new Error(
@@ -196,9 +298,10 @@ async function main(): Promise<void> {
           "extract on a cold cache (28 calls). Run `p1` first.",
       );
     }
-    const run = runFor(db, noProvider);
+    const run = runFor(db, noProvider, floor);
     const pairs = await run.union();
     const artifact = {
+      floor,
       union: pairs.length,
       pairs,
       extractCalls: run.extractCalls,
@@ -206,7 +309,52 @@ async function main(): Promise<void> {
     };
     writeArtifact("union.json", artifact);
     process.stdout.write(
-      `${JSON.stringify({ union: pairs.length, extractCalls: run.extractCalls }, null, 2)}\n`,
+      `${JSON.stringify({ floor, union: pairs.length, extractCalls: run.extractCalls }, null, 2)}\n`,
+    );
+    return;
+  }
+
+  if (command === "widen") {
+    const floor = readFloor(argv);
+    const cached = cachedCount(db, ideas);
+    if (cached < ideas.length) {
+      throw new Error(
+        `widen: ${cached}/${ideas.length} descriptors cached — refusing, because the matrix would ` +
+          `extract on a cold cache (${ideas.length} calls). Run \`p1\` first.`,
+      );
+    }
+    // 0 calls: the full matrix and the union are the gate's local read over cached descriptors.
+    const run = runFor(db, noProvider, floor);
+    const matrix = await run.matrix();
+    const union = await run.union();
+    const artifact = {
+      floor,
+      mWide: union.length,
+      taus: [...W9_WIDE_TAUS],
+      // Free per-τ counts — the sweep is a pure filter over the (already computed) matrix.
+      perTau: W9_WIDE_TAUS.map((tau) => ({
+        tau,
+        pairsAtOrAbove: matrix.filter((pair) => pair.alignment >= tau).length,
+      })),
+      matrix,
+      extractCalls: run.extractCalls,
+      adjudicateCalls: run.adjudicateCalls,
+      cost: adjudicationCost(db, ideas, union),
+    };
+    writeArtifact("widen-posting.json", artifact);
+    process.stdout.write(
+      `${JSON.stringify(
+        {
+          floor: artifact.floor,
+          mWide: artifact.mWide,
+          taus: artifact.taus,
+          perTau: artifact.perTau,
+          extractCalls: artifact.extractCalls,
+          cost: artifact.cost,
+        },
+        null,
+        2,
+      )}\n`,
     );
     return;
   }
@@ -224,6 +372,7 @@ async function main(): Promise<void> {
   }
 
   if (command === "p2") {
+    const floor = readFloor(argv);
     const cached = cachedCount(db, ideas);
     if (cached < ideas.length) {
       throw new Error(`p2: ${cached}/${ideas.length} descriptors cached — run \`p1\` first.`);
@@ -233,7 +382,7 @@ async function main(): Promise<void> {
     // text, `EXTRACTOR_VERSION`, or `AI_MODEL` moved since P1) then fails closed *here*, before either
     // key is checked, instead of firing a live extraction per stale idea: `cachedCount` counts rows, not
     // valid rows, so it cannot stand in for this (Max, #102).
-    const dry = runFor(db, noProvider);
+    const dry = runFor(db, noProvider, floor);
     const union = await dry.union().catch((error: unknown): never => {
       throw new Error(
         "p2: refusing — the descriptor cache is not warm (a stale row would extract on the live " +
@@ -246,15 +395,29 @@ async function main(): Promise<void> {
 
     // Only the ratified spend gets the adapter, and only after both keys passed. The union pass above
     // proved every descriptor is cached, so this pass fires adjudication calls — and no extraction.
-    const run = runFor(db, createAdapterFromEnv());
+    const run = runFor(db, createAdapterFromEnv(), floor);
     const adjudication = await run.adjudicate();
     if (run.extractCalls !== 0) {
       throw new Error(`p2: ${run.extractCalls} extraction calls during adjudication — expected 0`);
     }
-    if (run.adjudicateCalls > union.length) {
-      throw new Error(`p2: cap exceeded (${run.adjudicateCalls} > ${union.length})`);
+    // Equality, not `>`: `createAdjudicator` fires exactly one call per gated pair (`engine/adjudicate.ts`),
+    // so the live spend must *equal* the dry union — and `!==` catches the silent under-spend (`union: 67`
+    // over `adjudicateCalls: 0`) that `>` cannot. Exact *here* for a stated reason: every pair's two idea
+    // rows are live across `extract → matrix → union → adjudicate` in one process, so D4's `continue` (no
+    // call when an idea row is gone) is unreachable. A fixture that could leave a pair with a missing row
+    // needs `<= union.length` plus a recorded expected count, **not** blind equality (Max/David, #34).
+    if (run.adjudicateCalls !== union.length) {
+      const direction =
+        run.adjudicateCalls > union.length
+          ? "over-spend: the cap was exceeded"
+          : "under-spend: the floor likely reached only the dry pass";
+      throw new Error(
+        `p2: ${run.adjudicateCalls} adjudication calls for a union of ${union.length} — expected exactly ` +
+          `${union.length}, one per gated pair (${direction}).`,
+      );
     }
     const artifact = {
+      floor,
       union: union.length,
       // The dry pass's extraction count — the P2 posting cites this, and it must read 0 (Max/David, #102).
       unionExtractCalls: dry.extractCalls,
@@ -269,7 +432,7 @@ async function main(): Promise<void> {
   }
 
   throw new Error(
-    `unknown command ${JSON.stringify(command ?? "")} — expected post | p1 | p2 | report`,
+    `unknown command ${JSON.stringify(command ?? "")} — expected post | p1 | p2 | report | widen`,
   );
 }
 
