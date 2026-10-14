@@ -220,6 +220,11 @@ test("GET /v1/sparks/state needs a token like every /v1 route (§1)", async () =
   expectEnvelope(await call("GET", "/v1/sparks/state"), 401, "unauthorized");
 });
 
+test("GET /v1/sparks/events needs a token like every /v1 route (§1, §4.11)", async () => {
+  // The SSE route is gated by the same `/v1` auth; an unauthenticated call never opens a stream.
+  expectEnvelope(await call("GET", "/v1/sparks/events"), 401, "unauthorized");
+});
+
 test("POST /v1/sparks/run enqueues at the current revision and answers 202 (§4.16)", async () => {
   seedSpread();
   const result = await call("POST", "/v1/sparks/run", { authorization: `Bearer ${TOKEN}` });

@@ -400,6 +400,33 @@ data: {Spark}
   `GET /v1/sparks/state` + `GET /v1/sparks?state=offered` with **bounded backoff, only while
   `state = E1`**.
 
+Readings this doc had not pinned (settled in K1 `#35`):
+
+- **The store is the notifier; the API is a subscriber.** The two processes share one SQLite file
+  (`ARCHITECTURE.md` §1) and SQLite has no cross-process pub/sub, so the stream samples SQLite's own
+  cross-connection change signal — `PRAGMA data_version` — and re-reads the deck (`liveOffers`, §4.9)
+  and the state (`engineState`, §4.10) **only when that signal moves**. A commit on *any other*
+  connection moves it: the worker's offer write, and the API's own `POST /v1/sparks/run` enqueue.
+  A commit on the sampling connection itself does not (SQLite's documented semantics). The cadence is
+  therefore a bound on **latency**, not a timer that emits: with nothing committed, no frame is sent.
+- **The sampler is a second, read-only handle — never the API's `db`.** A connection is blind to its
+  own commit, so a watcher on `db` would miss every change the API process itself makes — §4.16's run
+  enqueue and every `vaultMutation` — and, with the worker down, "every change" would be silently
+  narrower. Hence `createApp({ db, watchDb })`: `watchDb` is a second handle on the same file, used
+  **only** to read `PRAGMA data_version`, and it **never writes**. (`:memory:` is a test-only path —
+  a second handle there is a different database — so the sampler falls back to `db`; `api/src/index.ts`
+  always passes a distinct handle.)
+- **Connect primes, then states.** A subscriber's first frame is one baseline `state`, and the diff
+  caches are primed from the current deck — so connecting does not replay the whole deck as `offer`
+  frames. A client subscribes, then reads §4.9 for the deck; the stream carries the changes after.
+- **Per-subscriber, live-only.** The sampler exists only while a client is connected: no subscriber
+  means no sampling, no buffering and no replay. A `state` change with no client connected is simply
+  not observed; a reconnecting client gets the baseline `state` and re-reads §4.9. Heartbeat comment
+  frames (`: keepalive`) keep an intermediary from reaping an idle stream.
+- **Auth is the `/v1` gate's, and it is a client constraint.** `EventSource` cannot set an
+  `Authorization` header, so a client reaches this route with a `fetch`-stream, or falls back to the
+  polling path above. K1 records the constraint; the client lane resolves it.
+
 ### 4.12 `GET /v1/sparks/{id}` — spark detail (S1b)
 `200` → `SparkDetail` (§3.4). No scores, no similarity readout (`ARCHITECTURE.md` §6).
 
