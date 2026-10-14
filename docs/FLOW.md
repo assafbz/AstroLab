@@ -38,7 +38,7 @@ A spark is a *proposed direction* derived from two of the user's own ideas. The 
 | Ref | Surface | stitch-prompts.md § | Role |
 | :-- | :------ | :---------- | :--- |
 | **S0** | Onboarding / Bootstrap | §7 | Cross-domain elicitation. The *empty vault is the onboarding*. |
-| **S1** | Sparks (home) | §1 | The review **queue**. Default = **deck** (one card at a time); **View all** toggle = list. |
+| **S1** | Sparks (home) | §1 | The review **queue**. Default = **deck** (one card at a time); **View all** toggle = list. The engine states **E0–E4** are drawn in `DESIGN.md` §9. |
 | **S1b** | Spark Detail | §2 | One spark expanded. |
 | **S2** | Capture | §3 | Structured capture of one idea. A **seeded** variant opens from a spark. |
 | **S3** | Vault | §4 | All ideas; domain + lineage filters. |
@@ -279,4 +279,6 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 
 - **2026-10-13 — r3.3.** Owner decision on **Open Q6 → option (a):** the S0 domain input is the shipped-taxonomy **picker plus an `Other → free text` escape** — a picked domain stays **resolved** (deterministic, AI-free), a typed lane is **provisional** and never counts toward the `≥ 2` gate until the worker resolves it on the first run (`ARCHITECTURE.md` §3.2). Landed in **§4.2/T02** (guard), **§5.2** (floor), **§7** (checklist); Q6 closed. Also the **§4.1 E0** nit: the E0 row's own parenthetical now reads *2 distinct **resolved** domains* so E0's definition is uniform in-file. Docs-only; no state-machine change. Post-approval clause fix (T04): the rationale now reads *picked resolves against the shipped taxonomy; typed stays provisional* — stale premise removed, conclusion unchanged.
 
-*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.3, 2026-10-13. Review: two adversarial passes by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
+- **2026-10-14 — r3.5.** **G3 (#51) closed:** the deck's empty/error states land as **`DESIGN.md` §9** — the five engine states **E0–E4** composed into the deck band (E0 progress *not* failure; E1 skeletal shimmer, **no circular spinner**; E2 card + `n > 1` list toggle; E3 the `x / 3` widening nudge **at exactly 2 domains**; E4 the quiet, non-blocking Retry), plus the §4.1 precedence rules. The §2.1 **S1** row now cites it. Docs-only; no state-machine change.
+
+*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.5, 2026-10-14. Review: two adversarial passes by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
