@@ -3,9 +3,13 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { isoTimestamp, vaultMutation } from "@astrolab/store";
 
+import { toIdea, type Idea, type IdeaRow } from "./idea.js";
+
 // The UTC shape lives in the store, because the run rows need the same one; re-exported here so
 // this module stays the API-side name for it.
 export { isoTimestamp };
+// Likewise the §3.1 `Idea` shape, which now lives in `./idea.js` shared with the read path.
+export type { Idea };
 
 /**
  * Capture — `POST /v1/ideas` (docs/API.md §4.2). The one write path V1 (#12) implements: a **blank**
@@ -28,22 +32,6 @@ export interface CaptureInput {
   domain_tags: string[];
   origin_spark_id: string | null;
   decision_id: string | null;
-}
-
-/** docs/API.md §3.1 — the response body of a capture. */
-export interface Idea {
-  id: string;
-  hypothesis: string;
-  problem: string;
-  monetization: string;
-  domain_tags: string[];
-  lineage_kind: "ROOT" | "ITERATION" | "FORK";
-  lineage_parent_id: string | null;
-  status: "ACTIVE" | "NEEDS_COMPLETION";
-  visibility: "PRIVATE";
-  current_version: number;
-  created_at: string;
-  updated_at: string;
 }
 
 /** A request the contract rejects before any write (`422 validation_failed`). */
@@ -161,21 +149,6 @@ function optionalId(body: Record<string, unknown>, field: string): string | null
   return value;
 }
 
-interface IdeaRow {
-  id: string;
-  hypothesis: string;
-  problem: string;
-  monetization: string;
-  domain_tags: string;
-  lineage_kind: Idea["lineage_kind"];
-  lineage_parent_id: string | null;
-  status: Idea["status"];
-  visibility: Idea["visibility"];
-  current_version: number;
-  created_at: string;
-  updated_at: string;
-}
-
 interface SparkRow {
   id: string;
   idea_a_id: string;
@@ -230,21 +203,7 @@ function insertProvenance(
 
 function findIdea(db: DatabaseSync, id: string): Idea | null {
   const row = db.prepare("SELECT * FROM idea WHERE id = ?").get(id) as IdeaRow | undefined;
-  if (row === undefined) return null;
-  return {
-    id: row.id,
-    hypothesis: row.hypothesis,
-    problem: row.problem,
-    monetization: row.monetization,
-    domain_tags: JSON.parse(row.domain_tags) as string[],
-    lineage_kind: row.lineage_kind,
-    lineage_parent_id: row.lineage_parent_id,
-    status: row.status,
-    visibility: row.visibility,
-    current_version: row.current_version,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  };
+  return row === undefined ? null : toIdea(row);
 }
 
 function findSpark(db: DatabaseSync, id: string): SparkRow | null {
