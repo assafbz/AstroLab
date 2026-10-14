@@ -15,23 +15,46 @@ import { describe, expect, test } from "vitest";
  *    to importing it. If one appears, the mechanism is falsified and the suite must say so.
  * 2. **Every call pins `provider.zdr`.** One call site, guarded — an assertion inside `buildRequest`
  *    would only restate the field it just set (David's pin 4).
+ * 3. **The boundary reaches nothing but its own siblings.** No DB handle, no vault, no second transport:
+ *    every specifier under `provider/` resolves inside the directory (a `./sibling.js`, or a `node:`
+ *    builtin that reaches no state). Claim 1 says the vault cannot reach *here*; this says this cannot
+ *    reach *there*. Without it the first is only half a guarantee — `worker` already depends on
+ *    `@astrolab/store`, so one line would hand the adapter the vault and no check would notice.
  *
- * Both are mutation-checked in the PR: plant a violation, watch it fail, restore.
+ * All three are mutation-checked in the PR: plant a violation, watch it fail, restore.
  */
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
-const PROVIDER_MODULE = "worker/src/provider/openrouter.ts";
+const PROVIDER_DIR = "worker/src/provider";
+const PROVIDER_MODULE = `${PROVIDER_DIR}/openrouter.ts`;
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "artifacts", ".agents", "data"]);
-/** Where the vault lives. A provider import anywhere under these is the bug this file exists for. */
-const VAULT_PACKAGES = ["api", "store"];
+
+/**
+ * Everything that is *not* the worker. A provider import anywhere under these is the bug this file
+ * exists for. Read from the root manifest rather than hardcoded, so a new package is guarded the day it
+ * exists — the hardcoded `["api","store"]` left `client/` unguarded (§1 forbids the client reaching the
+ * provider too), and nothing would have said so.
+ */
+const WORKSPACES = (
+  JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { workspaces: string[] }
+).workspaces;
+const VAULT_PACKAGES = WORKSPACES.filter((pkg) => pkg !== "worker");
+
+/** Every extension a workspace's `src/` can hold — a `.jsx` or `.mjs` file is a production code path too. */
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+const TEST_FILE = /\.test\.[cm]?[jt]sx?$/;
 
 function sourceFiles(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       if (!SKIP_DIRS.has(entry.name)) sourceFiles(join(dir, entry.name), found);
-    } else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
+    } else if (
+      SOURCE_EXTENSIONS.some((ext) => entry.name.endsWith(ext)) &&
+      !TEST_FILE.test(entry.name)
+    ) {
       const path = join(dir, entry.name);
-      // Only a package's `src/` — test fixtures are not production code paths.
+      // Only a package's `src/` — test fixtures are not production code paths. A React component is
+      // one, and a client provider import is the same bug as a vault one.
       if (relative(ROOT, path).split(/[\\/]/).includes("src")) found.push(path);
     }
   }
@@ -55,6 +78,16 @@ describe("the vault cannot reach the AI boundary (NFR-A1, ARCH §9)", () => {
     // Without this, a broken walk turns every assertion below into a silent pass.
     expect(FILES.length).toBeGreaterThan(10);
     expect(FILES.map((file) => file.rel)).toContain("worker/src/queue.ts");
+    // Both widenings are themselves non-vacuous. Per package, because a typo'd package name narrows the
+    // scan silently — the same failure mode as the `from`-only specifier extractor. And the walk must
+    // reach a `.tsx` file, or "the extension union" is a claim about nothing.
+    for (const pkg of VAULT_PACKAGES) {
+      expect(
+        FILES.some((file) => file.rel.startsWith(`${pkg}/`)),
+        `the scan reached no files under ${pkg}/`,
+      ).toBe(true);
+    }
+    expect(FILES.map((file) => file.rel)).toContain("client/src/App.tsx");
   });
 
   test("the specifier extractor sees every import form — a side-effect import has no `from`", () => {
@@ -78,7 +111,7 @@ describe("the vault cannot reach the AI boundary (NFR-A1, ARCH §9)", () => {
     ]);
   });
 
-  test("no api/ or store/ source imports the provider module", () => {
+  test("no non-worker source imports the provider module", () => {
     const offenders: string[] = [];
     for (const file of FILES) {
       const pkg = file.rel.split("/")[0];
@@ -103,6 +136,38 @@ describe("the vault cannot reach the AI boundary (NFR-A1, ARCH §9)", () => {
         expect(Object.keys(manifest[section] ?? {})).not.toContain("@astrolab/worker");
       }
     }
+  });
+});
+
+describe("the boundary reaches nothing but its own siblings (NFR-A1, ARCH §5, §11 PRIV1)", () => {
+  const PROVIDER_FILES = FILES.filter((file) => file.rel.startsWith(`${PROVIDER_DIR}/`));
+
+  test("the boundary is scanned at all", () => {
+    // Same non-vacuity rule as above: an empty list would make the assertion below pass by default.
+    expect(PROVIDER_FILES.map((file) => file.rel)).toContain(PROVIDER_MODULE);
+    expect(PROVIDER_FILES.length).toBeGreaterThan(3);
+  });
+
+  test("every specifier under worker/src/provider/ resolves inside the directory", () => {
+    // `worker` depends on `@astrolab/store`, so `import { openStore } from "@astrolab/store"` in the
+    // adapter typechecks and passed 54/54 before this test existed. The adapter's *only* route to the
+    // vault would be an import, so closing the import closes the route: this is what makes "invalid
+    // output ⇒ nothing stored" true by construction rather than by discipline.
+    //
+    // `node:` builtins are allowed (none today) so a future `node:crypto` hash — which reaches no
+    // state — does not have to fight the guard. Anything else (a bare package, a `../` escape) is
+    // refused; a later stage that wants one should arrive as a *named* exception with its reason.
+    // W3's `idea_mechanism` cache write stays above this line, in engine code, for exactly that reason.
+    const offenders: string[] = [];
+    for (const file of PROVIDER_FILES) {
+      for (const specifier of specifiers(file.text)) {
+        if (!/^\.\/[A-Za-z0-9_.-]+\.js$/.test(specifier) && !specifier.startsWith("node:")) {
+          offenders.push(`${file.rel} → ${specifier}`);
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 });
 
