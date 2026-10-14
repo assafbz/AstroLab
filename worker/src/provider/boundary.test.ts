@@ -73,6 +73,18 @@ function specifiers(text: string): string[] {
   );
 }
 
+/**
+ * Which specifiers a file under `worker/src/provider/` may use: a `./sibling.js` (the boundary's own
+ * modules), or a `node:` builtin that reaches no state. Refused: any bare package, any `../` escape —
+ * and **`node:sqlite`**, a DB handle. The adapter must not take one (W3's carry, #28 review): a handle
+ * would let it write, which demotes *"invalid output ⇒ nothing stored"* from a construction to a
+ * promise. `node:crypto` stays allowed, so a stateless hash never has to fight the guard.
+ */
+function boundarySpecifierAllowed(specifier: string): boolean {
+  if (specifier === "node:sqlite") return false;
+  return /^\.\/[A-Za-z0-9_.-]+\.js$/.test(specifier) || specifier.startsWith("node:");
+}
+
 describe("the vault cannot reach the AI boundary (NFR-A1, ARCH §9)", () => {
   test("the scan is real — it sees the tree it is guarding", () => {
     // Without this, a broken walk turns every assertion below into a silent pass.
@@ -154,18 +166,62 @@ describe("the boundary reaches nothing but its own siblings (NFR-A1, ARCH §5, �
     // vault would be an import, so closing the import closes the route: this is what makes "invalid
     // output ⇒ nothing stored" true by construction rather than by discipline.
     //
-    // `node:` builtins are allowed (none today) so a future `node:crypto` hash — which reaches no
-    // state — does not have to fight the guard. Anything else (a bare package, a `../` escape) is
-    // refused; a later stage that wants one should arrive as a *named* exception with its reason.
-    // W3's `idea_mechanism` cache write stays above this line, in engine code, for exactly that reason.
-    const offenders: string[] = [];
-    for (const file of PROVIDER_FILES) {
-      for (const specifier of specifiers(file.text)) {
-        if (!/^\.\/[A-Za-z0-9_.-]+\.js$/.test(specifier) && !specifier.startsWith("node:")) {
-          offenders.push(`${file.rel} → ${specifier}`);
-        }
-      }
+    // A `node:` builtin reaches no state, so one is allowed; a **DB handle** is the exception, named
+    // and refused (`node:sqlite`) — see `boundarySpecifierAllowed`. A later stage that wants any other
+    // specifier should arrive as a *named* exception with its reason: W3's `idea_mechanism` cache write
+    // is exactly that, and it lives in `store/src/mechanism.ts` — above this line, and reachable from
+    // the API's delete path (V5 #16) — rather than in the adapter.
+    const offenders = PROVIDER_FILES.flatMap((file) =>
+      specifiers(file.text)
+        .filter((specifier) => !boundarySpecifierAllowed(specifier))
+        .map((specifier) => `${file.rel} → ${specifier}`),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  test("the allowed-specifier rule accepts the boundary's own shape and refuses a DB handle", () => {
+    // A positive control, per the guard-scope rule: the rule must accept one input and refuse one, or
+    // a widened (or broken) rule reads exactly like a passing scan.
+    for (const allowed of ["./schema.js", "node:crypto"]) {
+      expect(boundarySpecifierAllowed(allowed), allowed).toBe(true);
     }
+    for (const refused of ["node:sqlite", "@astrolab/store", "../queue.js", "./schema"]) {
+      expect(boundarySpecifierAllowed(refused), refused).toBe(false);
+    }
+  });
+});
+
+describe("the mechanism descriptor never leaves the worker (ARCH §3.3 items 2–4; PRD §3.3)", () => {
+  // The descriptor and its table are selection-internal: `docs/API.md` §0 and §3.3 forbid a
+  // `mechanism`, a distance, an alignment, or a "related ideas" readout anywhere in a response — which
+  // only holds if no surface can reach them. Scope is the *surfaces*, `api/` and `client/`, not
+  // `store/`: the store owns the shipped DDL and legitimately names the table in `0001_init` — that is
+  // the schema of record, not a surface.
+  const SURFACES = VAULT_PACKAGES.filter((pkg) => pkg !== "store");
+  const TABLE = /idea_mechanism/;
+  const TYPE = /MechanismDescriptor/;
+  const names = (pattern: RegExp): string[] =>
+    FILES.filter((file) => pattern.test(file.text)).map((file) => file.rel);
+
+  test("the scan reaches both surfaces, and each alternative bites somewhere", () => {
+    for (const pkg of SURFACES) {
+      expect(
+        FILES.some((file) => file.rel.startsWith(`${pkg}/`)),
+        `no files under ${pkg}/`,
+      ).toBe(true);
+    }
+    // A typo'd pattern passes silently; show both halves matching something real.
+    expect(names(TABLE)).toContain("store/src/migrations.ts");
+    expect(names(TYPE)).toContain("worker/src/engine/mechanism.ts");
+  });
+
+  test("no api/ or client/ source names the descriptor or its table", () => {
+    const offenders = FILES.filter(
+      (file) =>
+        SURFACES.some((pkg) => file.rel.startsWith(`${pkg}/`)) &&
+        (TABLE.test(file.text) || TYPE.test(file.text)),
+    ).map((file) => file.rel);
 
     expect(offenders).toEqual([]);
   });

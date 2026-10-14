@@ -4,6 +4,7 @@ import { DESCRIPTOR_SCHEMA } from "./schema.js";
 import {
   DEFAULT_MODEL,
   buildRequest,
+  createAdapterFromEnv,
   createFetchTransport,
   createOpenRouterAdapter,
   type ChatRequest,
@@ -304,6 +305,53 @@ describe("createOpenRouterAdapter — adjudicate (ARCH §3.3 step 3)", () => {
 
     expect(requests).toHaveLength(2);
     expect(requests.map((request) => request.provider)).toEqual([{ zdr: true }, { zdr: true }]);
+  });
+});
+
+describe("createAdapterFromEnv — the env-selection contract (ADR-0003; W3's carry from #78)", () => {
+  test("an injected transport needs no key and reads nothing from the network", async () => {
+    const { transport, requests } = fakeTransport(async () => chatReply(descriptorJson));
+    const provider = createAdapterFromEnv({}, { transport });
+
+    await expect(provider.extract(idea)).resolves.toEqual(JSON.parse(descriptorJson));
+    expect(requests[0]?.model).toBe(DEFAULT_MODEL);
+  });
+
+  test("AI_MODEL overrides the pinned default", async () => {
+    const { transport, requests } = fakeTransport(async () => chatReply(descriptorJson));
+    const provider = createAdapterFromEnv({ AI_MODEL: "vendor/model-x" }, { transport });
+
+    await provider.extract(idea);
+
+    expect(requests[0]?.model).toBe("vendor/model-x");
+  });
+
+  test("an unsupported AI_PROVIDER throws, without needing a key", () => {
+    expect(() => createAdapterFromEnv({ AI_PROVIDER: "anthropic" })).toThrow(ProviderError);
+  });
+
+  test("no transport and no OPENROUTER_API_KEY throws — it never sends an unauthenticated call", () => {
+    expect(() => createAdapterFromEnv({})).toThrow(ProviderError);
+    expect(() => createAdapterFromEnv({ OPENROUTER_API_KEY: "   " })).toThrow(ProviderError);
+  });
+
+  test("a key builds the fetch transport: the pinned bearer header, and a parsed descriptor", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const provider = createAdapterFromEnv(
+      { OPENROUTER_API_KEY: "sk-test" },
+      {
+        fetchImpl: async (url, init) => {
+          calls.push({ url: String(url), init: init ?? {} });
+          return new Response(JSON.stringify(chatReply(descriptorJson)), { status: 200 });
+        },
+      },
+    );
+
+    await expect(provider.extract(idea)).resolves.toEqual(JSON.parse(descriptorJson));
+    expect(calls[0]?.url).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect((calls[0]?.init.headers as Record<string, string>)["authorization"]).toBe(
+      "Bearer sk-test",
+    );
   });
 });
 
