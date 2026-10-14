@@ -45,17 +45,26 @@ skills."* Applied to this repo's harness, that means:
    steps in `using-git-worktrees` / `ponytail-help` are therefore fine to run on a
    branch.
 
+
 ## Guard discipline — what counts as evidence
 
 A structural claim a test asserts — an import boundary, a single call site, a deterministic
 order — counts only once the guard has been seen **failing in the state it forbids**: plant
-the violation, watch the suite fail, restore. The guard also carries its own **non-vacuity**
-assertion, so it cannot silently scan nothing, miss files, or guard the wrong package.
+the violation, watch the suite fail, restore. The guard carries its own **non-vacuity**
+assertion too, so it cannot quietly scan nothing, miss the files it exists for, or guard the
+wrong package — and a structural claim asserted only in prose (a PR body, a JSDoc line) is not
+a check at all.
 
-Three checks in this repo shipped green in exactly the state they existed to catch
-(2026-10-14, the W1/W2 lane): `worker/src/queue.test.ts`'s `cutVault` ascending-id assertion
-(the planner's covering-index scan made `ORDER BY id` unobservable);
-`store/test/vault-writes.test.ts`'s re-export check (a text grep, blind to
-`export * from "./store.js"`); and `worker/src/provider/boundary.test.ts`'s specifier
-extractor (it matched `from "…"` only, so a side-effect import slipped past). A text grep and
-a planner-dependent assertion are not evidence; a guard never seen failing is a comment.
+Five instances in one day (2026-10-14, the W1/W2 lane). All five were found in review, not by
+the check itself, except the third, which its own mutation check caught:
+
+- `worker/src/queue.test.ts` — the `cutVault` ascending-id assertion: undiscriminating, because
+  the planner's covering-index scan made `ORDER BY id` unobservable (carried to W5 #30).
+- `store/test/vault-writes.test.ts` — the un-export check shipped as a **text grep**, blind to
+  `export * from "./store.js"`; #76 replaced it with the property form.
+- `worker/src/provider/boundary.test.ts` — the specifier extractor matched `from "…"` only, so
+  a side-effect import had no `from` to match.
+- the same file's walk — `api`/`store` only and `.ts` only: `client/` was unguarded, and a
+  `.tsx` was invisible even inside a scanned package.
+- "the adapter has no DB access" — asserted in prose, never checked: `import { openStore }`
+  in `openrouter.ts` left typecheck clean and the worker suite 54/54 green.
