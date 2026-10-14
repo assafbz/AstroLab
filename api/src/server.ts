@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { DatabaseSync } from "node:sqlite";
 
 import { captureIdea, NotFoundError, parseCaptureInput, ValidationError } from "./capture.js";
+import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
 
 /**
  * The API (docs/API.md): HTTP/JSON, bearer auth on every `/v1` route, and **one** error envelope.
@@ -120,9 +121,13 @@ async function handleRequest(
 ): Promise<void> {
   try {
     const method = req.method ?? "GET";
-    // No query parameter is read (the contract ignores unknown ones, §1), so the path is the raw URL
-    // with the query stripped. `normalizePath` then gives the one string the gate and router share.
-    const rawPath = (req.url ?? "/").split("?")[0] ?? "/";
+    // The path is the raw URL with the query stripped; `normalizePath` then gives the one string the
+    // gate and router share. V2 (#13) reads three query parameters (§4.4), split at the *first* `?` so
+    // a `?` inside a value stays in the query instead of truncating the path.
+    const url = req.url ?? "/";
+    const queryAt = url.indexOf("?");
+    const rawPath = queryAt === -1 ? url : url.slice(0, queryAt);
+    const query = new URLSearchParams(queryAt === -1 ? "" : url.slice(queryAt + 1));
     const path = normalizePath(rawPath);
 
     // §4.1 — answered *before* the gate, so a missing `API_TOKEN` cannot fail a liveness check.
@@ -140,6 +145,15 @@ async function handleRequest(
     // `not_found` envelope — there is no third case (§2).
     if (method === "POST" && path === "/v1/ideas") {
       return await handleCapture(req, res, db);
+    }
+
+    if (method === "GET" && path === "/v1/ideas") {
+      return handleListIdeas(res, db, query);
+    }
+
+    const detailId = method === "GET" ? ideaIdFromPath(path) : null;
+    if (detailId !== null) {
+      return handleIdeaDetail(res, db, detailId);
     }
 
     return sendError(res, "not_found", `no route for ${method} ${path}`);
@@ -166,6 +180,32 @@ async function handleCapture(
   const input = parseCaptureInput(body); // ValidationError → the outer catch → the 422 envelope
   const idea = captureIdea(db, input); // NotFoundError (unknown spark) → the 404 envelope
   sendJson(res, 201, idea);
+}
+
+/** `GET /v1/ideas?domain=&lineage=&status=` (docs/API.md §4.4). Filters validate before any read. */
+function handleListIdeas(res: ServerResponse, db: DatabaseSync, query: URLSearchParams): void {
+  const filters = parseVaultFilters(query); // ValidationError → the outer catch → the 422 envelope
+  sendJson(res, 200, { ideas: listIdeas(db, filters) });
+}
+
+/** `GET /v1/ideas/{id}` (docs/API.md §4.5). An unknown id is the `not_found` envelope. */
+function handleIdeaDetail(res: ServerResponse, db: DatabaseSync, id: string): void {
+  const detail = getIdeaDetail(db, id);
+  if (detail === null) return sendError(res, "not_found", `idea ${id} not found`);
+  sendJson(res, 200, detail);
+}
+
+/**
+ * The `{id}` of `/v1/ideas/{id}`, read from the **normalised** path so an encoded spelling routes here
+ * too. An empty id (`/v1/ideas/`) or a further segment (`/v1/ideas/a/b`) is not a defined route, which
+ * §2 answers as `not_found` — worth recording in §6, because the *client* router resolves `#/vault/`
+ * happily, and nothing should "fix" one side to match the other.
+ */
+const IDEA_DETAIL_PREFIX = "/v1/ideas/";
+function ideaIdFromPath(path: string): string | null {
+  if (!path.startsWith(IDEA_DETAIL_PREFIX)) return null;
+  const id = path.slice(IDEA_DETAIL_PREFIX.length);
+  return id === "" || id.includes("/") ? null : id;
 }
 
 /** A capture body is a few hundred bytes; a megabyte is a ceiling, not a target. */
