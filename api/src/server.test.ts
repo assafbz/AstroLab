@@ -174,10 +174,11 @@ test("authorized, the encoded spellings route to the same place or the envelope 
 });
 
 test("an authorized but unimplemented /v1 route is the not_found envelope — never a 200", async () => {
+  // W8 (#33) implements `GET /v1/sparks/state` and `POST /v1/sparks/run`; the two entries that pinned
+  // their *absence* are removed here (each has its own coverage below). Bare `/v1/sparks` stays 404 —
+  // the deck read (§4.9) is not this ticket.
   for (const [method, path] of [
     ["GET", "/v1/sparks"],
-    ["GET", "/v1/sparks/state"],
-    ["POST", "/v1/sparks/run"],
     ["GET", "/v1/export"],
     ["GET", "/v1"],
   ] as const) {
@@ -187,6 +188,70 @@ test("an authorized but unimplemented /v1 route is the not_found envelope — ne
       "not_found",
     );
   }
+});
+
+/** W8 (#33) — `GET /v1/sparks/state` (§4.10) and `POST /v1/sparks/run` (§4.16). */
+function seedSpread(): void {
+  // Two ideas in two clusters, so E0's floor is out of the way and the run routes are observable.
+  for (const [id, tag] of [
+    ["a", "fintech"],
+    ["b", "health"],
+  ] as const) {
+    db.prepare(
+      `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
+                         lineage_parent_id, status, visibility, current_version, created_at, updated_at)
+       VALUES (?, 'h', 'p', 'm', ?, 'ROOT', NULL, 'ACTIVE', 'PRIVATE', 1,
+               '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')`,
+    ).run(id, JSON.stringify([tag]));
+  }
+}
+
+test("GET /v1/sparks/state answers EngineState, and E0 on an empty vault (§4.10)", async () => {
+  const result = await call("GET", "/v1/sparks/state", { authorization: `Bearer ${TOKEN}` });
+  expect(result.status).toBe(200);
+  expect(result.contentType).toBe(JSON_UTF8);
+  expect(result.body).toEqual({ state: "E0", unreviewed: 0, run: null });
+});
+
+test("GET /v1/sparks/state needs a token like every /v1 route (§1)", async () => {
+  expectEnvelope(await call("GET", "/v1/sparks/state"), 401, "unauthorized");
+});
+
+test("POST /v1/sparks/run enqueues at the current revision and answers 202 (§4.16)", async () => {
+  seedSpread();
+  const result = await call("POST", "/v1/sparks/run", { authorization: `Bearer ${TOKEN}` });
+  expect(result.status).toBe(202);
+  expect(result.contentType).toBe(JSON_UTF8);
+  expect(result.body).toMatchObject({ vault_revision: 0 });
+  expect((result.body as { run_id: string }).run_id).toEqual(expect.any(String));
+});
+
+test("POST /v1/sparks/run is idempotent per revision — a repeat returns the same run (§4.16)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const first = await call("POST", "/v1/sparks/run", auth);
+  const second = await call("POST", "/v1/sparks/run", auth);
+  expect((second.body as { run_id: string }).run_id).toBe(
+    (first.body as { run_id: string }).run_id,
+  );
+  // …and the enqueued run is visible as E1 through the state read.
+  const state = await call("GET", "/v1/sparks/state", auth);
+  expect(state.body).toMatchObject({ state: "E0", run: { status: "PENDING" } });
+});
+
+test("POST /v1/sparks/run needs a token, and its body is never read (§1, §4.16)", async () => {
+  expectEnvelope(await call("POST", "/v1/sparks/run"), 401, "unauthorized");
+  // A body is ignored, not validated: the route reads none, so garbage is not a 422.
+  const result = await call("POST", "/v1/sparks/run", {
+    authorization: `Bearer ${TOKEN}`,
+    json: { unexpected: true },
+  });
+  expect(result.status).toBe(202);
+});
+
+test("the sparks routes dispatch by method — the wrong verb on a known path is the envelope (§2)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  expectEnvelope(await call("GET", "/v1/sparks/run", auth), 404, "not_found");
+  expectEnvelope(await call("POST", "/v1/sparks/state", auth), 404, "not_found");
 });
 
 test("a path outside /v1 is the envelope, and needs no token", async () => {
