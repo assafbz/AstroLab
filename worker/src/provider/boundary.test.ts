@@ -329,11 +329,14 @@ describe("Stage 2's adjudication stays in the worker (PRD §3.3 item 4; API §0)
   // *before* a spark is offered — so none of this may appear on a surface. `store/` is excluded for the
   // same reason as the blocks above: it owns `spark`'s DDL (`mechanism`, `domain_distance`,
   // `structural_alignment` are its columns of record), and the schema of record is not a surface.
-  // `\b` around `Adjudication` so the provider's own `SparkAdjudicator` is matched on its own name, and
-  // the all-caps `ADJUDICATION_SYSTEM` / `ADJUDICATION_SCHEMA` are not dragged in by a substring.
+  // `\b` around `Adjudication` and `Adjudicator` so each is matched as a **whole word**: the all-caps
+  // `ADJUDICATION_SYSTEM` / `ADJUDICATION_SCHEMA` are not dragged in by a substring, and the provider's
+  // own `SparkAdjudicator` keeps its own alternative. All five of `adjudicate.ts`'s exports are named
+  // here — the first version carried four, and a bare `Adjudicator` under `api/` left the suite green
+  // (W6 review, Max).
   const SURFACES = VAULT_PACKAGES.filter((pkg) => pkg !== "store");
   const ADJUDICATION =
-    /SparkDraft|SparkAdjudicator|createAdjudicator|ConfirmedSpark|RejectedPair|\bAdjudication\b/;
+    /SparkDraft|SparkAdjudicator|createAdjudicator|ConfirmedSpark|RejectedPair|\bAdjudication\b|\bAdjudicator\b/;
   const onSurface = (file: { rel: string }): boolean =>
     SURFACES.some((pkg) => file.rel.startsWith(`${pkg}/`));
 
@@ -347,6 +350,9 @@ describe("Stage 2's adjudication stays in the worker (PRD §3.3 item 4; API §0)
     for (const name of ["createAdjudicator", "ConfirmedSpark", "RejectedPair", "Adjudication"]) {
       expect(hits(new RegExp(name)), name).toContain("worker/src/engine/adjudicate.ts");
     }
+    // The bare interface, as its own alternative — a substring match would find it inside
+    // `SparkAdjudicator` and say nothing about the pattern actually guarding the name.
+    expect(hits(/\bAdjudicator\b/)).toContain("worker/src/engine/adjudicate.ts");
     for (const pkg of SURFACES) {
       expect(
         FILES.some((file) => file.rel.startsWith(`${pkg}/`)),
