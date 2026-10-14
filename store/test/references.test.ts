@@ -30,10 +30,10 @@ const fks = (db: DatabaseSync, table: string): string[] =>
 
 const count = (db: DatabaseSync, sql: string): number => (db.prepare(sql).get() as { n: number }).n;
 
-test("the schema version is 4 and the store migrates to it", () => {
+test("the schema version is 5 and the store migrates to it", () => {
   const db = migrated();
-  expect(SCHEMA_VERSION).toBe(4);
-  expect(schemaVersion(db)).toBe(4);
+  expect(SCHEMA_VERSION).toBe(5);
+  expect(schemaVersion(db)).toBe(5);
   // The rebuild runs with `PRAGMA foreign_keys = OFF`; enforcement must be back on afterwards, or a
   // connection left open would silently accept violations forever.
   expect(rows(db, "PRAGMA foreign_keys")[0]?.foreign_keys).toBe(1);
