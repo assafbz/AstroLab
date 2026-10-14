@@ -34,8 +34,8 @@ import { withRetry } from "./retry.js";
  *
  * ## Retry posture follows the call, not the module
  *
- * `recordNoise` runs standalone (inside W8's run body, after its currency check), so it carries the
- * bounded retry `upsertDescriptor` carries. `recordDismissal` / `clearSuppression` run **inside** the
+ * `recordNoise` runs standalone (from W8's run **commit**, after `runOnce`'s currency check — the
+ * hook `worker/src/engine/run.ts` builds), so it carries the bounded retry `upsertDescriptor` carries. `recordDismissal` / `clearSuppression` run **inside** the
  * caller's `vaultMutation`, whose `writeTransaction` already retries the whole body — an inner retry
  * there would sleep while holding the write lock. Both postures have precedent: `mechanism.ts` for the
  * first, `delete.ts` / `capture.ts` for the second.
