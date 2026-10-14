@@ -280,6 +280,47 @@ test("GET /v1/sparks?state=offered is the deck body — `{ sparks: [] }` on an e
   expect(result.body).toEqual({ sparks: [] });
 });
 
+test("GET /v1/sparks?state=offered returns the live deck and never a resolved spark (§4.9)", async () => {
+  // The data-bearing path *over HTTP*, at the W8 bar: the deck read returns §3.3's `Spark` for a live
+  // offer and drops a resolved one, with `domain_tags` the pair-order union of the two source ideas.
+  for (const [id, tag] of [
+    ["a", "fintech"],
+    ["b", "health"],
+    ["c", "audio-dsp"],
+  ] as const) {
+    db.prepare(
+      `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
+                         lineage_parent_id, status, visibility, current_version, created_at, updated_at)
+       VALUES (?, 'h', 'p', 'm', ?, 'ROOT', NULL, 'ACTIVE', 'PRIVATE', 1, 't', 't')`,
+    ).run(id, JSON.stringify([tag]));
+  }
+  const spark = (id: string, a: string, b: string, status: string): void => {
+    const [x, y] = [a, b].sort();
+    db.prepare(
+      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, status, created_at)
+       VALUES (?, ?, ?, ?, 'a direction', 'a claim', ?, '2026-01-01T00:00:00Z')`,
+    ).run(id, a, b, `${x}|${y}`, status);
+  };
+  spark("live", "a", "b", "OFFERED");
+  spark("resolved", "a", "c", "RESOLVED-DISMISSED");
+
+  const result = await call("GET", "/v1/sparks?state=offered", {
+    authorization: `Bearer ${TOKEN}`,
+  });
+  expect(result.status).toBe(200);
+  expect(result.body).toEqual({
+    sparks: [
+      {
+        id: "live",
+        direction: "a direction",
+        claim: "a claim",
+        domain_tags: ["fintech", "health"],
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ],
+  });
+});
+
 test("a path outside /v1 is the envelope, and needs no token", async () => {
   expectEnvelope(await call("GET", "/"), 404, "not_found");
   expectEnvelope(await call("GET", "/nope"), 404, "not_found");

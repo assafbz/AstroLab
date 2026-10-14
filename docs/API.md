@@ -131,9 +131,11 @@ No `mechanism`, no `domain_distance`, no `structural_alignment`, no source idea 
 internals never surface (`PRD.md` §3.3 items 2–4; `ARCHITECTURE.md` §2.3).
 
 `domain_tags` is **derived, not stored**: `spark` has no tags column (`ARCHITECTURE.md` §2.3), so
-§4.9's read joins the two source ideas and returns the **deduped union in pair order** — `idea_a_id`'s
-tags then `idea_b_id`'s, first appearance winning, deterministic because `pair_key = min|max` fixes the
-order. A tag may be **provisional** — an S0 `Other → free text` lane the worker has not resolved yet
+§4.9's read joins the two source ideas and returns the **deduped union in the writer's stored
+`idea_a_id`→`idea_b_id` order**, which `ux_spark_live` pins to a single live row per pair — first
+appearance winning. A client may rely on that determinism **per row**; it must **not** assume id order
+(`pair_key = min|max` keys the pair but does not fix which id lands in `idea_a_id`). A tag may be
+**provisional** — an S0 `Other → free text` lane the worker has not resolved yet
 (`ARCHITECTURE.md` §3.2) — and `Spark` carries no cluster field, so the card shows the raw tag: a
 client must not read chips as resolved clusters.
 

@@ -163,7 +163,8 @@ export interface LiveSpark {
  *
  * §3.3 requires `domain_tags` on a `Spark` and `DESIGN.md` §9 renders them as the card's chips, but
  * `spark` carries no tags — so this is a read-side join onto the two source ideas, in **pair order**
- * (`idea_a_id` then `idea_b_id`, which `pair_key = min|max` fixes), deduped by first appearance. A
+ * (the stored `idea_a_id` then `idea_b_id`), deduped by first appearance. `pair_key = min|max` keys
+ * the pair but does not fix which id is `idea_a_id`, so the order is the writer's, not id order. A
  * tag may be a *provisional* one (S0's `Other → free text` escape): there is no cluster field on a
  * `Spark`, so the card shows the raw tag and a client must not read chips as resolved clusters.
  *
