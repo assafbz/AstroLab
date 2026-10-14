@@ -92,7 +92,7 @@ export interface TagNormalizer {
   normalizeTag(tag: string, clusters: readonly ClusterOption[]): Promise<string>;
 }
 
-/** `ARCHITECTURE.md` §5: *"a single adapter implements both"* — the third operation (W4) joins them. */
+/** `ARCHITECTURE.md` §5 — **one** interface, **one** adapter: the three operations are `extract` (§3.3 step 1), `adjudicate` (§3.3 step 3) and `normalizeTag` (§3.2 step 2, the third added in W4). */
 export type Provider = MechanismExtractor & SparkAdjudicator & TagNormalizer;
 
 /**

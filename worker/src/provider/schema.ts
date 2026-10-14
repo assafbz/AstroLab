@@ -1,7 +1,7 @@
 import { InvalidOutputError, type MechanismDescriptor, type SparkDraft } from "./types.js";
 
 /**
- * Structured output (`ARCHITECTURE.md` §5): both calls ask for JSON validated against a schema **before
+ * Structured output (`ARCHITECTURE.md` §5): all three calls ask for JSON validated against a schema **before
  * anything is stored**, and *"invalid output = a failed call, retried per §4, never stored"*.
  *
  * Validation is hand-rolled rather than a schema library: two small objects do not earn a dependency,

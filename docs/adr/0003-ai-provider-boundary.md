@@ -2,6 +2,7 @@
 
 - **Status:** Proposed (MVP)
 - **Date:** 2026-10-12 · **Updated:** 2026-10-13 (provider pinned: OpenRouter + `deepseek/deepseek-v4-flash`; PRIV1 = ZDR routing control, provider-attested)
+- **Updated:** 2026-10-14 (third operation — tag normalisation — added; §5 now names three)
 - **Context:** `docs/ARCHITECTURE.md` §5
 - **Deciders:** architecture (Ari) — review Max
 

@@ -25,7 +25,7 @@ import {
 } from "./types.js";
 
 /**
- * The OpenRouter adapter (`ARCHITECTURE.md` §5; `ADR-0003`) — one adapter, both operations.
+ * The OpenRouter adapter (`ARCHITECTURE.md` §5; `ADR-0003`) — one adapter, three operations.
  *
  * The division of labour: the **adapter** owns the request shape, the privacy pin and output
  * validation; the **transport** owns URL, auth and timeout. That split is what lets the whole required
