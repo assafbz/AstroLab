@@ -86,7 +86,7 @@ regenerated id turns a retry into a second decision; the client must not regener
   "updated_at": "2026-10-13T05:14:05Z"
 }
 ```
-Enums: `lineage_kind` ∈ `ROOT | ITERATION | FORK`; `status` ∈ `ACTIVE | NEEDS_COMPLETION`;
+Enums: `lineage_kind` ∈ `ROOT | FORK`; `status` ∈ `ACTIVE | NEEDS_COMPLETION`;
 `visibility` = `PRIVATE` (MVP only). `lineage_parent_id` is set **only** for `FORK` and always refers
 to **one** parent (`PRD.md` §2; `ARCHITECTURE.md` §2.1). `NEEDS_COMPLETION` = a spark-derived idea
 whose mandatory fields could not be fully prefilled; it is **excluded from candidate selection** until
@@ -197,7 +197,7 @@ Readings this doc had not pinned (settled in O2 `#22`): the route is behind the 
 `not_found` envelope (§2).
 
 ### 4.4 `GET /v1/ideas?domain=&lineage=&status=` — Vault list (S3)
-Filters: `domain` (exact tag match), `lineage` ∈ `ROOT|ITERATION|FORK`, `status` ∈
+Filters: `domain` (exact tag match), `lineage` ∈ `ROOT|FORK`, `status` ∈
 `ACTIVE|NEEDS_COMPLETION`. Absent filter = no restriction.
 `200` → `{ "ideas": [Idea, …] }`.
 
@@ -440,10 +440,16 @@ rather than left to the implementation:
     **unreachable**: no idea that had ever been captured could be deleted.
   - **A dangling ref is not a violation.** `PRAGMA foreign_key_check` is clean on every state §4.8
     produces; the refs that dangle are exactly the ones the schema no longer enforces.
+- **`lineage_kind` has no `ITERATION` (settled in V3 `#14`)** — iteration writes a new `idea_version`
+  row on the same node and creates no lineage edge (`FLOW.md` §2.3 L1), and the schema's FORK-parent
+  `CHECK` already forbade the only parent-bearing form an `ITERATION` row could have had. `0004`
+  narrowed the `CHECK` to `ROOT | FORK` and §3.1/§4.4 drop the value, so **`?lineage=ITERATION` is the
+  `422 validation_failed` envelope** — an out-of-vocabulary filter value (§1), not a filter that
+  matches nothing.
 
 ---
 
 *Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`;
 carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`; by **V2** (`#13`),
-branch `feat/v2-vault-read-api`; by **O2** (`#22`), branch `feat/o2-vault-summary`; and by **V5**
-(`#16`), branch `feat/v5-delete-api`.*
+branch `feat/v2-vault-read-api`; by **O2** (`#22`), branch `feat/o2-vault-summary`; by **V5**
+(`#16`), branch `feat/v5-delete-api`; and by **V3** (`#14`), branch `feat/v3-iterate-api`.*

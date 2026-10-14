@@ -21,7 +21,7 @@ function distinctDomains(ideas: Idea[]): string[] {
   return [...new Set(ideas.flatMap((idea) => idea.domain_tags))].sort();
 }
 
-const LINEAGES: ReadonlyArray<Idea["lineage_kind"]> = ["ROOT", "ITERATION", "FORK"];
+const LINEAGES: ReadonlyArray<Idea["lineage_kind"]> = ["ROOT", "FORK"];
 
 export function Vault() {
   const [ideas, setIdeas] = useState<Idea[] | null>(null);

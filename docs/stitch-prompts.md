@@ -100,7 +100,7 @@ All of the user's ideas.
 - Header "Vault" + muted idea count in mono.
 - Search field (rounded, hairline, mono placeholder).
 - Horizontally scrolling **domain** chip row (active chip in brass tint, row clipping at the right edge) and a
-  **lineage** row: `root` / `iteration` / `fork`.
+  **lineage** row: `root` / `fork`.
 - Vertical list of idea **Cards**: Core Hypothesis as the title (Geist), domain tags as chips, and muted mono
   meta on the chip row — lineage + timestamp (`FORK · 04:12`).
 - Bottom tab bar. **No sticky "Add idea"** — Add is the nav tab. No "related ideas."

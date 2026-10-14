@@ -23,7 +23,7 @@ function newDb(): DatabaseSync {
 interface Seed {
   id: string;
   domain_tags?: string[];
-  lineage_kind?: "ROOT" | "ITERATION" | "FORK";
+  lineage_kind?: "ROOT" | "FORK";
   lineage_parent_id?: string | null;
   status?: "ACTIVE" | "NEEDS_COMPLETION";
   created_at?: string;
