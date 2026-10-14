@@ -180,3 +180,53 @@ flips, nothing loops.
 **Anti-patterns, S6-specific.** No lineage visual for versions; no editing of a past version; no "iterate from
 a version"; no silent autosave (a version is a deliberate act); no spinner; no diff score and no "AI
 suggestion" copy. Everything else in §7 stands.
+## 9. Screen Composition — S1 (Sparks): the engine states E0–E4
+
+**S1 is the home and the review queue** (`FLOW.md` §2.1) — the deck, one proposed spark at a time, with
+**View all** (list) as the escape hatch and **Recompute** as the manual re-run. The engine's availability of
+sparks is a five-state machine — **E0 Cold · E1 Computing · E2 Ready(n) · E3 Exhausted · E4 Unavailable**
+(`FLOW.md` §4.1) — and *which* state S1 shows is a property of the **vault and the engine**, not a client
+choice: the client renders whatever the evaluation returns. This section draws each state, so the deck is
+never a bare spinner, a bare empty box, or a blocking error.
+
+**Frame.** Single column, 16px gutters, safe-area aware (§5). The header keeps §1's shape — the title
+**Sparks** in Geist, the unreviewed count in JetBrains Mono (`3 / 12`), one muted line beneath it. The
+**bottom tab bar** (Sparks / Vault / Add) never moves. Every state below composes into the **same band** the
+card occupies — between header and nav — so the frame stays constant and the state changes only its
+contents. **No state is a modal, and no state covers the chrome.**
+
+**The card is the unit of E2.** The signature **Spark Card** (§4) is what the deck shows one at a time, with
+**Good** / **Not for me** and a one-step **undo**; both directions also work as swipes (§6). Its shape —
+THE IDEA · THE CLAIM · FIRST STEP · domain chips — and its ban on any origin/similarity line are unchanged
+here.
+
+**The five states.** Each is *composed* (§4, Empty States) — a screen that keeps working, never a bare
+"No ideas yet."
+
+| Ref | State | S1 draws |
+| :-- | :---- | :------- |
+| **E0** | **Cold** — vault below the spark floor (**< 2 distinct *resolved* domains**) | The composition is **progress, not failure**: a centred star-chart mark with the mono readout **`domains covered x / 3`**, the one-line reason *"Sparks pair distant domains — add ideas from another field."*, and a single brass **Add idea** CTA (→ S2). **Not an error and not a global empty state** — E0 is a *breadth* state. *(A returning user whose vault was emptied lands on the same screen, plus the onboarding exit back to S0.)* |
+| **E1** | **Computing** — a run is in flight | **Skeletal shimmer cards at Card dimensions** (§4, Loaders), revealed **staggered** at deck position — **never a circular spinner**. The deck stays **usable for already-offered sparks**: where E2 has cards, they remain on top, and the shimmer sits with in-flight work rather than replacing live content. |
+| **E2** | **Ready(n)** — n ≥ 1 unreviewed sparks | The deck: the top card (§4). The **View all** toggle appears only when **n > 1**; the header's mono count reflects n. |
+| **E3** | **Exhausted** — vault **at/above the floor**, 0 unreviewed, none computing | A composed empty state: the headline *"No sparks left — for now."*, then three CTAs — **Add idea** (S2), **Fork an idea into a new domain** (S5), and a quiet mono **Recompute** (→ E1). **At exactly 2 distinct *resolved* domains** the screen adds the **widening nudge** toward the `x / 3` target — the mono readout `domains covered 2 / 3` with the line *"One more field widens what can spark."* — shown **only** at 2: a 3+ domain vault that is exhausted gets no width nudge, because its remaining levers are Fork and Recompute. |
+| **E4** | **Unavailable** — AI down (NFR-A1) | A **quiet, non-blocking** state — **not** a modal, **not** an error banner over the app: *"Sparks are paused. Your vault is fully available."* plus a single **Retry** (→ E1). **Already-offered sparks stay reviewable** — the deck's Good / Not for me keep working, because they are vault writes (NFR-A1). |
+
+**Precedence (from §4.1).** **E0 dominates all** — with no domain spread there is no spark to compute,
+review, or await, so E0 shows regardless of AI state. **E4 > E3** — a vault that is both exhausted and
+unavailable shows **Unavailable** (the transient cause, with Retry), never Exhausted. **E1 may coexist with
+E2** — shimmer for in-flight work sits alongside any already-offered cards; E1 is never a full-screen
+takeover.
+
+**The `x / 3` readout.** It is **progress toward the onboarding target**, never a gate: the spark floor is
+**2 resolved domains** (E0's trigger) and 3 is the product target (`PRD.md` §5). The readout therefore
+appears in **E0** (as the empty state's spine) and in **E3-at-2** (as the widening nudge) — and nowhere as a
+blocker.
+
+**Motion.** Restrained springs, `transform` and `opacity` only (§6). E1's shimmer is the one **perpetual
+micro-loop**, and only on the active card position (§6). E1 → E2 is the staggered reveal (§6, the
+star-chart family). Nothing flips, and nothing loops past the in-flight state.
+
+**Anti-patterns, S1-specific.** **No circular spinner** (§4, Loaders; §7). No bare *"No ideas yet."* No bare
+error box. No blocking modal for E4 (NFR-A1). No progress readout that reads as a gate or a score. No origin
+line, no distance / alignment / similarity readout, no "related ideas" (§1 governance rule). E0 and E3 are
+**states of the deck**, not navigations away from it. Everything else in §7 stands.
