@@ -1,8 +1,8 @@
 # Schema: Astrolab store (SQLite) — issue F3 design
 
 > **Status:** The schema of record, in DDL form — and **shipped**: `0001_init` (the twelve tables),
-> `0002_seed_vault_meta`, `0003_reference_actions` and `0004_retire_iteration_lineage_kind` live in
-> `store/src/migrations.ts`, and this file tracks them.
+> `0002_seed_vault_meta`, `0003_reference_actions`, `0004_retire_iteration_lineage_kind` and
+> `0005_idea_mutation_delta` live in `store/src/migrations.ts`, and this file tracks them.
 > **Source of record:** `docs/ARCHITECTURE.md` §2 (data model — the complete table set incl.
 > `idea_mechanism`) and ADR-0001 / ADR-0002. Where this file and §2 differ, **§2 wins** and this file
 > is the defect — file it.
@@ -10,16 +10,18 @@
 > the invariant *tests* belong to **F3**.
 
 The DDL below applies as one forward-only migration (`0001_init`) — restated here **as amended** by
-`0003_reference_actions` (§1b), which changes only the eight `REFERENCES idea(id)` of V5 `#16`, and by
+`0003_reference_actions` (§1b), which changes only the eight `REFERENCES idea(id)` of V5 `#16`; by
 `0004_retire_iteration_lineage_kind`, which narrows only `idea.lineage_kind` to `ROOT | FORK`
-(V3 `#14`). Both are rebuilds; SQLite cannot `ALTER` a `CHECK` or a foreign-key action.
+(V3 `#14`); and by `0005_idea_mutation_delta` (§1d), which adds only `idea.mutation_delta` (V4 `#15`).
+`0003`/`0004` are rebuilds — SQLite cannot `ALTER` a `CHECK` or a foreign-key action; `0005` is a plain
+`ADD COLUMN`, because it adds a *new* column and changes no existing constraint.
 `PRAGMA journal_mode=WAL` and
 `PRAGMA foreign_keys=ON` are set by the store's connection setup (F2), not by the migration — the
 foreign-keys pragma is per-connection and a no-op inside the migration's `BEGIN IMMEDIATE`.
 
 ---
 
-## 1. The tables of §2 — DDL (`0001_init`, as amended by `0003` and `0004`)
+## 1. The tables of §2 — DDL (`0001_init`, as amended by `0003`, `0004` and `0005`)
 
 **Twelve** tables: the eleven enumerated in §2.1–§2.4, plus **`idea_mechanism`** (the per-idea
 descriptor cache — `ARCHITECTURE.md` §2.3, §3.3 step 1; ADR-0002; W3 `#28`), added to the schema of
@@ -38,6 +40,10 @@ CREATE TABLE idea (
   lineage_kind      TEXT NOT NULL CHECK (lineage_kind IN ('ROOT','FORK')),
   lineage_parent_id TEXT,                          -- set ONLY for FORK; single parent. NOT a FK since
                                                    -- `0003` (V5 #16): the ref dangles by design (T26)
+  mutation_delta    TEXT CHECK (lineage_kind = 'FORK' OR mutation_delta IS NULL),
+                                                   -- `0005` (V4 #15): the fork's mutation delta
+                                                   -- (PRD §3.2 item 2); set ONLY for a FORK, nullable.
+                                                   -- Column-level CHECK, so it lands as a plain ADD COLUMN
   status            TEXT NOT NULL CHECK (status IN ('ACTIVE','NEEDS_COMPLETION')),
   visibility        TEXT NOT NULL CHECK (visibility IN ('PRIVATE')),
   current_version   INTEGER NOT NULL DEFAULT 1,
@@ -213,6 +219,23 @@ an in-place edit would leave every store already at v3 holding the permissive `C
 value from the enum and the `lineage` filter, so `?lineage=ITERATION` is the `422` envelope (§1), and the
 client's `LINEAGES` drops it too.
 
+### 1d. `0005_idea_mutation_delta` — `idea.mutation_delta`, nullable and FORK-only (V4 `#15`, 2026-10-14)
+
+A fork records an explicit **mutation delta** (`PRD.md` §3.2 item 2), and no `idea` or `idea_version` column
+carried one — `git grep mutation_delta` found only the contract (`docs/API.md` §4.7, `ARCHITECTURE.md` §6),
+not the schema. `0005` adds the column, so §1's `idea` DDL gains
+
+```sql
+mutation_delta TEXT CHECK (lineage_kind = 'FORK' OR mutation_delta IS NULL)
+```
+
+A **plain `ALTER TABLE … ADD COLUMN`**, not a rebuild: unlike `0003`/`0004` it adds a *new* column and changes
+no existing constraint, so SQLite applies it in place (probed on `node:sqlite` v26, `foreign_keys = ON`, a
+table that already has rows — the column-level `CHECK` is enforced on both INSERT and UPDATE). The `CHECK` is
+the same structural pattern as `lineage_parent_id`: **a delta exists only on a FORK** is a schema fact, not
+call-site discipline. The column stays **nullable** — a `FORK` without a delta, and every `ROOT`, are both
+legal — and the fork path stores the delta with the row (`docs/API.md` §4.7).
+
 ---
 
 ## 2. Invariants F3's tests assert
@@ -221,6 +244,7 @@ client's `LINEAGES` drops it too.
 | :--- | :--- |
 | **Provenance-bearing ⇒ `lineage_parent_id IS NULL`** (ARCH §2.2, closes D1) | cross-table; asserted by test. Optionally a trigger — see §4. |
 | **Single-parent lineage** (PRD §2) | structural: one nullable `lineage_parent_id` column (no longer a FK — `0003`), plus the `FORK`-only `CHECK`. |
+| **A mutation delta exists only on a FORK** (PRD §3.2 item 2; V4 `#15`) | structural: `mutation_delta` is nullable and carries `CHECK (lineage_kind='FORK' OR mutation_delta IS NULL)` (`0005`, §1d). |
 | **A repeated `decision_id` insert is a no-op** (FLOW §2.2/N4, H4) | PK on `decision.id`; write via `INSERT … ON CONFLICT(id) DO NOTHING` (then read the existing row). |
 | **`vault_meta.revision` monotonicity** (ARCH §4) | every candidate-affecting vault mutation bumps it inside the same transaction; test asserts non-decreasing and single-row. |
 | **At most one live offer per pair** (ARCH §3.5) | `ux_spark_live` partial unique index. |

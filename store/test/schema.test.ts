@@ -45,6 +45,7 @@ const COLUMNS: Record<string, string[]> = {
     "current_version",
     "created_at",
     "updated_at",
+    "mutation_delta",
   ],
   idea_version: [
     "idea_id",
@@ -244,6 +245,55 @@ test("a populated v3 store upgrades to 0004 — rows intact, the lineage CHECK n
   expect(() => insertIdea(db, "iter", { lineageKind: "ITERATION" })).toThrow(/CHECK/);
   db.exec("DELETE FROM idea WHERE id = 'child'");
   expect(rows(db, "SELECT count(*) AS n FROM idea_version")[0]?.n).toBe(0);
+  expect(rows(db, "PRAGMA foreign_key_check")).toEqual([]);
+});
+
+test("only a FORK may carry a mutation delta (0005, V4 #15)", () => {
+  const db = migrated();
+  insertIdea(db, "root");
+  insertIdea(db, "parent");
+  insertIdea(db, "fork", { lineageKind: "FORK", lineageParentId: "parent" });
+
+  // The column is nullable: a ROOT and a FORK without a delta are both fine.
+  expect(rows(db, "SELECT mutation_delta AS d FROM idea WHERE id = 'root'")[0]?.d).toBeNull();
+  expect(rows(db, "SELECT mutation_delta AS d FROM idea WHERE id = 'fork'")[0]?.d).toBeNull();
+
+  // A FORK may carry one — on INSERT and on UPDATE alike.
+  db.exec("UPDATE idea SET mutation_delta = 'into a new domain' WHERE id = 'fork'");
+  expect(rows(db, "SELECT mutation_delta AS d FROM idea WHERE id = 'fork'")[0]?.d).toBe(
+    "into a new domain",
+  );
+  // A ROOT may not — the delta exists only on a fork, which is a schema fact, not call-site discipline.
+  expect(() => db.exec("UPDATE idea SET mutation_delta = 'd' WHERE id = 'root'")).toThrow(/CHECK/);
+  expect(() =>
+    db.exec(
+      "INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind, status, visibility, current_version, created_at, updated_at, mutation_delta) VALUES ('r2','h','p','m','[\"x\"]','ROOT','ACTIVE','PRIVATE',1,'t','t','d')",
+    ),
+  ).toThrow(/CHECK/);
+
+  // Negative control the schema enforces: a delta is a FORK's *only* parent-bearing form, so a row
+  // cannot be demoted to a ROOT while keeping the delta — the pair is written together or not at all.
+  expect(() =>
+    db.exec("UPDATE idea SET lineage_kind = 'ROOT', lineage_parent_id = NULL WHERE id = 'fork'"),
+  ).toThrow(/CHECK/);
+  expect(rows(db, "PRAGMA foreign_key_check")).toEqual([]);
+});
+
+test("a populated v4 store upgrades to 0005 — rows intact, the delta column added", () => {
+  const db = newStore();
+  // Apply only the first four, so this is a real upgrade path (the state every dev store is in).
+  migrate(db, MIGRATIONS.slice(0, 4));
+  expect(schemaVersion(db)).toBe(4);
+
+  insertIdea(db, "root");
+  insertIdea(db, "child", { lineageKind: "FORK", lineageParentId: "root" });
+
+  expect(migrate(db, MIGRATIONS)).toBe(SCHEMA_VERSION);
+  expect(rows(db, "SELECT count(*) AS n FROM idea")[0]?.n).toBe(2);
+  expect(rows(db, "SELECT lineage_parent_id AS p FROM idea WHERE id = 'child'")[0]?.p).toBe("root");
+  // The added column defaults to NULL, and the guard is live on the upgraded store.
+  expect(rows(db, "SELECT mutation_delta AS d FROM idea WHERE id = 'child'")[0]?.d).toBeNull();
+  expect(() => db.exec("UPDATE idea SET mutation_delta = 'd' WHERE id = 'root'")).toThrow(/CHECK/);
   expect(rows(db, "PRAGMA foreign_key_check")).toEqual([]);
 });
 

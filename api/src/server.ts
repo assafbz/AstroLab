@@ -4,12 +4,14 @@ import type { DatabaseSync } from "node:sqlite";
 
 import {
   captureIdea,
+  ConflictError,
   NotFoundError,
   parseCaptureInput,
   parseIdeaFields,
   ValidationError,
 } from "./capture.js";
 import { deleteIdea } from "./delete.js";
+import { forkIdea, parseForkInput } from "./fork.js";
 import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
 import { iterateIdea } from "./iterate.js";
 import { vaultSummary } from "./vault-summary.js";
@@ -172,6 +174,8 @@ async function handleRequest(
     if (ideas !== null) {
       if (ideas.action === "iterate") {
         if (method === "POST") return await handleIterate(req, res, db, ideas.id);
+      } else if (ideas.action === "fork") {
+        if (method === "POST") return await handleFork(req, res, db, ideas.id);
       } else {
         if (method === "GET") return handleIdeaDetail(res, db, ideas.id);
         // §4.8 — the same `{id}` path, a second method. Everything else still falls through to the
@@ -238,6 +242,31 @@ async function handleIterate(
   sendJson(res, 200, idea);
 }
 
+/**
+ * `POST /v1/ideas/{id}/fork` (docs/API.md §4.7): validate, then write — both failures the envelope. As
+ * at §4.2/§4.6, the body is validated **before** the id is looked up, so an unknown id with a malformed
+ * body is `422`; the write then answers `404` (unknown id) before `409` (same domain).
+ */
+async function handleFork(
+  req: IncomingMessage,
+  res: ServerResponse,
+  db: DatabaseSync,
+  id: string,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return sendError(res, "validation_failed", err.message);
+    }
+    throw err;
+  }
+  const input = parseForkInput(body); // ValidationError → the outer catch → the 422 envelope
+  const idea = forkIdea(db, id, input); // NotFoundError → 404; ConflictError → 409
+  sendJson(res, 201, idea); // §4.7 — a fork creates, so 201
+}
+
 /** `GET /v1/ideas/{id}` (docs/API.md §4.5). An unknown id is the `not_found` envelope. */
 function handleIdeaDetail(res: ServerResponse, db: DatabaseSync, id: string): void {
   const detail = getIdeaDetail(db, id);
@@ -257,19 +286,19 @@ function handleDeleteIdea(res: ServerResponse, db: DatabaseSync, id: string): vo
 }
 
 /**
- * The two shapes under `/v1/ideas/`, read from the **normalised** path so an encoded spelling routes
- * here too: `{id}` (detail, delete) and `{id}/iterate` (§4.6). An empty id (`/v1/ideas/`), a further
- * segment (`/v1/ideas/a/b`), or any other action segment is not a defined route, which §2 answers as
- * `not_found` — worth recording in §6, because the *client* router resolves `#/vault/` happily, and
- * nothing should "fix" one side to match the other.
+ * The shapes under `/v1/ideas/`, read from the **normalised** path so an encoded spelling routes here
+ * too: `{id}` (detail, delete), `{id}/iterate` (§4.6) and `{id}/fork` (§4.7). An empty id
+ * (`/v1/ideas/`), a further segment (`/v1/ideas/a/b`), or any other action segment is not a defined
+ * route, which §2 answers as `not_found` — worth recording in §6, because the *client* router resolves
+ * `#/vault/` happily, and nothing should "fix" one side to match the other.
  */
 const IDEA_DETAIL_PREFIX = "/v1/ideas/";
-function ideaPath(path: string): { id: string; action: "iterate" | null } | null {
+function ideaPath(path: string): { id: string; action: "iterate" | "fork" | null } | null {
   if (!path.startsWith(IDEA_DETAIL_PREFIX)) return null;
   const [id, action, ...extra] = path.slice(IDEA_DETAIL_PREFIX.length).split("/");
   if (id === undefined || id === "" || extra.length > 0) return null;
   if (action === undefined) return { id, action: null };
-  return action === "iterate" ? { id, action } : null;
+  return action === "iterate" || action === "fork" ? { id, action } : null;
 }
 
 /** A capture body is a few hundred bytes; a megabyte is a ceiling, not a target. */
@@ -328,6 +357,9 @@ function fail(res: ServerResponse, err: unknown): void {
   }
   if (err instanceof NotFoundError) {
     return sendError(res, "not_found", err.message);
+  }
+  if (err instanceof ConflictError) {
+    return sendError(res, "conflict", err.message);
   }
   return sendError(res, "internal_error", "unexpected error");
 }

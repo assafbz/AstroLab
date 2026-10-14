@@ -48,15 +48,19 @@ export class ValidationError extends Error {}
 export class NotFoundError extends Error {}
 
 /**
+ * A request the contract refuses on state rather than shape (`409 conflict`, `docs/API.md` §2): a
+ * same-domain fork, which offers **Iterate** instead (§4.7). Thrown inside the transaction, as
+ * `NotFoundError` is, so the rollback is free.
+ */
+export class ConflictError extends Error {}
+
+/**
  * docs/API.md §4.2 — "hypothesis ≤ 280 and all of hypothesis, problem, monetization, and ≥ 1
  * domain_tags non-empty → else 422". Pure input validation, so it runs before any transaction; the
  * iterate path (`docs/API.md` §4.6, "validation as §4.2") calls this same function.
  */
 export function parseIdeaFields(body: unknown): IdeaFields {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    throw new ValidationError("request body must be a JSON object");
-  }
-  const raw = body as Record<string, unknown>;
+  const raw = requireObjectBody(body);
 
   const hypothesis = requiredText(raw, "hypothesis");
   if (hypothesis.length > MAX_HYPOTHESIS_LENGTH) {
@@ -67,7 +71,7 @@ export function parseIdeaFields(body: unknown): IdeaFields {
     hypothesis,
     problem: requiredText(raw, "problem"),
     monetization: requiredText(raw, "monetization"),
-    domain_tags: requiredTags(raw),
+    domain_tags: parseDomainTags(raw),
   };
 }
 
@@ -137,7 +141,16 @@ export function captureIdea(db: DatabaseSync, input: CaptureInput): Idea {
   });
 }
 
-function requiredText(body: Record<string, unknown>, field: string): string {
+/** The one body-shape rule, shared by every parser (§4.2, §4.6, §4.7): a JSON object, not a bare value. */
+export function requireObjectBody(body: unknown): Record<string, unknown> {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    throw new ValidationError("request body must be a JSON object");
+  }
+  return body as Record<string, unknown>;
+}
+
+/** A mandatory non-empty text field (§4.2's rule), shared so a field's message is written once. */
+export function requiredText(body: Record<string, unknown>, field: string): string {
   const value = body[field];
   if (typeof value !== "string" || value.trim() === "") {
     throw new ValidationError(`${field} is required`);
@@ -145,7 +158,8 @@ function requiredText(body: Record<string, unknown>, field: string): string {
   return value;
 }
 
-function requiredTags(body: Record<string, unknown>): string[] {
+/** §4.2's `domain_tags` rule: at least one, each a non-empty string, trimmed — shared with §4.6 and §4.7. */
+export function parseDomainTags(body: Record<string, unknown>): string[] {
   const value = body["domain_tags"];
   if (!Array.isArray(value) || value.length === 0) {
     throw new ValidationError("at least one domain tag is required");

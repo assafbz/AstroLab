@@ -14,7 +14,7 @@ import type { Migration } from "./migrate.js";
  * migration rather than an edit to `0001_init`, which is already applied — rewriting it would break
  * forward-only and skip every store already at v1.
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;
 
 export const MIGRATIONS: Migration[] = [
   {
@@ -298,5 +298,18 @@ INSERT INTO idea_new (id, hypothesis, problem, monetization, domain_tags, lineag
 DROP TABLE idea;
 ALTER TABLE idea_new RENAME TO idea;
 `,
+  },
+  {
+    version: 5,
+    name: "0005_idea_mutation_delta",
+    // V4 (#15): a fork records an explicit mutation delta (`PRD.md` §3.2 item 2) and no `idea`/`idea_version`
+    // column carried one — `git grep mutation_delta` found only the contract, not the schema. A fork is the
+    // only idea that has one, so the column is nullable **and** guarded: `lineage_kind='FORK' OR
+    // mutation_delta IS NULL`. Same structural pattern as the existing `lineage_parent_id` CHECK.
+    //
+    // A plain `ALTER TABLE … ADD COLUMN`, not a rebuild: unlike `0003`/`0004` it adds a *new* column and
+    // changes no existing constraint, so SQLite applies it in place. The column-level CHECK is enforced on
+    // both INSERT and UPDATE (probed on `node:sqlite`, `foreign_keys=ON`, a table that already has rows).
+    sql: "ALTER TABLE idea ADD COLUMN mutation_delta TEXT CHECK (lineage_kind = 'FORK' OR mutation_delta IS NULL);",
   },
 ];

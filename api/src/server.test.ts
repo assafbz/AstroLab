@@ -609,3 +609,127 @@ test("only POST on `{id}/iterate` is a route; anything else is the envelope (§2
   // The method dispatch is real: a GET on the detail path still reads, it does not fall through.
   expect((await call("GET", `/v1/ideas/${id}`, auth)).status).toBe(200);
 });
+
+/**
+ * V4 (#15) — `POST /v1/ideas/{id}/fork` (`docs/API.md` §4.7). The contract-level half: `201` with a new
+ * `FORK` node whose text is the parent's and whose domains are the request's; the `409` that offers
+ * Iterate; the `404`/`422` envelopes; the pinned check order; and the gate on the path.
+ */
+const FORK = { mutation_delta: "into a healthcare scheduler", domain_tags: ["health"] };
+
+test("POST /v1/ideas/{id}/fork answers 201 with the new FORK Idea, and the chain reads back", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const parent = await capture(auth);
+
+  const forked = await call("POST", `/v1/ideas/${parent}/fork`, { ...auth, json: FORK });
+  expect(forked.status).toBe(201); // §4.7 — a fork creates
+  expect(forked.contentType).toBe(JSON_UTF8);
+  const child = (forked.body as { id: string }).id;
+  expect(child).not.toBe(parent);
+  expect(forked.body).toMatchObject({
+    hypothesis: VALID.hypothesis, // copied from the parent — not in the request
+    problem: VALID.problem,
+    monetization: VALID.monetization,
+    domain_tags: ["health"], // the request's
+    lineage_kind: "FORK",
+    lineage_parent_id: parent,
+    current_version: 1,
+  });
+  // The delta is stored (write-only in the MVP: §3.1's `Idea` has no field for it).
+  expect(db.prepare("SELECT mutation_delta AS d FROM idea WHERE id = ?").get(child)).toEqual({
+    d: FORK.mutation_delta,
+  });
+  // Two nodes now; the child's chain is its parent and it carries no provenance.
+  expect((await call("GET", `/v1/ideas/${child}`, auth)).body).toMatchObject({
+    lineage: [{ id: parent, lineage_kind: "ROOT" }],
+    provenance: [],
+  });
+  // And the parent now names the child as a fork — the T26 warning's source (§4.5).
+  expect((await call("GET", `/v1/ideas/${parent}`, auth)).body).toMatchObject({
+    referenced_by: { forks: [child], derived: [] },
+  });
+});
+
+test("a same-domain fork is the 409 conflict envelope, and writes nothing", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const parent = await capture(auth); // domain_tags ["fintech"], which already bumped the revision
+  // The capture left one idea and one queued run; the refusal must add neither and move no revision.
+  const before = db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get();
+  const runs = db.prepare("SELECT count(*) AS n FROM spark_run").get();
+
+  expectEnvelope(
+    await call("POST", `/v1/ideas/${parent}/fork`, {
+      ...auth,
+      json: { ...FORK, domain_tags: ["fintech"] },
+    }),
+    409,
+    "conflict",
+  );
+
+  expect(db.prepare("SELECT count(*) AS n FROM idea").get()).toEqual({ n: 1 });
+  expect(db.prepare("SELECT count(*) AS n FROM spark_run").get()).toEqual(runs);
+  expect(db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get()).toEqual(before);
+});
+
+test("fork of an unknown id is the not_found envelope, and writes nothing", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const before = db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get();
+
+  expectEnvelope(
+    await call("POST", "/v1/ideas/9f1c-missing/fork", { ...auth, json: FORK }),
+    404,
+    "not_found",
+  );
+
+  expect(db.prepare("SELECT count(*) AS n FROM idea").get()).toEqual({ n: 0 });
+  expect(db.prepare("SELECT count(*) AS n FROM spark_run").get()).toEqual({ n: 0 });
+  expect(db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get()).toEqual(before);
+});
+
+test("fork checks the body before the id — malformed on an unknown id is 422, not 404 (§6)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  expectEnvelope(
+    await call("POST", "/v1/ideas/9f1c-missing/fork", { ...auth, json: {} }),
+    422,
+    "validation_failed",
+  );
+  expectEnvelope(
+    await call("POST", "/v1/ideas/9f1c-missing/fork", { ...auth, json: FORK }),
+    404,
+    "not_found",
+  );
+  expect(db.prepare("SELECT count(*) AS n FROM idea").get()).toEqual({ n: 0 });
+  expect(db.prepare("SELECT count(*) AS n FROM spark_run").get()).toEqual({ n: 0 });
+});
+
+test("fork validation failures are the 422 envelope, one per branch", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const parent = await capture(auth);
+  for (const body of [
+    {},
+    { domain_tags: ["health"] },
+    { mutation_delta: "  ", domain_tags: ["health"] },
+    { mutation_delta: "d" },
+    { mutation_delta: "d", domain_tags: [] },
+    { mutation_delta: "d", domain_tags: ["ok", 7] },
+  ]) {
+    expectEnvelope(
+      await call("POST", `/v1/ideas/${parent}/fork`, { ...auth, json: body }),
+      422,
+      "validation_failed",
+    );
+  }
+  // No body at all is a missing mandatory field, not a parse error — the same envelope.
+  expectEnvelope(await call("POST", `/v1/ideas/${parent}/fork`, auth), 422, "validation_failed");
+});
+
+test("fork needs a token — the gate is checked before routing", async () => {
+  expectEnvelope(await call("POST", "/v1/ideas/9f1c/fork", { json: FORK }), 401, "unauthorized");
+});
+
+test("only POST on `{id}/fork` is a route; anything else is the envelope (§2, §6)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const id = await capture(auth);
+  expectEnvelope(await call("GET", `/v1/ideas/${id}/fork`, auth), 404, "not_found");
+  expectEnvelope(await call("DELETE", `/v1/ideas/${id}/fork`, auth), 404, "not_found");
+});
