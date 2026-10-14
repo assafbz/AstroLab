@@ -104,6 +104,24 @@ complete (`FLOW.md` §4.3 step 4 / T27).
   cannot collapse after a run. `resolved` is monotone non-decreasing: worker normalisation can only
   collapse a provisional tag into a cluster, never split one.
 
+Readings this doc had not pinned (settled in O2 `#22`):
+
+- **Every `idea` row contributes** — there is no status filter. `NEEDS_COMPLETION` is excluded from
+  *candidate selection* (`FLOW.md` §4.3/T27), which is the engine's business; filtering here would let
+  `resolved` **drop** when an idea's status changed, for a reason the contract does not name, against
+  the monotone rule.
+- **The match is exact**, against `domain_map.tag` as stored: the shipped seed's keys are clean
+  lower-case slugs (`store/src/domain-seed.ts` lints them) and capture stores each tag raw
+  (`ARCHITECTURE.md` §3.2), so `Fintech` is **provisional** until the worker writes that exact spelling
+  back. Recorded because normalising here would be a second, unstated vocabulary — and it is what makes
+  `resolved` monotone under the worker's write-back.
+- **`resolved_domains` is `COUNT(DISTINCT cluster_id)`** (`#fintech` + `#banking` are **one** domain —
+  the collapse R1 exists to prevent) and **`provisional_domains` counts distinct tags**, each its own
+  cluster, deduped across the vault.
+- **The two counts are one snapshot** — a single statement, so the pair cannot be a torn read of two
+  vault states. No transaction wrapper is involved, and a second statement would be the defect.
+- **The response writes nothing** — it moves no `vault_meta.revision` and enqueues no run.
+
 ### 3.3 `Spark` (deck card — `ARCHITECTURE.md` §6, S1)
 ```json
 { "id": "1a2b…", "direction": "the proposed idea (headline)", "claim": "one–two lines, why it matters",
@@ -173,6 +191,10 @@ route (§4.15).
 
 ### 4.3 `GET /v1/vault/summary` — S0 progress / spread gate
 `200` → `VaultSummary` (§3.2). Deterministic; **never** blocks on the provider.
+
+Readings this doc had not pinned (settled in O2 `#22`): the route is behind the same F4 gate as every
+`/v1` path, **reads no query parameter** (§1: an unknown one is ignored), and any other method is the
+`not_found` envelope (§2).
 
 ### 4.4 `GET /v1/ideas?domain=&lineage=&status=` — Vault list (S3)
 Filters: `domain` (exact tag match), `lineage` ∈ `ROOT|ITERATION|FORK`, `status` ∈
@@ -381,9 +403,19 @@ rather than left to the implementation:
     `GET /v1/ideas`, `//v1/ideas` and `/v1%2Fideas` **reach it** with a token rather than falling
     through to the envelope. V1's note above is about the *gate* (they are `401` without one); routing
     matches the same normalised string, which is the point of having one.
+- **The vault summary (settled in O2 `#22`)** — §3.2's readings (every `idea` row, the exact match, the
+  distinct-cluster and distinct-tag counts, one snapshot, no write) and §4.3's (no query parameter, the
+  ordinary gate and envelope) are recorded at the endpoints they belong to. One reading belongs here
+  instead:
+  - **`eligible` is the S0→S1 spread gate, and it is not E0.** E0 (`FLOW.md` §4.1) is the *engine's*
+    state — `"fewer than 2 distinct resolved domains (or < 2 ideas)"` — computed in one place for the
+    engine state readout, and T05/T06 have the client *evaluate* it. `VaultSummary` deliberately carries
+    **no idea count**, so the S1 entry decision and the deck must read E0 from the engine state and
+    **never from `eligible`**. A vault holding one idea with two clusters is `eligible: true` and still
+    E0; recorded rather than papered over. *(Carried to `#24`.)*
 
 ---
 
 *Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`;
-carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`; and by **V2** (`#13`),
-branch `feat/v2-vault-read-api`.*
+carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`; by **V2** (`#13`),
+branch `feat/v2-vault-read-api`; and by **O2** (`#22`), branch `feat/o2-vault-summary`.*
