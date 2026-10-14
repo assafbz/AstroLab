@@ -41,6 +41,12 @@ export interface RunResult {
 /**
  * The cut: idea ids, ASC. Reads the live vault, which is exactly why a run must not be stale — the
  * worker only runs a revision the vault is still on (the store's `claimNextRun` discards the rest).
+ *
+ * shortcut: `ORDER BY id ASC` is **belt-and-braces, not the thing proven** — `SELECT id FROM idea`
+ * already walks the covering `sqlite_autoindex_idea_1`, so an unordered read returns the same ids, and a
+ * test that seeds out of order cannot distinguish the clause from its absence (W1's `queue.test.ts` said
+ * otherwise; corrected 2026-10-14). Upgrade if the cut ever reads a non-covering row, or the table drops
+ * the id index — then the clause is load-bearing and worth its own mutation-checked test.
  */
 export function cutVault(db: DatabaseSync, revision: number): VaultCut {
   const ideaIds = (
