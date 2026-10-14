@@ -62,3 +62,21 @@ export interface VaultFilters {
   domain?: string | null;
   lineage?: Idea["lineage_kind"] | null;
 }
+
+/**
+ * `docs/API.md` §3.2 — `GET /v1/vault/summary` (O2 `#22`). The S0 progress readout and the S0→S1
+ * spread gate both read **this** shape: `resolved_domains` is the count, `target` is the denominator,
+ * and `eligible` is the gate the engine and the client must not disagree about.
+ */
+export interface VaultSummary {
+  /** Distinct clusters covered by tags present in the shipped `domain_map` — the count `x/3` shows. */
+  resolved_domains: number;
+  /** Distinct **unmapped** tags, each its own cluster. Never part of the readout (R1). */
+  provisional_domains: number;
+  /** The product target (3) — the readout's denominator, read from the payload, never a literal. */
+  target: number;
+  /** The spark floor (2) — `eligible`'s threshold. */
+  floor: number;
+  /** The S0→S1 spread gate: `resolved_domains >= floor`. E0 is the *engine's* state, not this. */
+  eligible: boolean;
+}

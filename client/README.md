@@ -1,10 +1,10 @@
 # Client (V8)
 
-The mobile-first PWA. S2 Capture, S3 Vault and S4 Idea Detail are built (V8, `#19`); S0/S1/S5/S6
-are still the shell's placeholders until their own issues land.
+The mobile-first PWA. S2 Capture, S3 Vault and S4 Idea Detail are built (V8, `#19`), and S0 Onboarding
+is built (O3, `#23`); S1/S5/S6 are still the shell's placeholders until their own issues land.
 
 - **Stack:** Vite + React + TypeScript (`docs/adr/0005-client-stack.md`).
-- **Design tokens:** `src/styles/tokens.css`, lifted from `DESIGN.md` §2 (colour) and §5 (geometry).
+- **Design tokens:** `src/styles/tokens.css`, lifted from `DESIGN.md` §2 (colour and geometry) and §5 (layout).
   Brass is the only accent.
 - **Layout:** 16px gutters, grown to the device safe area; `viewport-fit=cover` is set in
   `index.html`, and the tab bar pads the bottom inset.
@@ -19,7 +19,7 @@ labels.
 
 | Screen | Path | Status |
 | :--- | :--- | :--- |
-| S0 Onboarding | `#/onboarding` | placeholder |
+| S0 Onboarding | `#/onboarding` | built (O3) — the capture-and-stay loop |
 | S1 Sparks (home) | `#/` | placeholder |
 | S2 Capture | `#/capture` | built (V8) |
 | S3 Vault | `#/vault` | built (V8) |
@@ -64,6 +64,25 @@ Two contract notes the screens depend on:
   T16's "origin", which has no renderable meaning yet; it re-opens when the deck (**K2 `#36`**) and
   onboarding (**O3 `#23`**) land the real origin.
 
+## S0 Onboarding (O3)
+
+- **Domain is picked from the shipped taxonomy, with an `Other → free text` escape**
+  (`FLOW.md` §4.2/T02, r3.3). The picker's **value is the cluster key** (`ai-ml`) and its label is the
+  cluster's `name` (`AI & ML`): the loader registers each key in its own cluster and never a name
+  (`store/seed/README.md` rule 2), so a pick is *resolved by construction*. `src/domain/taxonomy.ts`
+  mirrors the 28 clusters and `taxonomy.test.ts` reads the shipped YAML and fails on any drift — the
+  client cannot reach the taxonomy otherwise (no endpoint exposes it; `client` may not import `store`).
+- **A typed domain writes its `domain_tag` immediately** on `POST /v1/ideas`; "provisional" is not a
+  stored state but what `GET /v1/vault/summary` computes at read time for a tag absent from
+  `domain_map` (`docs/API.md` §3.2). The chip says so in words.
+- **`domains covered x / 3` renders the summary's numbers** — `resolved_domains` over `target` — and
+  never a local tally, so the readout and O4's spread gate read the same quantity (R1).
+- **The mark has no distance arcs.** `DESIGN.md` §6 draws them between points "far apart", but no S0
+  endpoint exposes `domain_cluster.adjacency` and `ARCHITECTURE.md` §6 bars the client from computing
+  scores, so the mark is rings plus one brass point per resolved domain and one pale per provisional.
+- **The exits are not here.** T03 Skip and T04's "See your sparks" gate are O4 (`#24`), and so is the
+  first-run entry (T01/T05); S0 has no active tab because it is reached before the app's home.
+
 ## Tests
 
 `npm test -w client`. Pure logic is tested in the node environment; the screens are rendered in
@@ -77,5 +96,6 @@ the Vault (T19/T20/T29), the lineage chain and muted provenance (T21), and the d
 
 S1b (Spark Detail) is not in S0–S6 and has no route yet; the seeded capture path
 (`origin_spark_id`/`decision_id`) needs the spark deck; the S4 Iterate/Fork actions are V9
-(`#20`); the taxonomy picker is O2/O3. Self-hosted Geist / JetBrains Mono are deferred — the token
-file falls back to system stacks until a screen needs the real faces.
+(`#20`). The taxonomy picker landed with S0 (O3). The spread gate and the Skip deviation are O4
+(`#24`). Self-hosted Geist / JetBrains Mono are deferred — the token file falls back to system stacks
+until a screen needs the real faces.
