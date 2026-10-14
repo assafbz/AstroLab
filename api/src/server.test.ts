@@ -479,3 +479,133 @@ test("capture stores domain tags raw — no normalisation, no `domain_map` write
     provisional_domains: 2,
   });
 });
+
+/**
+ * V3 (#14) — `POST /v1/ideas/{id}/iterate` (`docs/API.md` §4.6). The contract-level half of the
+ * write: `200` (not `201`), the bumped `current_version`, the version history read back through
+ * §4.5, and the envelope on every failure — including a non-`POST` on the same path.
+ */
+const EDITED = {
+  hypothesis: "a refined sentence",
+  problem: "a sharper problem",
+  monetization: "a clearer model",
+  domain_tags: ["health"],
+};
+
+/** A captured idea's id, via the one route that creates them. */
+async function capture(auth: { authorization: string }): Promise<string> {
+  const created = await call("POST", "/v1/ideas", { ...auth, json: VALID });
+  return (created.body as { id: string }).id;
+}
+
+test("POST /v1/ideas/{id}/iterate answers 200 with the bumped Idea, and the history reads back", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const id = await capture(auth);
+
+  const iterated = await call("POST", `/v1/ideas/${id}/iterate`, { ...auth, json: EDITED });
+  expect(iterated.status).toBe(200); // §4.6 — an update, not a creation
+  expect(iterated.contentType).toBe(JSON_UTF8);
+  expect(iterated.body).toMatchObject({
+    id,
+    ...EDITED,
+    lineage_kind: "ROOT", // no lineage edge — iteration is a version, not a branch (L1)
+    lineage_parent_id: null,
+    current_version: 2,
+  });
+
+  // Prior versions are readable through §4.5's `versions`, ascending, the current one included.
+  const detail = await call("GET", `/v1/ideas/${id}`, auth);
+  expect(detail.body).toMatchObject({
+    idea: { current_version: 2, hypothesis: EDITED.hypothesis },
+    versions: [
+      { version: 1, hypothesis: VALID.hypothesis },
+      { version: 2, hypothesis: EDITED.hypothesis },
+    ],
+    lineage: [],
+  });
+  // Still one node in the vault — an iteration adds no idea.
+  expect((await call("GET", "/v1/ideas", auth)).body).toEqual({
+    ideas: [expect.objectContaining({ id })],
+  });
+});
+
+test("iterate of an unknown id is the not_found envelope, and writes nothing", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const before = db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get() as {
+    revision: number;
+  };
+
+  expectEnvelope(
+    await call("POST", "/v1/ideas/9f1c-missing/iterate", { ...auth, json: EDITED }),
+    404,
+    "not_found",
+  );
+
+  expect(db.prepare("SELECT count(*) AS n FROM idea").get()).toEqual({ n: 0 });
+  expect(db.prepare("SELECT count(*) AS n FROM spark_run").get()).toEqual({ n: 0 });
+  expect(db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get()).toEqual(before);
+});
+
+test("iterate checks the body before the id — malformed on an unknown id is 422, not 404 (§6)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  // The id does not exist; only the order of the two checks decides this answer. A malformed body
+  // is the failure, whatever the id, so the request never reaches the lookup.
+  expectEnvelope(
+    await call("POST", "/v1/ideas/9f1c-missing/iterate", { ...auth, json: {} }),
+    422,
+    "validation_failed",
+  );
+  // The same unknown id with a valid body is the not_found envelope — the id is consulted second,
+  // not ignored. Both attempts leave the vault untouched.
+  expectEnvelope(
+    await call("POST", "/v1/ideas/9f1c-missing/iterate", { ...auth, json: EDITED }),
+    404,
+    "not_found",
+  );
+  expect(db.prepare("SELECT count(*) AS n FROM idea").get()).toEqual({ n: 0 });
+  expect(db.prepare("SELECT count(*) AS n FROM spark_run").get()).toEqual({ n: 0 });
+});
+
+test("iterate validation failures are the 422 envelope, one per branch", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const id = await capture(auth);
+  for (const body of [
+    {},
+    { ...EDITED, hypothesis: "" },
+    { ...EDITED, problem: "" },
+    { ...EDITED, monetization: "" },
+    { ...EDITED, domain_tags: [] },
+    { ...EDITED, hypothesis: "x".repeat(281) },
+  ]) {
+    expectEnvelope(
+      await call("POST", `/v1/ideas/${id}/iterate`, { ...auth, json: body }),
+      422,
+      "validation_failed",
+    );
+  }
+  // No body at all is a missing mandatory field, not a parse error — the same envelope.
+  expectEnvelope(await call("POST", `/v1/ideas/${id}/iterate`, auth), 422, "validation_failed");
+});
+
+test("iterate needs a token — the gate is checked before routing", async () => {
+  expectEnvelope(
+    await call("POST", "/v1/ideas/9f1c/iterate", { json: EDITED }),
+    401,
+    "unauthorized",
+  );
+});
+
+test("only POST on `{id}/iterate` is a route; anything else is the envelope (§2, §6)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const id = await capture(auth);
+  expectEnvelope(await call("GET", `/v1/ideas/${id}/iterate`, auth), 404, "not_found");
+  expectEnvelope(await call("DELETE", `/v1/ideas/${id}/iterate`, auth), 404, "not_found");
+  expectEnvelope(
+    await call("POST", `/v1/ideas/${id}/nope`, { ...auth, json: EDITED }),
+    404,
+    "not_found",
+  );
+  expectEnvelope(await call("POST", `/v1/ideas/a/b`, { ...auth, json: EDITED }), 404, "not_found");
+  // The method dispatch is real: a GET on the detail path still reads, it does not fall through.
+  expect((await call("GET", `/v1/ideas/${id}`, auth)).status).toBe(200);
+});

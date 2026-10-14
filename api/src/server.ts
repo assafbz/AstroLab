@@ -2,9 +2,16 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { DatabaseSync } from "node:sqlite";
 
-import { captureIdea, NotFoundError, parseCaptureInput, ValidationError } from "./capture.js";
+import {
+  captureIdea,
+  NotFoundError,
+  parseCaptureInput,
+  parseIdeaFields,
+  ValidationError,
+} from "./capture.js";
 import { deleteIdea } from "./delete.js";
 import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
+import { iterateIdea } from "./iterate.js";
 import { vaultSummary } from "./vault-summary.js";
 
 /**
@@ -159,12 +166,18 @@ async function handleRequest(
       return sendJson(res, 200, vaultSummary(db));
     }
 
-    const detailId = ideaIdFromPath(path);
-    if (detailId !== null) {
-      if (method === "GET") return handleIdeaDetail(res, db, detailId);
-      // §4.8 — the same `{id}` path, a second method. Everything else still falls through to the
-      // envelope below, so an unknown method on a known shape stays `not_found` (§2).
-      if (method === "DELETE") return handleDeleteIdea(res, db, detailId);
+    // §4.6 — the same `{id}` path with an action segment. The dispatch is by method *and* action, so
+    // a `GET`/`DELETE` on `…/iterate`, or a `POST` on the detail path, is the envelope below (§2).
+    const ideas = ideaPath(path);
+    if (ideas !== null) {
+      if (ideas.action === "iterate") {
+        if (method === "POST") return await handleIterate(req, res, db, ideas.id);
+      } else {
+        if (method === "GET") return handleIdeaDetail(res, db, ideas.id);
+        // §4.8 — the same `{id}` path, a second method. Everything else still falls through to the
+        // envelope below, so an unknown method on a known shape stays `not_found` (§2).
+        if (method === "DELETE") return handleDeleteIdea(res, db, ideas.id);
+      }
     }
 
     return sendError(res, "not_found", `no route for ${method} ${path}`);
@@ -199,6 +212,32 @@ function handleListIdeas(res: ServerResponse, db: DatabaseSync, query: URLSearch
   sendJson(res, 200, { ideas: listIdeas(db, filters) });
 }
 
+/**
+ * `POST /v1/ideas/{id}/iterate` (docs/API.md §4.6): validate, then write — both failures the envelope.
+ * The body is validated **before** the id is looked up, so an unknown id with a malformed body is
+ * `422`: the body contract is checked before any row is consulted, exactly as at capture (§4.2), and
+ * recorded in §6.
+ */
+async function handleIterate(
+  req: IncomingMessage,
+  res: ServerResponse,
+  db: DatabaseSync,
+  id: string,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return sendError(res, "validation_failed", err.message);
+    }
+    throw err;
+  }
+  const fields = parseIdeaFields(body); // ValidationError → the outer catch → the 422 envelope
+  const idea = iterateIdea(db, id, fields); // NotFoundError (unknown id) → the 404 envelope
+  sendJson(res, 200, idea);
+}
+
 /** `GET /v1/ideas/{id}` (docs/API.md §4.5). An unknown id is the `not_found` envelope. */
 function handleIdeaDetail(res: ServerResponse, db: DatabaseSync, id: string): void {
   const detail = getIdeaDetail(db, id);
@@ -218,16 +257,19 @@ function handleDeleteIdea(res: ServerResponse, db: DatabaseSync, id: string): vo
 }
 
 /**
- * The `{id}` of `/v1/ideas/{id}`, read from the **normalised** path so an encoded spelling routes here
- * too. An empty id (`/v1/ideas/`) or a further segment (`/v1/ideas/a/b`) is not a defined route, which
- * §2 answers as `not_found` — worth recording in §6, because the *client* router resolves `#/vault/`
- * happily, and nothing should "fix" one side to match the other.
+ * The two shapes under `/v1/ideas/`, read from the **normalised** path so an encoded spelling routes
+ * here too: `{id}` (detail, delete) and `{id}/iterate` (§4.6). An empty id (`/v1/ideas/`), a further
+ * segment (`/v1/ideas/a/b`), or any other action segment is not a defined route, which §2 answers as
+ * `not_found` — worth recording in §6, because the *client* router resolves `#/vault/` happily, and
+ * nothing should "fix" one side to match the other.
  */
 const IDEA_DETAIL_PREFIX = "/v1/ideas/";
-function ideaIdFromPath(path: string): string | null {
+function ideaPath(path: string): { id: string; action: "iterate" | null } | null {
   if (!path.startsWith(IDEA_DETAIL_PREFIX)) return null;
-  const id = path.slice(IDEA_DETAIL_PREFIX.length);
-  return id === "" || id.includes("/") ? null : id;
+  const [id, action, ...extra] = path.slice(IDEA_DETAIL_PREFIX.length).split("/");
+  if (id === undefined || id === "" || extra.length > 0) return null;
+  if (action === undefined) return { id, action: null };
+  return action === "iterate" ? { id, action } : null;
 }
 
 /** A capture body is a few hundred bytes; a megabyte is a ceiling, not a target. */

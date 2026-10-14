@@ -23,7 +23,7 @@ export interface VaultFilters {
 }
 
 /** docs/API.md §3.1 — the enums, as the contract spells them. */
-const LINEAGE_KINDS = ["ROOT", "ITERATION", "FORK"] as const;
+const LINEAGE_KINDS = ["ROOT", "FORK"] as const;
 const STATUSES = ["ACTIVE", "NEEDS_COMPLETION"] as const;
 
 /** One `idea_version` row under the same node (`docs/API.md` §4.5). */

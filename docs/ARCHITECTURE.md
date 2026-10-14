@@ -90,7 +90,7 @@ idea(
   problem            TEXT NOT NULL,
   monetization       TEXT NOT NULL,
   domain_tags        TEXT NOT NULL,    -- JSON array; ≥ 1 (PRD §2: no domain ⇒ no spark)
-  lineage_kind       TEXT NOT NULL,    -- ROOT | ITERATION | FORK
+  lineage_kind       TEXT NOT NULL,    -- ROOT | FORK (iteration is a version, not a lineage kind)
   lineage_parent_id  TEXT NULL,        -- NOT a foreign key (T26): set only for FORK (single parent)
   status             TEXT NOT NULL,    -- ACTIVE | NEEDS_COMPLETION
   visibility         TEXT NOT NULL,    -- PRIVATE (MVP only)
