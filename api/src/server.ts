@@ -3,6 +3,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { DatabaseSync } from "node:sqlite";
 
 import { captureIdea, NotFoundError, parseCaptureInput, ValidationError } from "./capture.js";
+import { deleteIdea } from "./delete.js";
 import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
 import { vaultSummary } from "./vault-summary.js";
 
@@ -158,9 +159,12 @@ async function handleRequest(
       return sendJson(res, 200, vaultSummary(db));
     }
 
-    const detailId = method === "GET" ? ideaIdFromPath(path) : null;
+    const detailId = ideaIdFromPath(path);
     if (detailId !== null) {
-      return handleIdeaDetail(res, db, detailId);
+      if (method === "GET") return handleIdeaDetail(res, db, detailId);
+      // §4.8 — the same `{id}` path, a second method. Everything else still falls through to the
+      // envelope below, so an unknown method on a known shape stays `not_found` (§2).
+      if (method === "DELETE") return handleDeleteIdea(res, db, detailId);
     }
 
     return sendError(res, "not_found", `no route for ${method} ${path}`);
@@ -200,6 +204,17 @@ function handleIdeaDetail(res: ServerResponse, db: DatabaseSync, id: string): vo
   const detail = getIdeaDetail(db, id);
   if (detail === null) return sendError(res, "not_found", `idea ${id} not found`);
   sendJson(res, 200, detail);
+}
+
+/**
+ * `DELETE /v1/ideas/{id}` (docs/API.md §4.8): orphan-with-warning, so the server never blocks and
+ * never asks — §4.5's `referenced_by` is the client's warning, and the delete proceeds either way. An
+ * unknown id is the `not_found` envelope, which is also what a repeat delete answers: the id is
+ * unknown once the row is gone.
+ */
+function handleDeleteIdea(res: ServerResponse, db: DatabaseSync, id: string): void {
+  if (!deleteIdea(db, id)) return sendError(res, "not_found", `idea ${id} not found`);
+  sendJson(res, 200, { deleted: true, id });
 }
 
 /**

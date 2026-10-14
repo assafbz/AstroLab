@@ -388,3 +388,69 @@ test("the summary route reads no query parameter, and only GET is a route", asyn
   expectEnvelope(await call("POST", "/v1/vault/summary", auth), 404, "not_found");
   expectEnvelope(await call("GET", "/v1/vault/summary/", auth), 404, "not_found");
 });
+
+test("DELETE /v1/ideas/{id} answers 200, and the idea is gone from every read", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const created = await call("POST", "/v1/ideas", { ...auth, json: VALID });
+  const { id } = created.body as { id: string };
+
+  expect(await call("DELETE", `/v1/ideas/${id}`, auth)).toEqual({
+    status: 200,
+    contentType: JSON_UTF8,
+    body: { deleted: true, id },
+  });
+  expectEnvelope(await call("GET", `/v1/ideas/${id}`, auth), 404, "not_found");
+  expect((await call("GET", "/v1/ideas", auth)).body).toEqual({ ideas: [] });
+});
+
+test("an unknown id — and a repeat delete — are the not_found envelope (§2: the id is unknown)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  expectEnvelope(await call("DELETE", "/v1/ideas/9f1c-missing", auth), 404, "not_found");
+
+  const created = await call("POST", "/v1/ideas", { ...auth, json: VALID });
+  const { id } = created.body as { id: string };
+  expect((await call("DELETE", `/v1/ideas/${id}`, auth)).status).toBe(200);
+  // Not idempotent by design: once the row is gone the id is unknown, and §2 answers that with 404.
+  expectEnvelope(await call("DELETE", `/v1/ideas/${id}`, auth), 404, "not_found");
+});
+
+test("a delete needs a token, and only a `{id}` path is a route", async () => {
+  expectEnvelope(await call("DELETE", "/v1/ideas/9f1c"), 401, "unauthorized");
+
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  // The list path has no DELETE route, and neither does a bare or deeper path — §2, no third case.
+  expectEnvelope(await call("DELETE", "/v1/ideas", auth), 404, "not_found");
+  expectEnvelope(await call("DELETE", "/v1/ideas/", auth), 404, "not_found");
+  expectEnvelope(await call("DELETE", "/v1/ideas/a/b", auth), 404, "not_found");
+
+  // The method dispatch is real, not a fall-through: on a path that *does* name a live idea, a
+  // method with no route there is still the envelope — if the dispatch ignored the method, this PUT
+  // would delete the idea and answer 200.
+  const created = await call("POST", "/v1/ideas", { ...auth, json: VALID });
+  const { id } = created.body as { id: string };
+  expectEnvelope(await call("PUT", `/v1/ideas/${id}`, { ...auth, json: VALID }), 404, "not_found");
+  expect((await call("GET", `/v1/ideas/${id}`, auth)).status).toBe(200);
+});
+
+test("the delete retracts a live offer naming the idea, and keeps a resolved one", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const first = await call("POST", "/v1/ideas", { ...auth, json: VALID });
+  const second = await call("POST", "/v1/ideas", { ...auth, json: VALID });
+  const a = (first.body as { id: string }).id;
+  const b = (second.body as { id: string }).id;
+  const seedSpark = (sparkId: string, status: string): void => {
+    db.prepare(
+      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, status, created_at)
+       VALUES (?, ?, ?, ?, 'd', 'c', ?, 't')`,
+    ).run(sparkId, a, b, `${a}|${b}|${sparkId}`, status);
+  };
+  seedSpark("live", "OFFERED");
+  seedSpark("resolved", "RESOLVED-DISMISSED");
+
+  expect((await call("DELETE", `/v1/ideas/${a}`, auth)).status).toBe(200);
+
+  // A live offer is a promise made from the current vault state, so it goes; the resolved one is
+  // history and keeps its (now dangling) pair.
+  const left = db.prepare("SELECT id FROM spark ORDER BY id").all() as Array<{ id: string }>;
+  expect(left).toEqual([{ id: "resolved" }]);
+});
