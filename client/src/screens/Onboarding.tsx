@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
+import { enqueueRun } from "../api/sparks.ts";
 import { vaultSummary } from "../api/vault.ts";
 import type { VaultSummary } from "../api/types.ts";
 import { DomainPicker } from "../components/DomainPicker.tsx";
@@ -12,6 +13,7 @@ import {
   validateOnboardingIdea,
   type OnboardingIdea,
 } from "../domain/onboarding.ts";
+import { createRunTrigger } from "../domain/run-trigger.ts";
 import { spreadGate } from "../domain/spread-gate.ts";
 
 /**
@@ -28,7 +30,14 @@ import { spreadGate } from "../domain/spread-gate.ts";
  * unreachable the CTA is **absent rather than guessed**, and *skip for now* stays available: the
  * deviation T03 records is descriptive and has no wire form.
  *
- * The rules live in `domain/onboarding.ts` (pure, tested directly); this file renders them.
+ * **T04's side effect — the run — belongs to the exit the user chose.** Pressing *See your sparks* kicks
+ * `POST /v1/sparks/run` (`API.md` §4.16); *Skip* (T03) carries none, so nothing fires from S1's mount.
+ * The POST is **fire-and-forget** — the handler starts it and returns, and the anchor navigates on its
+ * own; nobody waits on the engine (NFR-P1). The single-flight guard (`domain/run-trigger.ts`) ignores a
+ * press while its own POST is still in flight, so a double-press cannot enqueue two runs.
+ *
+ * The rules live in `domain/onboarding.ts` and `domain/run-trigger.ts` (pure, tested directly); this file
+ * renders them.
  */
 
 const EMPTY: OnboardingIdea = { hypothesis: "", problem: "", monetization: "", domain: null };
@@ -41,6 +50,9 @@ export function Onboarding() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [summary, setSummary] = useState<VaultSummary | null>(null);
   const [summaryFailed, setSummaryFailed] = useState(false);
+  // One trigger for the screen's lifetime, so its single-flight guard spans presses: the lazy
+  // initialiser runs once, so a state change never resets the guard mid-flight.
+  const [runTrigger] = useState(() => createRunTrigger(enqueueRun));
 
   const loadSummary = useCallback(async () => {
     setSummaryFailed(false);
@@ -164,10 +176,14 @@ export function Onboarding() {
        * a client-side guess dressed as server truth (R1). Skip is always there — T03 allows leaving
        * onboarding early, and the deviation it records is descriptive (`PRD.md` §3.4 item 2 /
        * NFR-U1) with no wire form; its only consequence is S1 landing in E0 (slice 3).
+       *
+       * Only the gate CTA carries T04's side effect (`runTrigger.fire()` → `POST /v1/sparks/run`).
+       * `Skip` gets no `onClick`: T03 has no side effect, and a run fired from `Skip` would be a run
+       * the user did not choose.
        */}
       <div className="exits">
         {summary !== null && spreadGate(summary) ? (
-          <a className="button button--ghost" href="#/">
+          <a className="button button--ghost" href="#/" onClick={() => runTrigger.fire()}>
             See your sparks
           </a>
         ) : null}
