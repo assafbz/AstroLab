@@ -193,7 +193,11 @@ function ProgressMark(props: {
   }
 
   const p = progress(props.summary);
-  const covered = props.summary.resolved_domains;
+  // **One displayed quantity.** The mark and the sr announcement read the *same* capped value the
+  // readout prints — `progress().covered`, not the raw `resolved_domains`. A `resolved: 5, target: 3`
+  // vault would otherwise render `3 / 3` beside five brass points and "5 covered domains": three
+  // elements, two numbers. The full census is the Vault screen's to show, not S0's.
+  const covered = p.covered;
   const provisional = props.summary.provisional_domains;
   const segments = Array.from({ length: p.target }, (_, index) => index < p.covered);
 

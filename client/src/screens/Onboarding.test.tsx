@@ -86,6 +86,19 @@ test("the readout and the chart are the summary's numbers — never a local tall
   expect(within(readout).getByText(/2 covered domains, 3 provisional/)).toBeTruthy();
 });
 
+test("the mark and the announcement print the readout's capped number — one displayed quantity", async () => {
+  // `resolved: 5` clears a `target: 3`: the readout caps at the target, and so must the mark and the
+  // sr announcement, or the screen shows `3 / 3` beside five points and "5 covered domains".
+  stubFetch({ ...SUMMARY, resolved_domains: 5, eligible: true });
+  const { container } = render(<Onboarding />);
+
+  const readout = await screen.findByLabelText("Domains covered");
+  expect(within(readout).getByText("3 / 3")).toBeTruthy();
+  expect(container.querySelectorAll(".star--covered")).toHaveLength(3);
+  expect(within(readout).getByText(/3 covered domains, 3 provisional/)).toBeTruthy();
+  expect(within(readout).queryByText(/5 covered domains/)).toBeNull();
+});
+
 test("the picker offers every shipped cluster under its name", async () => {
   stubFetch();
   render(<Onboarding />);
