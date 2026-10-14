@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "dependencies": {
-    "@astrolab/store": "*"
+    "@astrolab/store": "*",
+    "yaml": "^2.9.1"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

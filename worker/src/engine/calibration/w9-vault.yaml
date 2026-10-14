@@ -1,0 +1,175 @@
+# W9 calibration vault — one idea per shipped cluster (28 ideas).
+#
+# Tagged with the cluster key itself, so every tag resolves in `domain_map` with 0 AI calls
+# (ARCHITECTURE.md §3.2 step 1). One idea per cluster makes every pair cross-cluster, so the
+# run exercises the {1, 2, null} distance classes and no same-cluster (cliché) pair exists (C1).
+#
+# Fields are the ones the extractor sees (`IdeaText`: hypothesis · problem · monetization).
+
+- id: w9-devtools
+  cluster: devtools
+  hypothesis: A content-addressed cache keyed by input hashes lets a team reuse build outputs across machines instead of recomputing unchanged steps.
+  problem: CI rebuilds everything from scratch on every push, burning minutes on work nobody changed.
+  monetization: A hosted remote cache sold per seat.
+
+- id: w9-data-infra
+  cluster: data-infra
+  hypothesis: A derived table can be refreshed incrementally by applying only the source rows that changed since the last build.
+  problem: Dashboard aggregates are recomputed in full on every request and drift from their sources.
+  monetization: Per-row-processed pricing on a managed warehouse.
+
+- id: w9-ai-ml
+  cluster: ai-ml
+  hypothesis: Embeddings cached under a hash of the input text avoid paying to re-embed unchanged documents.
+  problem: Re-indexing a corpus re-embeds every document on each run.
+  monetization: Usage-based pricing on stored vectors.
+
+- id: w9-cybersecurity
+  cluster: cybersecurity
+  hypothesis: Granting access just-in-time and scoped to a single task, never as a standing credential, keeps a compromise inside a small blast radius.
+  problem: Engineers hold long-lived production credentials that never expire and cannot be scoped.
+  monetization: An enterprise licence priced per protected resource.
+
+- id: w9-fintech
+  cluster: fintech
+  hypothesis: Holding funds in escrow and releasing them only when a milestone is verified removes the counterparty risk in one-off jobs.
+  problem: Two parties who do not trust each other both refuse to move first.
+  monetization: A take rate on each released milestone.
+
+- id: w9-marketplaces
+  cluster: marketplaces
+  hypothesis: A reputation ledger anchored to verified transactions lets a two-sided market rank supply without human moderators.
+  problem: Buyers cannot tell reliable providers from bad ones before transacting.
+  monetization: A commission on every matched transaction.
+
+- id: w9-retail-commerce
+  cluster: retail-commerce
+  hypothesis: Consumable demand can be predicted from a customer's reorder cadence and shipped before they notice the gap.
+  problem: Customers forget to reorder staples and drift to a competitor in the meantime.
+  monetization: Recurring subscription revenue per subscriber.
+
+- id: w9-sales-support
+  cluster: sales-support
+  hypothesis: Classifying an inbound request and answering the head intents automatically shrinks the queue a human must touch.
+  problem: Support teams drown in the same repetitive tickets week after week.
+  monetization: Per-resolved-conversation pricing.
+
+- id: w9-marketing-growth
+  cluster: marketing-growth
+  hypothesis: A tracked referral link that credits the referrer automatically turns existing users into an acquisition channel.
+  problem: Paid acquisition costs more every quarter and the payback never shortens.
+  monetization: A percentage of first-year revenue per referral.
+
+- id: w9-health
+  cluster: health
+  hypothesis: A patient-owned timeline that any clinic can append to replaces the chart fragmented across each clinic's own system.
+  problem: A patient's history is trapped in whichever system each clinic happens to run.
+  monetization: Per-record integration fees charged to clinics.
+
+- id: w9-biotech
+  cluster: biotech
+  hypothesis: Storing each raw assay output together with its sample and protocol makes a result reproducible and auditable later.
+  problem: A lab result cannot be traced back to the sample and protocol that produced it.
+  monetization: A subscription per laboratory.
+
+- id: w9-agriculture-food
+  cluster: agriculture-food
+  hypothesis: Stacking trays in a controlled environment amortises the capital cost of lighting and automation across many harvests a year.
+  problem: Field farming wastes water and land and yields only a few harvests a season.
+  monetization: Produce sold at a premium plus a licence on the growing system.
+
+- id: w9-personal-life
+  cluster: personal-life
+  hypothesis: A shared household timeline with delegated errands removes the mental load of coordinating a family's logistics.
+  problem: Households coordinate over fragmented chats and forget who owns which errand.
+  monetization: A family subscription.
+
+- id: w9-mobility
+  cluster: mobility
+  hypothesis: Fusing vehicle telemetry with live demand lets dispatch send the nearest suitable vehicle instead of the next available one.
+  problem: Idle time and empty return trips waste a large share of fleet capacity.
+  monetization: Per-vehicle SaaS.
+
+- id: w9-manufacturing
+  cluster: manufacturing
+  hypothesis: Measuring each unit inline and feeding the measurement back into the process catches defects while the batch is still running.
+  problem: Defects are discovered only after a whole batch has been made and shipped.
+  monetization: A licence priced per production line.
+
+- id: w9-hardware-iot
+  cluster: hardware-iot
+  hypothesis: Fusing several cheap, noisy sensors yields a signal that each one alone could never produce.
+  problem: A single sensor is either unreliable or too expensive to reach the precision required.
+  monetization: Hardware margin plus a device-cloud subscription.
+
+- id: w9-climate-energy
+  cluster: climate-energy
+  hypothesis: Shifting flexible consumption into the cheapest hours cuts both the bill and the emissions of the peak.
+  problem: Demand peaks force expensive and dirty peaking plants online.
+  monetization: A share of the savings delivered.
+
+- id: w9-space-defense
+  cluster: space-defense
+  hypothesis: Fusing noisy observations from several platforms tracks an object that any single sensor would lose.
+  problem: Space situational awareness rests on sparse observations from one platform at a time.
+  monetization: A government data subscription.
+
+- id: w9-education
+  cluster: education
+  hypothesis: Tracking a cohort across milestones surfaces the learners falling behind before they drop out.
+  problem: Learners fall behind invisibly until they stop showing up.
+  monetization: A per-seat institutional licence.
+
+- id: w9-hr-work
+  cluster: hr-work
+  hypothesis: A scheduled first-ninety-days runway with clear milestones shortens the time a new hire takes to become productive.
+  problem: New hires flounder for months without a structured plan.
+  monetization: Per-hire SaaS.
+
+- id: w9-legal-compliance
+  cluster: legal-compliance
+  hypothesis: A reusable clause library with an approval gate per risk tier speeds contracts without giving up control of the risky ones.
+  problem: Every contract is drafted from scratch and waits behind the same slow review.
+  monetization: A per-seat legal-operations subscription.
+
+- id: w9-public-sector
+  cluster: public-sector
+  hypothesis: Triaging incoming cases by urgency and routing each to the right caseworker clears a backlog faster than a single queue.
+  problem: Backlogs leave the most vulnerable applicants waiting the longest.
+  monetization: A municipal contract.
+
+- id: w9-enterprise-ops
+  cluster: enterprise-ops
+  hypothesis: Escalating approval by spend tier keeps small purchases fast while large ones still pass a control.
+  problem: Every purchase, trivial or large, waits behind the same approval bottleneck.
+  monetization: A per-seat back-office licence.
+
+- id: w9-consumer-social
+  cluster: consumer-social
+  hypothesis: Matching people by declared interests and past participation forms better groups than ranking them by follower counts.
+  problem: Social feeds surface popularity rather than shared interest, so groups never gel.
+  monetization: A premium membership.
+
+- id: w9-media-entertainment
+  cluster: media-entertainment
+  hypothesis: Auto-classifying content and escalating only the borderline cases to humans keeps a platform safe at a scale manual review cannot reach.
+  problem: Fully manual moderation burns out a team and cannot keep pace with uploads.
+  monetization: Per-moderated-item pricing.
+
+- id: w9-travel
+  cluster: travel
+  hypothesis: Holding a reservation against a refundable deposit converts browsers without exposing the operator to overbooking risk.
+  problem: Travellers abandon the booking when asked to pay the full amount up front.
+  monetization: A fee charged on each converted hold.
+
+- id: w9-real-estate
+  cluster: real-estate
+  hypothesis: Withholding part of a payment until a defect list is cleared aligns the contractor's incentive with the finished quality.
+  problem: Builders are paid in full before the defects they left are fixed.
+  monetization: A transaction fee on each project.
+
+- id: w9-arts-culture
+  cluster: arts-culture
+  hypothesis: A chain-of-custody record for each work makes ownership and authenticity verifiable by anyone who needs to check.
+  problem: Provenance is documented on paper trails that get lost between owners.
+  monetization: A registration fee per work.
