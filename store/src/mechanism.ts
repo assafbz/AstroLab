@@ -7,11 +7,15 @@ import { withRetry } from "./retry.js";
  * The `idea_mechanism` descriptor cache, as SQL over one table (`ARCHITECTURE.md` §2.3, §3.3 step 1).
  *
  * It lives in `store` — beside `runs.ts`, the same precedent: SQL over the worker's tables lives
- * here though §1 gives the worker those writes — because **two callers that do not depend on each
- * other** need it. The **worker** writes the descriptor (W3); the **API's delete path** (V5 #16)
- * must clear the rows for a deleted idea, or removing an idea violates `idea_mechanism`'s foreign key
- * (`idea_mechanism.idea_id` has no `ON DELETE`, and `openStore` sets `PRAGMA foreign_keys = ON`).
- * Engine-side SQL would force a new `api → worker` dependency, which neither package has today.
+ * here though §1 gives the worker those writes — because the cache is **derived state** whose write
+ * carries a *named exception* to `vaultMutation` (below), and that exception is better argued once
+ * than re-justified at each call site in another package.
+ *
+ * The **worker** is its only caller (W3). The **API's delete path** (V5 #16) does **not** clear rows
+ * for a deleted idea: as of `0003_reference_actions`, `idea_mechanism.idea_id` is
+ * `ON DELETE CASCADE`, so an idea's own rows go with it. That cascade superseded the earlier plan for
+ * a `clearDescriptors` export — an export whose only consumer would be its own test is the thing
+ * ponytail exists to delete.
  *
  * ## The named exception to `vaultMutation`
  *

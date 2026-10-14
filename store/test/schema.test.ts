@@ -185,9 +185,12 @@ test("only a FORK may carry a lineage parent", () => {
   expect(() => insertIdea(db, "root2", { lineageKind: "ROOT", lineageParentId: "root" })).toThrow(
     /CHECK/,
   );
+  // V5 (#16): `lineage_parent_id` is no longer a foreign key. T26 requires a fork **child** to keep
+  // its parent reference after the parent is deleted, so a ghost id has to be *accepted* here — the
+  // CHECK above is the only thing confining the column, and the dangling ref is the documented shape.
   expect(() =>
     insertIdea(db, "dangling", { lineageKind: "FORK", lineageParentId: "ghost" }),
-  ).toThrow(/FOREIGN KEY/);
+  ).not.toThrow();
 });
 
 test("the vocabulary CHECKs reject out-of-vocabulary values", () => {
