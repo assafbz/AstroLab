@@ -618,5 +618,5 @@ rather than left to the implementation:
 carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`; by **V2** (`#13`),
 branch `feat/v2-vault-read-api`; by **O2** (`#22`), branch `feat/o2-vault-summary`; by **V5**
 (`#16`), branch `feat/v5-delete-api`; by **V3** (`#14`), branch `feat/v3-iterate-api`; by **W8**
-(`#33`), branch `feat/w8-run-surface`; and by the **#94 docs pass**, branch
-`docs/94-e0-definition-scope`.*
+(`#33`), branch `feat/w8-run-surface`; by **K1** (`#35`), branch `feat/k1-sparks-read`;
+and by the **#94 docs pass**, branch `docs/94-e0-definition-scope`.*
