@@ -135,6 +135,51 @@ is a **spark**; no tiny tap targets.
 
 ---
 
+## 8. Screen Composition — S6 (Iterate)
+
+**In-place refinement of one idea.** Same node, a new version; the prior version is retained as history
+(`PRD.md` §3.2 item 1). Reached from **Idea Detail** by the **Iterate** action and returns there on save
+(`FLOW.md` §2.1, T22 / T23). **No lineage edge is created** — iteration is a version, not a branch; the
+branching path is **Fork (S5)**.
+
+**Frame.** Single column, 16px gutters, safe-area aware (§5). The header keeps Idea Detail's shape: a ghost
+back affordance, the title **Iterate** in Geist, and the idea's id in JetBrains Mono `#7C87A3` — the *same* id
+Idea Detail shows, because it is the same node. The sticky action bar (§5) carries the screen's only action.
+
+**The editor.** The mandatory fields (`PRD.md` §2), pre-filled with the **current version's** values, in
+Capture's order and components (§4, Input — mono label above, `#0E111C` fill, brass focus ring, error below in
+Destructive):
+
+1. **Core Hypothesis** — with the live mono counter toward **280** (the S2 rule).
+2. **Problem Solved.**
+3. **Monetization / Value Angle.**
+4. **Domain tag(s)** — rounded-full chips with removable tokens, plus the dashed **+ add domain** chip.
+
+Validation is on save, inline below the offending field, and the sticky CTA stays blocked while any mandatory
+field is empty (`FLOW.md` §2.1, T23). **A refinement that changes nothing is not a version:** while the form is
+identical to the current version the CTA is disabled and reads, in mono, *"No changes yet"* — an empty version
+row would make the history meaningless.
+
+**Version history — and it is not lineage.** Below the editor, a collapsible **History** section: the node's
+versions as a **flat** list of Raised rows, each mono `v2 · 04:12` with the hypothesis in Muted, the current
+one marked **current** in Brass Highlight. A row expands **read-only** (its fields and tags). No brass node
+markers, no connectors, no chain: that vocabulary belongs to **LIVING LINEAGE** on Idea Detail (§4), and
+borrowing it would read a version as an ancestor. There is never an *"iterate from this version"* affordance —
+that is a branch, and a branch is Fork.
+
+**States.** *Default* — pre-filled, nothing dirty. *Invalid save* — inline Destructive errors, CTA blocked
+(T23). *Saving* — the sticky brass button shows its pressed state; **no circular spinner** (§4). *Saved* —
+return to Idea Detail (T23), which reads v N+1 as current and the previous version in history. *Error* — a
+quiet inline retry in the action bar; the typing is never lost. *First iteration* — v1 is the only prior row,
+so history is a one-row list, **not** an empty state. *Back with unsaved changes* — confirm the discard; the
+node is never mutated implicitly.
+
+**Motion.** Restrained springs, `transform` and `opacity` only (§6): the History rows slide open; nothing
+flips, nothing loops.
+
+**Anti-patterns, S6-specific.** No lineage visual for versions; no editing of a past version; no "iterate from
+a version"; no silent autosave (a version is a deliberate act); no spinner; no diff score and no "AI
+suggestion" copy. Everything else in §7 stands.
 ## 9. Screen Composition — S1 (Sparks): the engine states E0–E4
 
 **S1 is the home and the review queue** (`FLOW.md` §2.1) — the deck, one proposed spark at a time, with
