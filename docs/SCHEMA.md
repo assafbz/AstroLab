@@ -1,7 +1,8 @@
 # Schema: Astrolab store (SQLite) — issue F3 design
 
-> **Status:** The schema of record, in DDL form — and **shipped**: `0001_init` (the twelve tables) and
-> `0002_seed_vault_meta` live in `store/src/migrations.ts`, and this file tracks them.
+> **Status:** The schema of record, in DDL form — and **shipped**: `0001_init` (the twelve tables),
+> `0002_seed_vault_meta` and `0003_reference_actions` live in `store/src/migrations.ts`, and this file
+> tracks them.
 > **Source of record:** `docs/ARCHITECTURE.md` §2 (data model — the complete table set incl.
 > `idea_mechanism`) and ADR-0001 / ADR-0002. Where this file and §2 differ, **§2 wins** and this file
 > is the defect — file it.
@@ -155,6 +156,37 @@ INSERT INTO vault_meta (id, revision) VALUES (1, 0);
 
 A new migration rather than an edit to `0001_init`, which is already applied — rewriting it would break
 forward-only and skip every store already at v1.
+
+### 1b. `0003_reference_actions` — the eight `REFERENCES idea(id)` (V5 `#16`, 2026-10-14)
+
+`0001_init` declared all eight references bare, and a bare reference is **immediate** with
+`foreign_keys = ON` (which `openStore` sets) — so deleting *any* idea that had ever been captured failed on
+its own `idea_version` row. `0003` restates them as the delete semantics T26 needs — **the row's owner
+cascades, historical refs dangle** — so §1's DDL for those six tables reads as follows:
+
+| table | column | now |
+| :--- | :--- | :--- |
+| `idea_version` | `idea_id` | `REFERENCES idea(id) ON DELETE CASCADE` |
+| `idea_mechanism` | `idea_id` | `REFERENCES idea(id) ON DELETE CASCADE` |
+| `provenance_edge` | `derived_idea_id` | `REFERENCES idea(id) ON DELETE CASCADE` |
+| `provenance_edge` | `source_idea_id` | **no reference** — the source ref dangles (T26) |
+| `idea` | `lineage_parent_id` | **no reference** — a fork child keeps its parent id (T26) |
+| `spark` | `idea_a_id`, `idea_b_id` | **no references** — a resolved spark's pair is history |
+| `decision` | `result_idea_id` | **no reference** — the resolution is permanent (`FLOW.md` §5.4) |
+| `decision` | `spark_id` | unchanged: `REFERENCES spark(id)` |
+
+SQLite cannot `ALTER` a constraint, so each change is a **table rebuild** (create new → copy → drop old →
+rename), and `ux_spark_live` is recreated with `spark`. The rebuild runs under `PRAGMA foreign_keys = OFF`,
+set **outside** the migration's transaction by `migrate()` (the `rebuildReferences` flag on a `Migration`):
+inside a transaction that pragma is a **silent no-op**, so `migrate()` reads it back and throws if it did not
+take, checks `PRAGMA foreign_key_check` **inside** the transaction (a violation rolls the migration back —
+and the check must be code, because the pragma is a *query*, so a migration string containing it cannot fail
+anything), and restores the pragma in a `finally`. `legacy_alter_table` is not needed;
+`defer_foreign_keys` does **not** work (it defers the violation to `COMMIT`, which then fails).
+
+The one case that is neither cascade nor dangle lives in application code, not in the schema: a **live
+`OFFERED` spark** named by a deleted idea is retracted by the delete path (`docs/API.md` §4.8), because a
+live offer is a promise made from the vault's current state and the state has changed.
 
 ---
 

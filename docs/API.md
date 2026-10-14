@@ -263,6 +263,24 @@ Guard: `mutation_delta` non-empty **and** the fork's domain set differs from the
 The warning shown before delete is read from `referenced_by` in §4.5; the client is responsible for
 surfacing it, the server does not block.
 
+Readings this doc had not pinned (settled in V5 `#16`):
+
+- **The idea's own rows go with it** — its `idea_version` rows, its descriptor-cache row, and its
+  provenance edges — by `ON DELETE CASCADE` (`SCHEMA.md` §1b), so a delete is one statement and the rule is
+  in the schema rather than at the call site.
+- **A live `OFFERED` spark naming the idea is retracted.** A live offer is not history: it is a promise made
+  from the vault's current state, and the state just changed. A **resolved** spark is history and keeps its
+  (now dangling) pair. The retraction is scoped to the deleted idea's own offers.
+- **Nothing is ever un-resolved** — the spark stays `RESOLVED-*` and is not re-offered, the `decision` row
+  keeps its dangling `result_idea_id`, and no suppression is written (`FLOW.md` §5.4's permanence point).
+- **An unknown `{id}`, and a repeat delete, are `not_found`.** Once the row is gone the id is unknown, and
+  §2 answers that with `404`; the delete is not idempotent by design, because nothing needs it to be.
+- **The delete is candidate-affecting** (`ARCHITECTURE.md` §4 names it), so it goes through the vault-write
+  trigger: the revision stamps and a run enqueues in the same transaction. An unknown id writes nothing, so
+  nothing stamps.
+- **No request body is read, and only a `{id}` path is a route**: `DELETE /v1/ideas`, `/v1/ideas/`, or a
+  deeper path is the `not_found` envelope (§2, as at §6 for the read path).
+
 ### 4.9 `GET /v1/sparks?state=offered` — deck read (S1)
 `200` → `{ "sparks": [Spark, …] }` in **server order** (deck order = server order).
 `state=offered` returns live offers only (`status = OFFERED`).
@@ -413,9 +431,19 @@ rather than left to the implementation:
     **no idea count**, so the S1 entry decision and the deck must read E0 from the engine state and
     **never from `eligible`**. A vault holding one idea with two clusters is `eligible: true` and still
     E0; recorded rather than papered over. *(Carried to `#24`.)*
+- **The vault delete path (settled in V5 `#16`)** — §4.8's readings (what cascades, what dangles, the
+  live-offer retraction, the `404` on an unknown or repeated id, the vault-write trigger) are recorded at
+  the endpoint. Two readings belong here instead:
+  - **The eight `REFERENCES idea(id)` are part of this contract's meaning**, and
+    `SCHEMA.md` §1b restates them. A bare reference is *immediate* with `foreign_keys = ON`, so before
+    `0003_reference_actions` the delete endpoint's semantics were not merely unstated — they were
+    **unreachable**: no idea that had ever been captured could be deleted.
+  - **A dangling ref is not a violation.** `PRAGMA foreign_key_check` is clean on every state §4.8
+    produces; the refs that dangle are exactly the ones the schema no longer enforces.
 
 ---
 
 *Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`;
 carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`; by **V2** (`#13`),
-branch `feat/v2-vault-read-api`; and by **O2** (`#22`), branch `feat/o2-vault-summary`.*
+branch `feat/v2-vault-read-api`; by **O2** (`#22`), branch `feat/o2-vault-summary`; and by **V5**
+(`#16`), branch `feat/v5-delete-api`.*

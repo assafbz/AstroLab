@@ -215,7 +215,7 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 - **ACCEPT undo:** retract the derived idea **only if it is still unedited**, clear the acceptance and its provenance, restore the card.
 - **INSPIRE-save undo** (same class as ACCEPT): retract the seeded idea **only if it is still unedited**, clear its provenance, and **return the spark to `OFFERED`** (un-resolve) — closing the vault-mutating path the H5 fix introduced (N3).
 - **DISMISS undo:** clear the negative signal, restore the card.
-- **Permanence:** once the window closes, or the derived idea has been opened/edited, the resolution is final. In particular, **deleting a derived idea later (T26) does not un-resolve its spark** — it stays `RESOLVED-*`, is not re-offered, and its provenance ref simply dangles (M3). The derived idea can still be deleted from the Vault the normal way (T26).
+- **Permanence:** once the window closes, or the derived idea has been opened/edited, the resolution is final. In particular, **deleting a derived idea later (T26) does not un-resolve its spark** — it stays `RESOLVED-*` and is not re-offered, and what still dangles afterwards is the **`decision.result_idea_id`** that named it. (The delete takes the idea's own rows — its versions, its descriptor cache, its provenance edges — and leaves every *historical* ref alone; `ARCHITECTURE.md` §2.3, V5 `#16`.) The derived idea can still be deleted from the Vault the normal way (T26).
 - **One step only:** undo reverts the *last* decision; it does not chain.
 - Undo applies equally to the button and the gesture (parity, §2.2).
 
@@ -285,4 +285,6 @@ ACCEPT and DISMISS are **vault operations** and must succeed with AI down (NFR-A
 
 - **2026-10-14 — r3.6.** **Max's #71-review nit:** §4.1's **E0** row quoted *"Sparks need breadth."* — a second copy of one state's message, diverging from §5.2 and `DESIGN.md` §9. Aligned the row to the canonical §5.2 copy so E0 quotes the same line as the other state rows (E3/E4). Docs-only; no state-machine change.
 
-*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.6, 2026-10-14. Review: two adversarial passes by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
+- **2026-10-14 — r3.7.** **V5 (#16) precision fix to §5.4.** The permanence clause said a deleted derived idea's *"provenance ref simply dangles (M3)"* — true of the T26 shape it was written for (a deleted **source**), but no longer true of the deleted **derived** idea itself: V5's delete takes the idea's own rows, provenance included, and what still dangles is the **`decision.result_idea_id`** that named it. The clause now says which ref. The permanence point is unchanged — the spark stays `RESOLVED-*` and is not re-offered — and no state-machine transition changed.
+
+*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.7, 2026-10-14. Review: two adversarial passes by Max; spec aligns to the Nightfall lane and the 2026-10-12 pivot.*
