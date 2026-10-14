@@ -12,6 +12,7 @@ import {
   validateOnboardingIdea,
   type OnboardingIdea,
 } from "../domain/onboarding.ts";
+import { spreadGate } from "../domain/spread-gate.ts";
 
 /**
  * S0 — Onboarding / bootstrap (`FLOW.md` §2.1 S0, §4.2 T01/T02; `PRD.md` §3.4 items 1–2).
@@ -147,6 +148,28 @@ export function Onboarding() {
           {saveError}
         </p>
       ) : null}
+
+      {/*
+       * S0's two exits (`FLOW.md` §4.2 T03/T04). Both land **S1** (`#/`, the home `router.ts`
+       * already routes); neither is an in-place action, so both are anchors, like the tab bar.
+       *
+       * `See your sparks` is the gate — `spreadGate(summary)`, the server's `eligible`, and nothing
+       * else. While the summary is unread or unreachable the CTA is **absent rather than guessed**:
+       * the vault may or may not clear the floor, and a gate that rendered on a failed read would be
+       * a client-side guess dressed as server truth (R1). Skip is always there — T03 allows leaving
+       * onboarding early, and the deviation it records is descriptive (`PRD.md` §3.4 item 2 /
+       * NFR-U1) with no wire form; its only consequence is S1 landing in E0 (slice 3).
+       */}
+      <div className="exits">
+        {summary !== null && spreadGate(summary) ? (
+          <a className="button button--ghost" href="#/">
+            See your sparks
+          </a>
+        ) : null}
+        <a className="exits__skip" href="#/">
+          skip for now
+        </a>
+      </div>
 
       <div className="actionbar">
         <button type="button" className="button" onClick={() => void onAdd()} disabled={saving}>

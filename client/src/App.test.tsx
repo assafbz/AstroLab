@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { App } from "./App.tsx";
@@ -94,6 +94,29 @@ test("a bare #/ideas composes a 'choose an idea' landing, never blank (D10)", ()
   );
   expect(screen.getByRole("link", { name: "Vault" }).getAttribute("aria-current")).toBe("page");
   expect(screen.queryByText(/not built yet/i)).toBeNull();
+});
+
+/** `#/` is S1 (home). Whichever entry brought the user there, a cold vault lands the E0 composition. */
+test("#/ renders S1, and a vault below the floor lands E0 Cold — not a placeholder", async () => {
+  window.location.hash = "#/";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(() =>
+      Promise.resolve(
+        json({ resolved_domains: 1, provisional_domains: 1, target: 3, floor: 2, eligible: false }),
+      ),
+    ),
+  );
+  render(<App />);
+
+  const cold = await screen.findByLabelText("Sparks need more domains");
+  expect(within(cold).getByText("1 / 3")).toBeTruthy();
+  expect(within(cold).getByRole("link", { name: "Add idea" }).getAttribute("href")).toBe(
+    "#/capture",
+  );
+  expect(screen.queryByText(/not built yet/i)).toBeNull();
+  // The Sparks tab is the active one: S1 is home, not a screen reached from elsewhere.
+  expect(screen.getByRole("link", { name: "Sparks" }).getAttribute("aria-current")).toBe("page");
 });
 
 test("a screen V8 does not build still renders its placeholder", () => {
