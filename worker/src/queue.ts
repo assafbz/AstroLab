@@ -1,6 +1,12 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import { claimNextRun, currentVaultRevision, finishRun, type SparkRun } from "@astrolab/store";
+import {
+  claimNextRun,
+  currentVaultRevision,
+  finishRun,
+  type OfferedSpark,
+  type SparkRun,
+} from "@astrolab/store";
 
 /**
  * The worker's run loop (`ARCHITECTURE.md` §4; `ADR-0004`). The queue *rows* live in the store
@@ -25,9 +31,33 @@ export interface VaultCut {
 export interface RunOutcome {
   /** Candidate `pair_key`s the body produced. W1's stub produces none; W5+ produces real pairs. */
   candidates: string[];
+  /**
+   * W8: the pairs the model confirmed, already shaped as `spark` rows — the commit offers these
+   * (`insertOfferedSparks`). Absent for W1's stub, which reaches no provider and writes nothing.
+   */
+  offers?: OfferedSpark[];
+  /** W8: the `pair_key`s the model rejected — the commit records them as `NOISE` (`recordNoise`). */
+  rejected?: string[];
+  /**
+   * W8: the sweep's inside set — the idea ids that are **still candidates** at the cut (§3.5:
+   * `ACTIVE` carrying ≥ 1 domain tag). The commit retracts a live offer outside it
+   * (`retractOffersOutside`). Not the same list as `candidates`, which holds `pair_key`s.
+   */
+  candidateIds?: string[];
 }
 
 export type RunBody = (cut: VaultCut) => Promise<RunOutcome> | RunOutcome;
+
+/**
+ * W8 (S2 / D7): what a run writes once it is known to be **current**. `runOnce` invokes it only when
+ * the vault has not moved past the run's stamp, so the discard path writes nothing (§4 / I) — the
+ * placement is the guarantee, not a check inside the commit.
+ *
+ * The body returns *what* to write; this closure owns *how*. Splitting them is what keeps the
+ * currency decision **single**: the body cannot write behind `runOnce`'s back, and the discard path
+ * needs no compensating delete.
+ */
+export type RunCommit = (outcome: RunOutcome, cut: VaultCut) => void;
 
 export interface RunResult {
   run: SparkRun;
@@ -74,17 +104,26 @@ export const stubRunBody: RunBody = () => ({ candidates: [] });
  * is **never offered** — the mutation that moved the revision already enqueued the run that
  * supersedes it (§4 / I). The disposition is behavioural, not a fifth status; it rides the existing
  * `error` column as an explicitly non-fatal note.
+ *
+ * **A current run's outcome is written by `commit`, and only then (W8, S2).** The body computes what
+ * must be written and writes nothing; `runOnce` calls `commit(outcome, cut)` **between** the currency
+ * check and `finishRun`, so a run that went stale mid-body writes nothing at all — no offer, no
+ * suppression, no sweep. A commit that throws propagates: the run is left `RUNNING`, and the boot
+ * requeue re-runs it (ADR-0004), which is safe because every run write is idempotent (the offer
+ * insert is guarded, the noise insert is `DO NOTHING`).
  */
 export async function runOnce(
   db: DatabaseSync,
   body: RunBody = stubRunBody,
+  commit?: RunCommit,
 ): Promise<RunResult | null> {
   const run = claimNextRun(db);
   if (run === null) return null;
 
+  const cut = cutVault(db, run.vault_revision);
   let outcome: RunOutcome;
   try {
-    outcome = await body(cutVault(db, run.vault_revision));
+    outcome = await body(cut);
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
     finishRun(db, run.id, "FAILED", error);
@@ -93,6 +132,10 @@ export async function runOnce(
 
   const revision = currentVaultRevision(db);
   const discarded = revision !== run.vault_revision;
+  // The load-bearing placement (S2/D7): only a still-current run's outcome is written. A stale run
+  // offers nothing, suppresses nothing and sweeps nothing — the mutation that moved the revision
+  // already enqueued the run that will.
+  if (!discarded && commit !== undefined) commit(outcome, cut);
   finishRun(db, run.id, "DONE", discarded ? `discarded: superseded by revision ${revision}` : null);
   return { run, outcome, discarded, error: null };
 }
@@ -102,6 +145,8 @@ export interface WorkerOptions {
   idleMs?: number;
   /** Observed instead of thrown, so one bad run cannot kill the loop. */
   onError?: (err: unknown) => void;
+  /** W8: the run's write hook, forwarded to every `runOnce` (S2). Absent ⇒ the loop writes nothing. */
+  commit?: RunCommit;
 }
 
 /**
@@ -120,7 +165,7 @@ export function startWorker(
   const tick = async (): Promise<void> => {
     if (stopped) return;
     try {
-      const result = await runOnce(db, body);
+      const result = await runOnce(db, body, options.commit);
       if (result?.error != null) options.onError?.(new Error(result.error));
     } catch (err) {
       // `runOnce` already records a body failure on the run; anything thrown here is the queue

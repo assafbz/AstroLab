@@ -2,6 +2,8 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { DatabaseSync } from "node:sqlite";
 
+import { currentVaultRevision, enqueueRun } from "@astrolab/store";
+
 import {
   captureIdea,
   ConflictError,
@@ -11,6 +13,7 @@ import {
   ValidationError,
 } from "./capture.js";
 import { deleteIdea } from "./delete.js";
+import { engineState } from "./engine-state.js";
 import { forkIdea, parseForkInput } from "./fork.js";
 import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
 import { iterateIdea } from "./iterate.js";
@@ -166,6 +169,22 @@ async function handleRequest(
     // answered straight from the vault with no filter vocabulary to validate.
     if (method === "GET" && path === "/v1/vault/summary") {
       return sendJson(res, 200, vaultSummary(db));
+    }
+
+    // §4.10 — the engine state (S1): E0–E4 from one place (`engine-state.ts`). Provider-free, so the
+    // readout answers while the engine is down — which is the state it exists to report (E4).
+    if (method === "GET" && path === "/v1/sparks/state") {
+      return sendJson(res, 200, engineState(db));
+    }
+
+    // §4.16 — Recompute: enqueue a run at the current revision and answer immediately (NFR-P1: the
+    // request never waits on the engine). **No body is read** — there is nothing to validate — and no
+    // stamp: the revision belongs to the *mutation* that changed the vault, not to a recompute, which
+    // runs at the revision it finds. `enqueueRun` is idempotent per revision, so a repeated call at
+    // one stamp returns the same run.
+    if (method === "POST" && path === "/v1/sparks/run") {
+      const run = enqueueRun(db, currentVaultRevision(db));
+      return sendJson(res, 202, { run_id: run.id, vault_revision: run.vault_revision });
     }
 
     // §4.6 — the same `{id}` path with an action segment. The dispatch is by method *and* action, so

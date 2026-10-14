@@ -92,6 +92,18 @@ function candidates(db: DatabaseSync, cut: VaultCut): Array<{ id: string; tags: 
     );
 }
 
+/**
+ * The **candidate ids** at a cut (§3.5) — the same predicate `gatedPairs`'s Stage 1 uses, since a
+ * sweep that read a *different* set would retract an offer whose idea the gate would still consider.
+ *
+ * W8's sweep (`store/src/sparks.ts`'s `retractOffersOutside`) takes exactly this list: a **live**
+ * offer whose ideas are no longer both candidates is retracted (§4's recompute; V5 `#16` ⑤). A
+ * resolved spark is history and is untouched by the sweep, which filters `status = 'OFFERED'`.
+ */
+export function candidateIds(db: DatabaseSync, cut: VaultCut): string[] {
+  return candidates(db, cut).map((row) => row.id);
+}
+
 export function createGate(
   db: DatabaseSync,
   mechanisms: MechanismCache,

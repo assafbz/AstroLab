@@ -45,4 +45,7 @@ export {
 // mistake is a compile error rather than a silent one. The store's own modules still import it by
 // relative path. `store/test/vault-writes.test.ts` fails if this export comes back.
 export { openStore, type OpenStoreOptions } from "./store.js";
+// The `spark` writes are the engine's (`worker/` calls them), and like `domain_map` / `idea_mechanism`
+// they are derived engine state: written directly, never through `vaultMutation` (`src/sparks.ts`).
+export { insertOfferedSparks, retractOffersOutside, type OfferedSpark } from "./sparks.js";
 export { vaultMutation } from "./vault.js";
