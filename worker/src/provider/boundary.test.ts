@@ -322,3 +322,43 @@ describe("Axis 2 stays in the worker; thresholds stay out of schema and API (#30
     expect(offenders).toEqual([]);
   });
 });
+
+describe("Stage 2's adjudication stays in the worker (PRD §3.3 item 4; API §0) — W6", () => {
+  // Stage 2's names, plus the draft it carries. `SparkDraft.mechanism` is an internal column (§2.3) and
+  // a `direction` / `claim` pair is exactly the "related ideas" readout `PRD.md` §3.3 item 4 forbids
+  // *before* a spark is offered — so none of this may appear on a surface. `store/` is excluded for the
+  // same reason as the blocks above: it owns `spark`'s DDL (`mechanism`, `domain_distance`,
+  // `structural_alignment` are its columns of record), and the schema of record is not a surface.
+  // `\b` around `Adjudication` so the provider's own `SparkAdjudicator` is matched on its own name, and
+  // the all-caps `ADJUDICATION_SYSTEM` / `ADJUDICATION_SCHEMA` are not dragged in by a substring.
+  const SURFACES = VAULT_PACKAGES.filter((pkg) => pkg !== "store");
+  const ADJUDICATION =
+    /SparkDraft|SparkAdjudicator|createAdjudicator|ConfirmedSpark|RejectedPair|\bAdjudication\b/;
+  const onSurface = (file: { rel: string }): boolean =>
+    SURFACES.some((pkg) => file.rel.startsWith(`${pkg}/`));
+
+  test("the scan is real — every name bites in the worker, and every surface is reached", () => {
+    const hits = (pattern: RegExp): string[] =>
+      FILES.filter((file) => pattern.test(file.text)).map((file) => file.rel);
+    // Each alternative, on its own: a typo'd pattern would pass the assertion below by matching nothing.
+    for (const name of ["SparkDraft", "SparkAdjudicator"]) {
+      expect(hits(new RegExp(name)), name).toContain("worker/src/provider/types.ts");
+    }
+    for (const name of ["createAdjudicator", "ConfirmedSpark", "RejectedPair", "Adjudication"]) {
+      expect(hits(new RegExp(name)), name).toContain("worker/src/engine/adjudicate.ts");
+    }
+    for (const pkg of SURFACES) {
+      expect(
+        FILES.some((file) => file.rel.startsWith(`${pkg}/`)),
+        `no files under ${pkg}/`,
+      ).toBe(true);
+    }
+  });
+
+  test("no api/ or client/ source names the adjudication surface or its draft", () => {
+    const offenders = FILES.filter((file) => onSurface(file) && ADJUDICATION.test(file.text)).map(
+      (file) => file.rel,
+    );
+    expect(offenders).toEqual([]);
+  });
+});
