@@ -10,7 +10,7 @@
  * revision (`store/src/runs.ts`), and a second POST while a run at that stamp is already `RUNNING`
  * inserts a second row. Re-running one revision is sanctioned (`ARCHITECTURE.md` §4) — the cost is a
  * duplicated run, never a wrong deck — so the client carries this guard rather than a server change. A
- * revision-keyed guard is not available to the client: no endpoint it may call returns
+ * revision-keyed guard is not available to the client: no read it may call *before firing* returns
  * `vault_revision`, and `VaultSummary` carries none.
  *
  * What never enters: a persisted "we just fired one" flag, or any S1 render — S1 reads the engine
