@@ -68,4 +68,31 @@ describe("vaultMutation — ARCHITECTURE.md §4, made unmissable", () => {
     expect(currentVaultRevision(db)).toBe(0);
     expect(runs(db)).toEqual([]);
   });
+
+  test("an async body does not compile — the mistake cannot be written", () => {
+    const db = newDb();
+
+    // @ts-expect-error an async body is unassignable: it resolves after the commit. Widening the
+    // signature back makes this directive unused, which fails typecheck — so the guard cuts both ways.
+    const call = () => vaultMutation(db, async () => {});
+
+    expect(call).toThrow(TypeError);
+  });
+
+  test("the runtime layer rejects an async body a cast let through", () => {
+    const db = newDb();
+
+    // Past the type — a JS caller, or a cast. This layer sees it and fails loudly. It cannot undo a
+    // write that landed after an `await` (no throw cancels a suspended continuation); that case is the
+    // type's to close, which is why the type exists.
+    const asyncBody = (async () => {
+      seedIdea(db, "a");
+    }) as unknown as () => void;
+
+    expect(() => vaultMutation(db, asyncBody)).toThrow(/must be synchronous/);
+
+    expect(db.prepare("SELECT COUNT(*) AS n FROM idea").get()).toEqual({ n: 0 });
+    expect(currentVaultRevision(db)).toBe(0);
+    expect(runs(db)).toEqual([]);
+  });
 });
