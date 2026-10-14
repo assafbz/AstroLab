@@ -179,9 +179,6 @@ test("only a FORK may carry a lineage parent", () => {
   expect(() =>
     insertIdea(db, "fork", { lineageKind: "FORK", lineageParentId: "root" }),
   ).not.toThrow();
-  expect(() =>
-    insertIdea(db, "iter", { lineageKind: "ITERATION", lineageParentId: "root" }),
-  ).toThrow(/CHECK/);
   expect(() => insertIdea(db, "root2", { lineageKind: "ROOT", lineageParentId: "root" })).toThrow(
     /CHECK/,
   );
@@ -195,6 +192,9 @@ test("only a FORK may carry a lineage parent", () => {
 
 test("the vocabulary CHECKs reject out-of-vocabulary values", () => {
   const db = migrated();
+  // V3 (#14): `ITERATION` is *retired* — iteration is a new `idea_version` on the same node, not a
+  // lineage kind, and `0004` narrowed the CHECK. It is now rejected for the same reason `NOPE` is.
+  expect(() => insertIdea(db, "i0", { lineageKind: "ITERATION" })).toThrow(/CHECK/);
   expect(() => insertIdea(db, "i1", { lineageKind: "NOPE" })).toThrow(/CHECK/);
   expect(() => insertIdea(db, "i2", { status: "NOPE" })).toThrow(/CHECK/);
   expect(() => insertIdea(db, "i3", { visibility: "PUBLIC" })).toThrow(/CHECK/);
@@ -219,6 +219,32 @@ test("vault_meta is structurally a single row", () => {
   // `0002_seed_vault_meta` inserts the singleton; a second row is impossible.
   expect(rows(db, "SELECT count(*) AS n FROM vault_meta")[0]?.n).toBe(1);
   expect(() => db.exec("INSERT INTO vault_meta (id, revision) VALUES (2, 0)")).toThrow(/CHECK/);
+});
+
+test("a populated v3 store upgrades to 0004 — rows intact, the lineage CHECK narrowed", () => {
+  const db = newStore();
+  // Apply only the first three, so this is a real upgrade path (the state every dev store is in),
+  // not a fresh install: `0004` rebuilds `idea` and must carry the rows across.
+  migrate(db, MIGRATIONS.slice(0, 3));
+  expect(schemaVersion(db)).toBe(3);
+
+  insertIdea(db, "root");
+  insertIdea(db, "child", { lineageKind: "FORK", lineageParentId: "root" });
+  db.exec(
+    `INSERT INTO idea_version (idea_id, version, hypothesis, problem, monetization, domain_tags, created_at)
+     VALUES ('child', 1, 'h', 'p', 'm', '["x"]', 't')`,
+  );
+
+  expect(migrate(db, MIGRATIONS)).toBe(SCHEMA_VERSION);
+  expect(rows(db, "SELECT count(*) AS n FROM idea")[0]?.n).toBe(2);
+  expect(rows(db, "SELECT lineage_parent_id AS p FROM idea WHERE id = 'child'")[0]?.p).toBe("root");
+  expect(rows(db, "SELECT count(*) AS n FROM idea_version")[0]?.n).toBe(1);
+  // The rebuild drops and recreates `idea`, so the child's cascade FK must still be there — and the
+  // enum it was rebuilt for is now closed to `ITERATION`.
+  expect(() => insertIdea(db, "iter", { lineageKind: "ITERATION" })).toThrow(/CHECK/);
+  db.exec("DELETE FROM idea WHERE id = 'child'");
+  expect(rows(db, "SELECT count(*) AS n FROM idea_version")[0]?.n).toBe(0);
+  expect(rows(db, "PRAGMA foreign_key_check")).toEqual([]);
 });
 
 test("a store already at v1 is upgraded by 0002 and the singleton appears", () => {

@@ -86,7 +86,7 @@ regenerated id turns a retry into a second decision; the client must not regener
   "updated_at": "2026-10-13T05:14:05Z"
 }
 ```
-Enums: `lineage_kind` ∈ `ROOT | ITERATION | FORK`; `status` ∈ `ACTIVE | NEEDS_COMPLETION`;
+Enums: `lineage_kind` ∈ `ROOT | FORK`; `status` ∈ `ACTIVE | NEEDS_COMPLETION`;
 `visibility` = `PRIVATE` (MVP only). `lineage_parent_id` is set **only** for `FORK` and always refers
 to **one** parent (`PRD.md` §2; `ARCHITECTURE.md` §2.1). `NEEDS_COMPLETION` = a spark-derived idea
 whose mandatory fields could not be fully prefilled; it is **excluded from candidate selection** until
@@ -197,7 +197,7 @@ Readings this doc had not pinned (settled in O2 `#22`): the route is behind the 
 `not_found` envelope (§2).
 
 ### 4.4 `GET /v1/ideas?domain=&lineage=&status=` — Vault list (S3)
-Filters: `domain` (exact tag match), `lineage` ∈ `ROOT|ITERATION|FORK`, `status` ∈
+Filters: `domain` (exact tag match), `lineage` ∈ `ROOT|FORK`, `status` ∈
 `ACTIVE|NEEDS_COMPLETION`. Absent filter = no restriction.
 `200` → `{ "ideas": [Idea, …] }`.
 
@@ -247,6 +247,24 @@ Readings this doc had not pinned (settled in V2 `#13`):
 Request: the mandatory fields (`hypothesis`, `problem`, `monetization`, `domain_tags`).
 `200` → `Idea` with `current_version` bumped. Writes a new `idea_version`; creates **no** lineage edge
 (`FLOW.md` §2.3 / L1; T23). Validation as §4.2.
+
+Readings this doc had not pinned (settled in V3 `#14`):
+
+- **`200`, not `201`** — an iterate updates the node it names: the id is the client's, there is no
+  `Location`, and nothing new becomes addressable. Capture and fork create and answer `201`; this is
+  the one mutating route whose success is not a creation.
+- **The version row and the node bump commit in one `vaultMutation`.** Iterate is candidate-affecting
+  (`ARCHITECTURE.md` §4), so the revision stamps and a run enqueues in the same transaction — the same
+  trigger §4.8 records, reached through the same `vaultMutation(db, body)` primitive (`SCHEMA.md` §1c).
+- **An unknown id is `not_found` and writes nothing** — the read throws inside the transaction before
+  any row is written, so no version is appended and no revision stamps (V5's rule, §4.8).
+- **`status` is not touched.** A `NEEDS_COMPLETION` idea stays `NEEDS_COMPLETION`; completing it is the
+  K8 `#42` path. Iterate refines content, it does not clear the flag.
+- **`lineage_kind` and `lineage_parent_id` are not touched.** Iterating a `FORK` leaves it a `FORK` on
+  the same parent — iteration is a version, not a branch (`FLOW.md` §2.3 / L1).
+- **Only `POST` on `{id}/iterate` is a route.** `GET`/`DELETE` on `…/iterate`, a `POST` on the detail
+  path, and any deeper path (`/v1/ideas/a/b`) are the `not_found` envelope (§2), by the rule the read
+  path already records.
 
 ### 4.7 `POST /v1/ideas/{id}/fork` — S5 Fork
 Request: `{ "mutation_delta": "…", "domain_tags": ["…"] }`.
@@ -440,10 +458,22 @@ rather than left to the implementation:
     **unreachable**: no idea that had ever been captured could be deleted.
   - **A dangling ref is not a violation.** `PRAGMA foreign_key_check` is clean on every state §4.8
     produces; the refs that dangle are exactly the ones the schema no longer enforces.
+- **`lineage_kind` has no `ITERATION` (settled in V3 `#14`)** — iteration writes a new `idea_version`
+  row on the same node and creates no lineage edge (`FLOW.md` §2.3 L1), and the schema's FORK-parent
+  `CHECK` already forbade the only parent-bearing form an `ITERATION` row could have had. `0004`
+  narrowed the `CHECK` to `ROOT | FORK` and §3.1/§4.4 drop the value, so **`?lineage=ITERATION` is the
+  `422 validation_failed` envelope** — an out-of-vocabulary filter value (§1), not a filter that
+  matches nothing.
+- **The iterate ordering (settled in V3 `#14`)** — **body validation precedes the id lookup**, so a
+  malformed body on an unknown id is the `422 validation_failed` envelope, not `404 not_found`. The
+  body contract is checked before any row is consulted — the same ordering as capture (§4.2) — and
+  the alternative (id first) would make one malformed request *sometimes* `422` and *sometimes* `404`,
+  decided by whether the id happened to exist. §4.6 records the endpoint's other readings. Pinned in
+  `api/src/server.test.ts` — the malformed/unknown pair, so the ordering cannot silently flip.
 
 ---
 
 *Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`;
 carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`; by **V2** (`#13`),
-branch `feat/v2-vault-read-api`; by **O2** (`#22`), branch `feat/o2-vault-summary`; and by **V5**
-(`#16`), branch `feat/v5-delete-api`.*
+branch `feat/v2-vault-read-api`; by **O2** (`#22`), branch `feat/o2-vault-summary`; by **V5**
+(`#16`), branch `feat/v5-delete-api`; and by **V3** (`#14`), branch `feat/v3-iterate-api`.*

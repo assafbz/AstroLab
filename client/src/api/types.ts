@@ -11,7 +11,7 @@ export interface Idea {
   problem: string;
   monetization: string;
   domain_tags: string[];
-  lineage_kind: "ROOT" | "ITERATION" | "FORK";
+  lineage_kind: "ROOT" | "FORK";
   lineage_parent_id: string | null;
   status: "ACTIVE" | "NEEDS_COMPLETION";
   visibility: "PRIVATE";

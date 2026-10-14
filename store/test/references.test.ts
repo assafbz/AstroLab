@@ -30,10 +30,10 @@ const fks = (db: DatabaseSync, table: string): string[] =>
 
 const count = (db: DatabaseSync, sql: string): number => (db.prepare(sql).get() as { n: number }).n;
 
-test("the schema version is 3 and the store migrates to it", () => {
+test("the schema version is 4 and the store migrates to it", () => {
   const db = migrated();
-  expect(SCHEMA_VERSION).toBe(3);
-  expect(schemaVersion(db)).toBe(3);
+  expect(SCHEMA_VERSION).toBe(4);
+  expect(schemaVersion(db)).toBe(4);
   // The rebuild runs with `PRAGMA foreign_keys = OFF`; enforcement must be back on afterwards, or a
   // connection left open would silently accept violations forever.
   expect(rows(db, "PRAGMA foreign_keys")[0]?.foreign_keys).toBe(1);
@@ -71,7 +71,7 @@ test("ux_spark_live survives the rebuild as a partial unique index", () => {
   expect(() => insertSpark(db, "s2")).toThrow(/UNIQUE/);
 });
 
-test("a populated v2 store upgrades to v3 with every row intact", () => {
+test("a populated v2 store upgrades to the newest schema with every row intact", () => {
   const db = openStore(":memory:");
   // Apply only the first two, so this is a real upgrade path and not a fresh install.
   migrate(db, MIGRATIONS.slice(0, 2));
@@ -96,7 +96,7 @@ test("a populated v2 store upgrades to v3 with every row intact", () => {
     "INSERT INTO decision (id, spark_id, kind, result_idea_id, decided_at) VALUES ('dec','sp-1','ACCEPT','root','t')",
   );
 
-  expect(migrate(db, MIGRATIONS)).toBe(3);
+  expect(migrate(db, MIGRATIONS)).toBe(SCHEMA_VERSION);
   for (const [table, expected] of [
     ["idea", 4],
     ["idea_version", 1],

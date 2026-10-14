@@ -1,8 +1,8 @@
 # Schema: Astrolab store (SQLite) — issue F3 design
 
 > **Status:** The schema of record, in DDL form — and **shipped**: `0001_init` (the twelve tables),
-> `0002_seed_vault_meta` and `0003_reference_actions` live in `store/src/migrations.ts`, and this file
-> tracks them.
+> `0002_seed_vault_meta`, `0003_reference_actions` and `0004_retire_iteration_lineage_kind` live in
+> `store/src/migrations.ts`, and this file tracks them.
 > **Source of record:** `docs/ARCHITECTURE.md` §2 (data model — the complete table set incl.
 > `idea_mechanism`) and ADR-0001 / ADR-0002. Where this file and §2 differ, **§2 wins** and this file
 > is the defect — file it.
@@ -10,14 +10,16 @@
 > the invariant *tests* belong to **F3**.
 
 The DDL below applies as one forward-only migration (`0001_init`) — restated here **as amended** by
-`0003_reference_actions` (§1b), which changes only the eight `REFERENCES idea(id)` of V5 `#16`.
+`0003_reference_actions` (§1b), which changes only the eight `REFERENCES idea(id)` of V5 `#16`, and by
+`0004_retire_iteration_lineage_kind`, which narrows only `idea.lineage_kind` to `ROOT | FORK`
+(V3 `#14`). Both are rebuilds; SQLite cannot `ALTER` a `CHECK` or a foreign-key action.
 `PRAGMA journal_mode=WAL` and
 `PRAGMA foreign_keys=ON` are set by the store's connection setup (F2), not by the migration — the
 foreign-keys pragma is per-connection and a no-op inside the migration's `BEGIN IMMEDIATE`.
 
 ---
 
-## 1. The tables of §2 — DDL (`0001_init`, the idea references as amended by `0003`)
+## 1. The tables of §2 — DDL (`0001_init`, as amended by `0003` and `0004`)
 
 **Twelve** tables: the eleven enumerated in §2.1–§2.4, plus **`idea_mechanism`** (the per-idea
 descriptor cache — `ARCHITECTURE.md` §2.3, §3.3 step 1; ADR-0002; W3 `#28`), added to the schema of
@@ -33,7 +35,7 @@ CREATE TABLE idea (
   problem           TEXT NOT NULL,
   monetization      TEXT NOT NULL,
   domain_tags       TEXT NOT NULL,                -- JSON array; length >= 1 (PRD §2)
-  lineage_kind      TEXT NOT NULL CHECK (lineage_kind IN ('ROOT','ITERATION','FORK')),
+  lineage_kind      TEXT NOT NULL CHECK (lineage_kind IN ('ROOT','FORK')),
   lineage_parent_id TEXT,                          -- set ONLY for FORK; single parent. NOT a FK since
                                                    -- `0003` (V5 #16): the ref dangles by design (T26)
   status            TEXT NOT NULL CHECK (status IN ('ACTIVE','NEEDS_COMPLETION')),
@@ -195,6 +197,21 @@ anything), and restores the pragma in a `finally`. `legacy_alter_table` is not n
 The one case that is neither cascade nor dangle lives in application code, not in the schema: a **live
 `OFFERED` spark** named by a deleted idea is retracted by the delete path (`docs/API.md` §4.8), because a
 live offer is a promise made from the vault's current state and the state has changed.
+
+### 1c. `0004_retire_iteration_lineage_kind` — `lineage_kind` ∈ `ROOT | FORK` (V3 `#14`, 2026-10-14)
+
+`ITERATION` was never reachable: iteration writes a new `idea_version` row on the **same** node and creates
+no lineage edge (`FLOW.md` §2.3 L1; `PRD.md` §3.2 item 1), and the FORK-only `CHECK` already forbade the
+only parent-bearing form an `ITERATION` row could have had. Its only occurrences were negative test cases.
+`0004` narrows the vocabulary, so §1's `idea` DDL reads
+`lineage_kind TEXT NOT NULL CHECK (lineage_kind IN ('ROOT','FORK'))`.
+
+SQLite cannot `ALTER` a `CHECK`, so this is the `0003`-style **table rebuild** — and it is a **new**
+migration, not an edit to `0001`/`0003`: those keep `ITERATION` in their DDL as **immutable history**, and
+an in-place edit would leave every store already at v3 holding the permissive `CHECK` under the same
+`user_version` (the silent skip forward-only forbids). On the contract side, `docs/API.md` §3.1/§4.4 drop the
+value from the enum and the `lineage` filter, so `?lineage=ITERATION` is the `422` envelope (§1), and the
+client's `LINEAGES` drops it too.
 
 ---
 

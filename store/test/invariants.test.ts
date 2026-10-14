@@ -94,9 +94,11 @@ test("lineage is single-parent — one nullable column, set only for a FORK", ()
 
   // The CHECK confines the parent to FORK. The FK is deliberately **gone** (V5 #16): T26 tolerates a
   // dangling parent ref so a fork child survives its parent's deletion, and V2's read path stops the
-  // ancestor walk on one rather than failing.
+  // ancestor walk on one rather than failing. V3 (#14) retired `ITERATION` as a lineage kind entirely,
+  // so the non-FORK-with-a-parent probe is a `ROOT` — and the retirement itself is pinned, as an
+  // out-of-vocabulary value, in schema.test.ts's vocabulary test.
   expect(() =>
-    insertIdea(db, "iter", { lineageKind: "ITERATION", lineageParentId: "root" }),
+    insertIdea(db, "root-with-parent", { lineageKind: "ROOT", lineageParentId: "root" }),
   ).toThrow(/CHECK/);
   expect(() =>
     insertIdea(db, "dangling", { lineageKind: "FORK", lineageParentId: "ghost" }),

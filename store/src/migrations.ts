@@ -14,7 +14,7 @@ import type { Migration } from "./migrate.js";
  * migration rather than an edit to `0001_init`, which is already applied — rewriting it would break
  * forward-only and skip every store already at v1.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const MIGRATIONS: Migration[] = [
   {
@@ -259,6 +259,44 @@ INSERT INTO decision_new (id, spark_id, kind, result_idea_id, decided_at)
   SELECT id, spark_id, kind, result_idea_id, decided_at FROM decision;
 DROP TABLE decision;
 ALTER TABLE decision_new RENAME TO decision;
+`,
+  },
+  {
+    version: 4,
+    name: "0004_retire_iteration_lineage_kind",
+    // V3 (#14): `ITERATION` is **vestigial**. Iteration writes a new `idea_version` row on the same
+    // node and creates no lineage edge (`FLOW.md` §2.3 L1), and the FORK-parent CHECK below already
+    // forbids the only parent-bearing form an `ITERATION` row could have had — so no code path can
+    // produce it and its only occurrences were negative test cases. Narrow the vocabulary to
+    // `ROOT | FORK`. SQLite cannot `ALTER` a CHECK, so this is the `0003`-style rebuild, and it is a
+    // *fresh* migration rather than an edit to `0001`/`0003` (forward-only): an in-place edit leaves
+    // every store already at v3 holding the permissive CHECK under the same `user_version`.
+    rebuildReferences: true,
+    sql: `
+-- §2.1 Idea — only the lineage_kind vocabulary changes; every column is restated so the rebuild
+-- carries the rows and keeps the FORK-parent guard.
+CREATE TABLE idea_new (
+  id                TEXT PRIMARY KEY,
+  hypothesis        TEXT NOT NULL,
+  problem           TEXT NOT NULL,
+  monetization      TEXT NOT NULL,
+  domain_tags       TEXT NOT NULL,
+  lineage_kind      TEXT NOT NULL CHECK (lineage_kind IN ('ROOT','FORK')),
+  lineage_parent_id TEXT,
+  status            TEXT NOT NULL CHECK (status IN ('ACTIVE','NEEDS_COMPLETION')),
+  visibility        TEXT NOT NULL CHECK (visibility IN ('PRIVATE')),
+  current_version   INTEGER NOT NULL DEFAULT 1,
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL,
+  CHECK (lineage_kind = 'FORK' OR lineage_parent_id IS NULL)
+);
+INSERT INTO idea_new (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
+                      lineage_parent_id, status, visibility, current_version, created_at, updated_at)
+  SELECT id, hypothesis, problem, monetization, domain_tags, lineage_kind,
+         lineage_parent_id, status, visibility, current_version, created_at, updated_at
+    FROM idea;
+DROP TABLE idea;
+ALTER TABLE idea_new RENAME TO idea;
 `,
   },
 ];
