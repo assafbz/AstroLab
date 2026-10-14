@@ -92,4 +92,14 @@ describe("vault writes go through vaultMutation (ARCHITECTURE.md §4)", () => {
 
     expect(offenders).toEqual([]);
   });
+
+  test("writeTransaction stays un-exported, so a raw cross-package transaction cannot compile", () => {
+    // The closure for the hole the file-level scan cannot see: with `writeTransaction` off the public
+    // surface, a new vault-write module cannot open its own transaction *at all* — it has to reach for
+    // `vaultMutation`. The store's own modules import it by relative path, which this does not touch.
+    const index = FILES.find((f) => f.rel === "store/src/index.ts");
+    expect(index).toBeDefined();
+
+    expect(index?.text ?? "").not.toMatch(/export\s*\{[^}]*\bwriteTransaction\b[^}]*\}/);
+  });
 });

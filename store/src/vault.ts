@@ -18,6 +18,11 @@ import { writeTransaction } from "./store.js";
  * **The body, the bump and the enqueue commit together or not at all**, so a stamped revision can
  * never exist without its run, nor a run for a revision that never committed.
  *
+ * **The body must be synchronous**, and an async one is rejected rather than mistyped: `async () => {}`
+ * returns a promise immediately, so the transaction would commit — and the stamp be skipped, its delta
+ * still zero — while the body's real writes landed after it, outside the transaction and unstamped. A
+ * silent hole, so it throws.
+ *
  * shortcut: `total_changes()` does not roll back, so a body retried after a `SQLITE_BUSY` rollback can
  * read a non-zero delta from the abandoned attempt and stamp a mutation that committed no rows. That
  * over-stamps — a redundant run at the same revision, and `enqueueRun` is idempotent per revision —
@@ -27,9 +32,19 @@ export function vaultMutation<T>(db: DatabaseSync, body: () => T): T {
   return writeTransaction(db, () => {
     const before = totalChanges(db);
     const result = body();
+    if (isThenable(result)) {
+      throw new TypeError(
+        "vaultMutation body must be synchronous: an async body resolves after the transaction commits, so its writes would land outside it and go unstamped",
+      );
+    }
     if (totalChanges(db) > before) stampAndEnqueue(db);
     return result;
   });
+}
+
+/** Duck-typed, so a hand-rolled thenable is caught and not only a real `Promise`. */
+function isThenable(value: unknown): boolean {
+  return typeof (value as { then?: unknown } | null)?.then === "function";
 }
 
 /**

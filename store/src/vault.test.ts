@@ -68,4 +68,20 @@ describe("vaultMutation — ARCHITECTURE.md §4, made unmissable", () => {
     expect(currentVaultRevision(db)).toBe(0);
     expect(runs(db)).toEqual([]);
   });
+
+  test("rejects an async body — it would resolve after the commit and go unstamped", () => {
+    const db = newDb();
+
+    // An async body returns a promise immediately, so the transaction would commit (and the stamp
+    // be skipped, the delta still zero) while the body's real writes landed later, outside it.
+    expect(() =>
+      vaultMutation(db, async () => {
+        seedIdea(db, "a");
+      }),
+    ).toThrow(/must be synchronous/);
+
+    expect(db.prepare("SELECT COUNT(*) AS n FROM idea").get()).toEqual({ n: 0 });
+    expect(currentVaultRevision(db)).toBe(0);
+    expect(runs(db)).toEqual([]);
+  });
 });

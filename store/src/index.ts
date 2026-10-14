@@ -13,5 +13,10 @@ export {
   type RunStatus,
   type SparkRun,
 } from "./runs.js";
-export { openStore, writeTransaction, type OpenStoreOptions } from "./store.js";
+// `writeTransaction` is deliberately **not** on this surface. A cross-package caller that could open
+// its own transaction could write a vault table and skip the ARCH §4 stamp; with it unexported,
+// `vaultMutation` is the only transaction primitive a package outside `store` can reach, so the
+// mistake is a compile error rather than a silent one. The store's own modules still import it by
+// relative path. `store/test/vault-writes.test.ts` fails if this export comes back.
+export { openStore, type OpenStoreOptions } from "./store.js";
 export { vaultMutation } from "./vault.js";

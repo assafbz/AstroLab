@@ -39,15 +39,23 @@ Two details of that setup are load-bearing, because the API and the worker boot 
 
 ## Writing
 
-`writeTransaction` is the shape every write takes: `BEGIN IMMEDIATE` (take the write lock up front), your
-statements, `COMMIT` — retried on `SQLITE_BUSY` with bounded backoff (5 attempts, 20 ms doubling to a
-250 ms ceiling by default).
+**A vault write goes through `vaultMutation`.** It runs the body inside one transaction, then stamps
+`vault_meta.revision` and enqueues a run at that stamp (`ARCHITECTURE.md` §4) — **iff the body wrote**, so
+a mutation that changed nothing (the idempotent `decision_id` repeat, `docs/API.md` §4.2) does not churn
+the revision. The body must be **synchronous**; an async one resolves after the commit, so it is rejected
+rather than silently unstamped.
 
 ```ts
-import { writeTransaction } from "@astrolab/store";
+import { vaultMutation } from "@astrolab/store";
 
-writeTransaction(db, () => db.exec("INSERT INTO idea (id) VALUES ('…')"));
+vaultMutation(db, () => db.exec("INSERT INTO idea (id) VALUES ('…')"));
 ```
+
+It is the **only** transaction primitive this package exports. `writeTransaction` — `BEGIN IMMEDIATE` (take
+the write lock up front), your statements, `COMMIT`, retried on `SQLITE_BUSY` with bounded backoff (5
+attempts, 20 ms doubling to a 250 ms ceiling by default) — stays internal to the store, so a package
+outside it cannot open a transaction over a vault table and forget the stamp. A raw cross-package
+transaction is a compile error; `store/test/vault-writes.test.ts` fails if that export comes back.
 
 A retry re-runs the body, so the transaction is **at-least-once**: write paths must be keyed idempotently
 — decisions are unique on `(spark_id, decision_id)` (`FLOW.md` §2.2) — rather than made once-only.
