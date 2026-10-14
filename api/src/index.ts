@@ -25,8 +25,15 @@ seedDomainTaxonomy(db);
 // (§3.4). Both boots seed them, so neither process can boot without config.
 seedGateConfig(db);
 
+// K1 (#35): the SSE stream samples `PRAGMA data_version` on a **second, read-only** handle to the
+// same file (api/src/spark-events.ts; docs/API.md §4.11). A connection is blind to its own commit, so
+// a watcher on `db` would miss every change the API makes — §4.16's run enqueue and every
+// `vaultMutation`. `:memory:` is a test-only path (a second handle there is a *different* database),
+// so the sampler falls back to `db`; the shipped default (`DB_PATH`) is a file.
+const watchDb = dbPath === ":memory:" ? db : openStore(dbPath);
+
 const port = Number(process.env.API_PORT ?? 8080);
 
-createApp({ db }).listen(port, () => {
+createApp({ db, watchDb }).listen(port, () => {
   console.log(`[api] listening on http://localhost:${port}`);
 });

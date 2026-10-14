@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import type { RunStatus } from "@astrolab/store";
+import { LIVE_STATUS, type RunStatus } from "@astrolab/store";
 
 import { vaultSummary } from "./vault-summary.js";
 
@@ -88,9 +88,10 @@ function lastRunStatus(db: DatabaseSync): RunStatus | null {
 export function engineState(db: DatabaseSync): EngineState {
   const summary = vaultSummary(db);
   const ideas = count(db, "SELECT COUNT(*) AS n FROM idea");
-  // Every live offer counts, resolved sparks do not: `spark.status = 'OFFERED'` is exactly the deck's
-  // reviewable set, and §3.6's `unreviewed` is the count that deck needs.
-  const unreviewed = count(db, "SELECT COUNT(*) AS n FROM spark WHERE status = 'OFFERED'");
+  // Every live offer counts, resolved sparks do not: `LIVE_STATUS` is exactly the deck's reviewable set
+  // — the same predicate `liveOffers` reads and `delete.ts` retracts on, from `store/src/sparks.ts` —
+  // and §3.6's `unreviewed` is the count that deck needs.
+  const unreviewed = count(db, `SELECT COUNT(*) AS n FROM spark WHERE status = '${LIVE_STATUS}'`);
   const run = db
     .prepare(
       `SELECT id, status, vault_revision FROM spark_run
