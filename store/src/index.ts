@@ -14,3 +14,4 @@ export {
   type SparkRun,
 } from "./runs.js";
 export { openStore, writeTransaction, type OpenStoreOptions } from "./store.js";
+export { vaultMutation } from "./vault.js";

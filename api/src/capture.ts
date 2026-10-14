@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
-import { isoTimestamp, stampAndEnqueue, writeTransaction } from "@astrolab/store";
+import { isoTimestamp, vaultMutation } from "@astrolab/store";
 
 // The UTC shape lives in the store, because the run rows need the same one; re-exported here so
 // this module stays the API-side name for it.
@@ -83,9 +83,9 @@ export function parseCaptureInput(body: unknown): CaptureInput {
 
 /**
  * One capture, one transaction (docs/API.md §4.2): the idea, its first version, and — when seeded —
- * the provenance edges and the `INSPIRED` decision all land together or not at all. `vault_meta` is
- * bumped **and a run enqueued at that stamp** in the same transaction (`stampAndEnqueue`,
- * ARCH §4), so a candidate-affecting write can never go unstamped or leave a stamp with no run.
+ * the provenance edges and the `INSPIRED` decision all land together or not at all. The stamp and the
+ * run come from `vaultMutation` (@astrolab/store) rather than a call here, so the ARCH §4 trigger
+ * cannot be forgotten by this path — or by the iterate / fork / delete / complete paths that follow.
  *
  * **Idempotent on `decision_id`**: a repeat returns the first result and writes nothing — not even
  * a revision bump. The lookup runs before any write, inside the transaction that would write.
@@ -94,7 +94,7 @@ export function parseCaptureInput(body: unknown): CaptureInput {
  * picks the run up out of band.
  */
 export function captureIdea(db: DatabaseSync, input: CaptureInput): Idea {
-  return writeTransaction(db, () => {
+  return vaultMutation(db, () => {
     const { origin_spark_id: sparkId, decision_id: decisionId } = input;
 
     if (sparkId !== null && decisionId !== null) {
@@ -121,12 +121,10 @@ export function captureIdea(db: DatabaseSync, input: CaptureInput): Idea {
          VALUES (?, ?, 'INSPIRED', ?, ?)`,
       ).run(decisionId, spark.id, idea.id, idea.created_at);
       db.prepare("UPDATE spark SET status = 'RESOLVED-INSPIRED' WHERE id = ?").run(spark.id);
-      stampAndEnqueue(db);
       return idea;
     }
 
     const idea = insertIdea(db, input);
-    stampAndEnqueue(db);
     return idea;
   });
 }
