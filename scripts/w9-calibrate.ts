@@ -24,7 +24,7 @@
  * | `p1 --confirm <promptChars>` | **28** | one extraction call per idea, cached in `idea_mechanism` |
  * | `report [--floor <f>]` | **0** | the union size `M` and the alignment distribution |
  * | `widen [--floor <f>]` | **0** | the below-0.35 posting: floor, `M_wide`, the τ list, cost, the full matrix |
- * | `p2 --confirm <M> [--floor <f>]` | **M** | adjudicate the union at the floor, under the hard cap `M` |
+ * | `p2 --confirm <M> [--floor <f>]` | **M** | adjudicate the union at the floor; one call per pair, ≤ **3** attempts each — hard cap `3 × M` |
  *
  * `--floor` defaults to `W9_UNION_TAU` (`0.35`, the bar's ratified floor). The widened phase (bar §4
  * step 6.4 — *"extending below 0.35 is a NEW posted phase"*) passes a lower floor, captures the posting
@@ -41,6 +41,22 @@
  * with `source_hash`) and **`perFieldJaccard`** (the 67×4 terms behind each union pair's `alignment`).
  * The last two are what make step 4 re-runnable **from the artifact alone**, rather than from the
  * gitignored `data/` cache the descriptors actually lived in.
+ *
+ * ## The retry — why `p2` is no longer all-or-nothing (David's ruling A, #34)
+ *
+ * `p2` fires one adjudication call per gated pair in one pass, and this file writes the artifact only
+ * *after* the loop returns. But the schema **permits** a reply the parser rejects — five props are all
+ * `["string","null"]` and all `required`, so a **half-null** object is legal output that
+ * `parseAdjudication` fails, and `engine/adjudicate.ts` D3 lets the `InvalidOutputError` propagate. One
+ * bad reply in 67 therefore used to discard every call already made, and the ratified envelope with it —
+ * the phase's completeness depended on a single call. The live adapter is now wrapped at **this** seam
+ * (after `requireConfirm`/`requireLive`) with a bounded retry — **`InvalidOutputError` only**, ≤3
+ * attempts per pair — so the phase no longer aborts on one bad reply: a pair that exhausts its attempts
+ * is recorded **`failed`**, a third class beside `confirmed` and `rejected`, and the artifact lands on
+ * every fire that starts spending. `attempts` is additive; `adjudicateCalls` keeps its `=== union`
+ * meaning; the cap is **structural** (`3 × M`), so bar §5's *"stops rather than spending past the cap"*
+ * now holds by construction. Re-ratified 2026-10-14: 67 pairs · expected 68–70 attempts · cap 201 ·
+ * ceiling ≈$0.0137.
  *
  * ## Why this lives in `scripts/` and not in `worker/src/`
  *
@@ -79,9 +95,12 @@ import {
   ADJUDICATION_SYSTEM,
   adjudicationUser,
   createAdapterFromEnv,
+  InvalidOutputError,
   type IdeaText,
   type MechanismDescriptor,
+  type MechanismPair,
   type Provider,
+  type SparkDraft,
 } from "../worker/src/provider/index.js";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -209,6 +228,246 @@ function runFor(
     model: process.env.AI_MODEL?.trim() || "deepseek/deepseek-v4-flash",
     unionTau: floor,
   });
+}
+
+/**
+ * How many attempts one pair gets: the first reply plus two retries. The hard cap is therefore
+ * **structural** — `3 × union`, and no path in the loop below can exceed it.
+ */
+const ADJUDICATION_ATTEMPTS = 3;
+
+/** What the decorator saw for one pair — the three-way outcome, recorded at the seam. */
+type AdjudicationClass = "draft" | "refusal" | "exhausted";
+
+/**
+ * The decorator's per-pair record — the **authority** on which pairs exhausted their attempts. The engine
+ * cannot tell a refusal from an exhausted pair: `null` is the only keep-alive return at the provider seam
+ * (a throw aborts the phase, D3), and `engine/adjudicate.ts` classifies every `null` as `rejected`. So the
+ * harness re-classifies `rejected` from here, and the partition check below proves it did.
+ */
+interface AdjudicationJournal {
+  /** Provider calls made, retries included: `union ≤ attempts ≤ 3 × union`. */
+  readonly attempts: number;
+  /** Keys that took more than one attempt, with how many — `attempts − union` extra calls in total. */
+  readonly retried: readonly { key: string; attempts: number }[];
+  /** Keys that exhausted every attempt: the third class, never a refusal. */
+  readonly exhausted: readonly string[];
+  /** Keys the provider answered with a real refusal (all-null) — one attempt, never re-sampled. */
+  readonly refusals: readonly string[];
+  /** Keys the provider answered with a complete draft. */
+  readonly drafts: readonly string[];
+}
+
+/**
+ * Wrap the live adapter with a bounded per-pair retry (David's ruling **A**, #34). The decorator sits
+ * **here**, at the harness seam, after `requireConfirm`/`requireLive` have both passed — so a re-sampled
+ * pair can never move the spend in front of either key check — and the engine stays untouched: it still
+ * makes exactly one `adjudicate` call per pair, and `adjudicateCalls` is bumped *outside* this wrapper.
+ *
+ * - **`InvalidOutputError` only** (i). `buildRequest` pins no temperature and no seed, so a retry inherits
+ *   the provider default and is an independent draw **only** while that default is non-zero. The retry is
+ *   therefore **best-effort**, and `failed` — not the retry — is the guarantee: if the default is `0` the
+ *   attempts are byte-identical no-ops, the pair still lands in `failed`, and the artifact still lands.
+ * - **`ProviderError` fails closed.** A timeout, an HTTP error or a non-JSON body propagates unchanged —
+ *   the phase aborts and the artifact is not touched (today's behaviour; §4's run-level Retry is its
+ *   recovery). Re-sampling a 429/5xx per pair would triple spend on a *failing* path.
+ * - **A half-null is never a rejection** (iv). An exhausted pair has no return shape here but `null`, so it
+ *   enters the engine's `rejected` once and `adjudicationClasses` **moves it out** into `failed` — a
+ *   dropped field must not become a silent suppression (`schema.ts`).
+ */
+function withAdjudicationRetry(
+  provider: Provider,
+  keyFor: (ideaA: IdeaText, ideaB: IdeaText) => string,
+): { provider: Provider; journal: AdjudicationJournal } {
+  const outcome = new Map<string, AdjudicationClass>();
+  const callsByKey = new Map<string, number>();
+  let attempts = 0;
+
+  const keysOf = (kind: AdjudicationClass): string[] =>
+    [...outcome.entries()]
+      .filter(([, value]) => value === kind)
+      .map(([key]) => key)
+      .sort();
+
+  return {
+    provider: {
+      ...provider,
+      // One pair, one `adjudicate` — the loop below re-samples the *reply*, never the pair.
+      async adjudicate(
+        ideaA: IdeaText,
+        ideaB: IdeaText,
+        mechanisms: MechanismPair,
+      ): Promise<SparkDraft | null> {
+        const key = keyFor(ideaA, ideaB);
+        for (let attempt = 1; attempt <= ADJUDICATION_ATTEMPTS; attempt += 1) {
+          attempts += 1;
+          callsByKey.set(key, (callsByKey.get(key) ?? 0) + 1);
+          try {
+            const draft = await provider.adjudicate(ideaA, ideaB, mechanisms);
+            outcome.set(key, draft === null ? "refusal" : "draft");
+            return draft;
+          } catch (error) {
+            // (i): only invalid *output* is re-sampled — a transport/provider failure fails closed.
+            if (!(error instanceof InvalidOutputError)) throw error;
+            if (attempt === ADJUDICATION_ATTEMPTS) {
+              outcome.set(key, "exhausted");
+              // The only keep-alive return at this seam: the engine iterates on, and
+              // `adjudicationClasses` re-classifies this key out of `rejected` — with the partition check
+              // failing the write if it does not.
+              return null;
+            }
+          }
+        }
+        /* c8 ignore next — the loop above returns on every path; this only satisfies control flow. */
+        throw new Error(`p2: unreachable retry state for pair ${key}`);
+      },
+    },
+    journal: {
+      get attempts() {
+        return attempts;
+      },
+      get retried() {
+        return [...callsByKey.entries()]
+          .filter(([, calls]) => calls > 1)
+          .map(([key, calls]) => ({ key, attempts: calls }))
+          .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+      },
+      get exhausted() {
+        return keysOf("exhausted");
+      },
+      get refusals() {
+        return keysOf("refusal");
+      },
+      get drafts() {
+        return keysOf("draft");
+      },
+    },
+  };
+}
+
+/**
+ * `IdeaText → idea id`, so the decorator can name the pair it is re-sampling: at the `SparkAdjudicator`
+ * seam the provider sees **only** the operation's payload (§5 — no ids, no vault listing), so a pair is
+ * named by the text it was called with. `engine/mechanism.ts` `readIdeaText` reads exactly
+ * `hypothesis`/`problem`/`monetization`, and `main` seeds the db from this same vault before any pass
+ * runs, so the lookup is exact. Two ideas carrying identical text **fail closed** rather than let a
+ * `failed` key point at the wrong pair.
+ */
+function ideaIdByText(ideas: readonly W9Idea[]): (text: IdeaText) => string {
+  const idByText = new Map<string, string>();
+  for (const idea of ideas) {
+    const text = JSON.stringify(ideaTextOf(idea));
+    const held = idByText.get(text);
+    if (held !== undefined) {
+      throw new Error(
+        `p2: ideas ${held} and ${idea.id} carry identical text — a pair key would be ambiguous`,
+      );
+    }
+    idByText.set(text, idea.id);
+  }
+  return (text) => {
+    const id = idByText.get(JSON.stringify(text));
+    if (id === undefined) {
+      throw new Error(
+        "p2: an adjudicated pair's idea text is not in the vault — the pair cannot be named",
+      );
+    }
+    return id;
+  };
+}
+
+/** The engine's canonical pair key (`gate.ts` D6): `[aId, bId].sort().join("|")`. */
+function pairKeyOf(idA: string, idB: string): string {
+  return [idA, idB].sort().join("|");
+}
+
+/**
+ * The artifact's three classes, derived from the decorator's journal and **checked against the engine's
+ * own output** before anything is written (David/Max, #34). `rejected` loses every exhausted key — the
+ * engine had to classify them as `null` to stay alive — and the checks make the third class *verifiable*
+ * rather than merely present:
+ *
+ * - **(1)** `union ≤ attempts ≤ 3 × union` — cheap backstop; ≥1 and ≤3 calls per pair hold by construction,
+ *   so it is close to vacuous. Do not read it as evidence.
+ * - **(2)** `|confirmed| + |rejected| + |failed| = union` — the only guard here that catches a D4 skip
+ *   (a pair whose idea row vanished gets no call, no output, and the sum drops below the union).
+ * - **(3)** every class ⊆ the union and pairwise disjoint, so no key is counted twice.
+ * - **(3a) the load-bearing check: the engine's own output must agree with the journal** (`E` = the
+ *   journal's exhausted keys). `failed` is *derived* from `E`, so `set(failed) == set(E)` holds by
+ *   construction and proves nothing on its own —
+ *   the discrimination is the join: `engineRejected == E ∪ refusals`, `engineConfirmed == drafts`, and the
+ *   artifact's `rejected == refusals`. **Set equality, not disjointness**: disjointness alone still passes
+ *   when an exhausted pair is silently absorbed as a suppression (leaving `failed` empty), which is
+ *   exactly what the third class exists to expose. Planted-violation evidence, both caught: leaving
+ *   `rejected` un-filtered, and skipping the re-classification entirely.
+ * - **(3b)** the corollary: no failed key survives in `rejected` or in `confirmed`.
+ */
+function adjudicationClasses(input: {
+  union: readonly CalibrationPair[];
+  engineConfirmed: readonly string[];
+  engineRejected: readonly string[];
+  journal: AdjudicationJournal;
+}): { confirmed: readonly string[]; rejected: string[]; failed: string[] } {
+  const unionKeys = new Set(input.union.map((pair) => pair.key));
+  const exhausted = new Set(input.journal.exhausted);
+  const refusals = new Set(input.journal.refusals);
+  const drafts = new Set(input.journal.drafts);
+  const engineConfirmed = new Set(input.engineConfirmed);
+  const engineRejected = new Set(input.engineRejected);
+  const failed = [...exhausted].sort();
+  const rejected = input.engineRejected.filter((key) => !exhausted.has(key));
+
+  const problems: string[] = [];
+  const expect = (holds: boolean, message: string): void => {
+    if (!holds) problems.push(message);
+  };
+
+  const { attempts } = input.journal;
+  expect(
+    attempts >= input.union.length && attempts <= ADJUDICATION_ATTEMPTS * input.union.length,
+    `(1) attempts ${attempts} outside [${input.union.length}, ${ADJUDICATION_ATTEMPTS * input.union.length}]`,
+  );
+
+  const classes = [...exhausted, ...refusals, ...drafts];
+  expect(
+    exhausted.size + refusals.size + drafts.size === classes.length,
+    "(3) a pair is in two classes",
+  );
+  for (const key of classes)
+    expect(unionKeys.has(key), `(3) ${key} is classified but is not in the union`);
+  for (const key of exhausted) {
+    expect(engineRejected.has(key), `(3a) exhausted ${key} never reached the engine's rejected`);
+    expect(!engineConfirmed.has(key), `(3b) exhausted ${key} is in the engine's confirmed`);
+  }
+  for (const key of refusals)
+    expect(engineRejected.has(key), `(3a) refusing ${key} is absent from rejected`);
+  for (const key of drafts)
+    expect(engineConfirmed.has(key), `(3a) drafting ${key} is absent from confirmed`);
+  expect(
+    engineRejected.size === exhausted.size + refusals.size,
+    "(3a) engine rejected ≠ exhausted ∪ refusals",
+  );
+  expect(engineConfirmed.size === drafts.size, "(3a) engine confirmed ≠ drafts");
+  expect(new Set(rejected).size === rejected.length, "(3a) a key appears twice in rejected");
+  // (3a), the half that pins *which*: `rejected` must be exactly the pairs the decorator saw refuse. A
+  // bare disjointness check passes when an exhausted pair is silently left in `rejected` — and when
+  // `failed` is never populated at all — so that absorption is checked here, never inferred.
+  expect(
+    rejected.length === refusals.size && rejected.every((key) => refusals.has(key)),
+    "(3a) rejected ≠ the pairs the decorator saw refuse — an exhausted pair was absorbed as a suppression",
+  );
+  expect(
+    input.engineConfirmed.length + rejected.length + failed.length === input.union.length,
+    `(2) confirmed ${input.engineConfirmed.length} + rejected ${rejected.length} + failed ${failed.length}` +
+      ` ≠ union ${input.union.length}`,
+  );
+
+  if (problems.length > 0) {
+    throw new Error(
+      `p2: the adjudication partition is not sound — ${problems.join("; ")}. Refusing to write it.`,
+    );
+  }
+  return { confirmed: input.engineConfirmed, rejected, failed };
 }
 
 /** The pinned model's published price, read from OpenRouter `/models` (2026-10-14): $ per 1M tokens. */
@@ -496,7 +755,12 @@ async function main(): Promise<void> {
 
     // Only the ratified spend gets the adapter, and only after both keys passed. The union pass above
     // proved every descriptor is cached, so this pass fires adjudication calls — and no extraction.
-    const run = runFor(db, createAdapterFromEnv(), floor);
+    // The retry decorator wraps the live adapter *here*, after both key checks (David's ruling A; #34).
+    const idOfText = ideaIdByText(ideas);
+    const retry = withAdjudicationRetry(createAdapterFromEnv(), (ideaA, ideaB) =>
+      pairKeyOf(idOfText(ideaA), idOfText(ideaB)),
+    );
+    const run = runFor(db, retry.provider, floor);
     const adjudication = await run.adjudicate();
     if (run.extractCalls !== 0) {
       throw new Error(`p2: ${run.extractCalls} extraction calls during adjudication — expected 0`);
@@ -517,11 +781,22 @@ async function main(): Promise<void> {
           `${union.length}, one per gated pair (${direction}).`,
       );
     }
-    // Additive (David/Max, #34): the counts and the two key arrays above are unchanged; the draft the
-    // run used to drop into a local variable, the raw descriptors, and the per-field terms now travel
-    // with the artifact. `confirmedSparks` is the input G3/G4/G5 need (the sources ride along so the
-    // blind sheet is a pure `jq` transform of these bytes); `descriptors` + `perFieldJaccard` make
-    // step 4 re-runnable from the artifact alone, not from the gitignored `data/` cache.
+    // The third class (David's ruling A; #34): `rejected` loses every key the decorator exhausted, and the
+    // partition is checked against the engine's own output — a failed key can never survive as a
+    // suppression, and the write fails if the re-classification did not actually happen.
+    const classes = adjudicationClasses({
+      union,
+      engineConfirmed: adjudication.confirmed.map((spark) => spark.key),
+      engineRejected: adjudication.rejected.map((pair) => pair.key),
+      journal: retry.journal,
+    });
+    // Additive (David/Max, #34): the four counts and the two key arrays above are unchanged — `rejected`
+    // now excludes the `failed` keys; the draft the run used to drop into a local variable, the raw
+    // descriptors, and the per-field terms now travel with the artifact. `confirmedSparks` is the input
+    // G3/G4/G5 need (the sources ride along so the blind sheet is a pure `jq` transform of these bytes);
+    // `descriptors` + `perFieldJaccard` make step 4 re-runnable from the artifact alone, not from the
+    // gitignored `data/` cache. `failed`/`attempts`/`retried` are the retry lane: the count that proves
+    // the repair worked, the calls it took, and which pairs were re-sampled.
     const descriptors = descriptorRows(db, ideas);
     const descriptorOf = new Map(descriptors.map((row) => [row.ideaId, row.descriptor]));
     const ideasById = new Map(ideas.map((idea) => [idea.id, idea]));
@@ -532,8 +807,11 @@ async function main(): Promise<void> {
       unionExtractCalls: dry.extractCalls,
       adjudicateCalls: run.adjudicateCalls,
       extractCalls: run.extractCalls,
-      confirmed: adjudication.confirmed.map((spark) => spark.key),
-      rejected: adjudication.rejected.map((pair) => pair.key),
+      confirmed: classes.confirmed,
+      rejected: classes.rejected,
+      failed: classes.failed,
+      attempts: retry.journal.attempts,
+      retried: retry.journal.retried,
       confirmedSparks: adjudication.confirmed.map((spark) => ({
         key: spark.key,
         aId: spark.aId,
