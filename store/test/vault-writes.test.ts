@@ -92,4 +92,15 @@ describe("vault writes go through vaultMutation (ARCHITECTURE.md §4)", () => {
 
     expect(offenders).toEqual([]);
   });
+
+  test("writeTransaction stays off the surface — asserted on the module, not on its source text", async () => {
+    // A text grep of index.ts is blind to the one re-export form without braces: add
+    // `export * from "./store.js"` and the text still looks clean while `writeTransaction` is back on
+    // the namespace. Ask the module itself instead.
+    const store = await import("../src/index.js");
+    const exported = Object.keys(store);
+
+    expect(exported).toContain("vaultMutation"); // sanity: the module loaded and does export things
+    expect(exported).not.toContain("writeTransaction");
+  });
 });
