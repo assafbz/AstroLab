@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { readDescriptors, upsertDescriptor } from "@astrolab/store";
 
+import { DESCRIPTOR_SCHEMA, EXTRACTION_SYSTEM } from "../provider/index.js";
 import type { IdeaText, MechanismDescriptor, MechanismExtractor } from "../provider/index.js";
 
 /**
@@ -21,8 +22,9 @@ import type { IdeaText, MechanismDescriptor, MechanismExtractor } from "../provi
  *
  * - the **text** — all three fields, joined unambiguously (a JSON array, not a bare concat), so a
  *   `problem`- or `monetization`-only edit re-extracts rather than serving a stale descriptor;
- * - **`EXTRACTOR_VERSION`**, a named constant — the prompt and the descriptor field set are a W9
- *   tuning artifact (§12 item 2), so a change to either must invalidate every cached descriptor;
+ * - **`EXTRACTOR_VERSION`**, **derived** from the prompt and the descriptor field set — a W9 tuning
+ *   artifact (§12 item 2) — so a change to either invalidates every cached descriptor *by
+ *   construction*, not by a remembered bump;
  * - the **model** — `ADR-0003` makes the model a config value re-pointable *without a code change*, so
  *   a constant cannot track it. It is **construction data** here, resolved once at the call site that
  *   also builds the adapter (the same value handed to `createOpenRouterAdapter`), never re-derived.
@@ -39,12 +41,20 @@ import type { IdeaText, MechanismDescriptor, MechanismExtractor } from "../provi
  * run body throws and the run is `FAILED` (§4) — never a descriptor served uncached.
  */
 
-/** Bump when the prompt (`provider/prompts.ts`) or the descriptor field set (`provider/schema.ts`) changes (§12 item 2). */
-export const EXTRACTOR_VERSION = 1;
+/**
+ * The extraction contract's identity: the prompt (`provider/prompts.ts`) and the descriptor field set
+ * (`provider/schema.ts`), hashed. **Derived, never remembered** — a W9 edit (§12 item 2) to either
+ * changes this value, so every cached descriptor re-extracts (§2.3 `source_hash`). A hand-bumped number
+ * could not track the content that defines it: change the prompt and the only step to green would be
+ * editing the version by hand (#28 review).
+ */
+export const EXTRACTOR_VERSION: string = createHash("sha256")
+  .update(`${EXTRACTION_SYSTEM}\u0000${JSON.stringify(DESCRIPTOR_SCHEMA)}`, "utf8")
+  .digest("hex");
 
-/** What produced a descriptor: the extraction contract's version, and the model it came from. */
+/** What produced a descriptor: the extraction contract's identity, and the model it came from. */
 export interface MechanismProducer {
-  version: number;
+  version: string;
   model: string;
 }
 

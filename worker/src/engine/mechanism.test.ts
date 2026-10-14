@@ -166,7 +166,7 @@ describe("createMechanismCache — Stage 1's cache (§3.3 step 1)", () => {
     await createMechanismCache(db, first.extractor, PRODUCER).descriptorFor("a");
 
     const next = fakeExtractor(() => descriptor("batch"));
-    const bumped: MechanismProducer = { ...PRODUCER, version: EXTRACTOR_VERSION + 1 };
+    const bumped: MechanismProducer = { ...PRODUCER, version: "a-different-contract" };
     await createMechanismCache(db, next.extractor, bumped).descriptorFor("a");
 
     expect(first.calls).toHaveLength(1);
@@ -247,18 +247,22 @@ describe("createMechanismCache — Stage 1's cache (§3.3 step 1)", () => {
 
 describe("the extraction contract (§12 item 2; David's condition 5)", () => {
   // The prompt and the descriptor field set are W9 tuning artifacts (§12 item 2): change either and
-  // every cached descriptor is stale. This pins {version, contract} together, so that edit turns the
-  // suite red and the fix is a deliberate `EXTRACTOR_VERSION` bump (and this pin), not a silent
-  // old-shape cache. W9 owns the field set; this owns "the cache noticed it moved".
-  const contract = createHash("sha256")
-    .update(`${EXTRACTION_SYSTEM}\u0000${JSON.stringify(DESCRIPTOR_SCHEMA)}`, "utf8")
-    .digest("hex")
-    .slice(0, 16);
+  // every cached descriptor is stale. `EXTRACTOR_VERSION` is **derived** from exactly this pair, so the
+  // contract cannot move without the version moving — no remembered bump, no pin to edit in place.
+  // Recompute it here the way a consumer would, so a hardcoded or narrowed version reds the suite.
+  const derive = (system: string, schema: unknown): string =>
+    createHash("sha256")
+      .update(`${system}\u0000${JSON.stringify(schema)}`, "utf8")
+      .digest("hex");
 
-  test("EXTRACTOR_VERSION still covers the prompt and the field set it versions", () => {
-    expect({ version: EXTRACTOR_VERSION, contract }).toEqual({
-      version: 1,
-      contract: "a68881b2ea90b315",
-    });
+  test("EXTRACTOR_VERSION is derived from the prompt and the field set it versions", () => {
+    expect(EXTRACTOR_VERSION).toBe(derive(EXTRACTION_SYSTEM, DESCRIPTOR_SCHEMA));
+  });
+
+  test("it tracks its inputs — a changed prompt or field set yields a different version", () => {
+    expect(derive(`${EXTRACTION_SYSTEM} `, DESCRIPTOR_SCHEMA)).not.toBe(EXTRACTOR_VERSION);
+    expect(derive(EXTRACTION_SYSTEM, { ...DESCRIPTOR_SCHEMA, required: [] })).not.toBe(
+      EXTRACTOR_VERSION,
+    );
   });
 });
