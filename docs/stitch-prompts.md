@@ -109,7 +109,7 @@ All of the user's ideas.
 
 - Main: the idea's headline, domain chips, **THE CLAIM**, **WHAT IT WOULD TAKE**.
 - Actions: **Iterate** (outline) and **Fork** (brass).
-- Below: **LIVING LINEAGE** as a vertical measured chain — what it forked/iterated from above, what derived
+- Below: **LIVING LINEAGE** as a vertical measured chain — what it forked from above, what derived
   from it below — hairlines with brass node markers, mono labels, and a **filled brass node on *this* idea**.
 
 ## §6 — Fork
