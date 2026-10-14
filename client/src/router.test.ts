@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 
-import { SCREENS, matchScreen, routeHref } from "./router.ts";
+import { SCREENS, ideaHref, ideaIdFromPath, matchScreen, routeHref } from "./router.ts";
 
 const HOME = SCREENS.find((s) => s.id === "S1")!;
 
@@ -41,4 +41,33 @@ test("routeHref is the hash form of the path", () => {
     "#/fork",
     "#/iterate",
   ]);
+});
+
+describe("ideaIdFromPath", () => {
+  test("resolves the id in a per-id path", () => {
+    expect(ideaIdFromPath("/ideas/abc")).toBe("abc");
+  });
+
+  test("a trailing slash resolves, so a pasted `#/ideas/abc/` is not a not-found", () => {
+    expect(ideaIdFromPath("/ideas/abc/")).toBe("abc");
+  });
+
+  test("the bare S4 path has no id — it is the S4 landing, not a detail", () => {
+    expect(ideaIdFromPath("/ideas")).toBeNull();
+    expect(ideaIdFromPath("/ideas/")).toBeNull();
+  });
+
+  test("a further segment is not a route — the server calls `/ideas/a/b` not_found too (docs/API.md §6)", () => {
+    expect(ideaIdFromPath("/ideas/a/b")).toBeNull();
+  });
+
+  test("any other path is not a per-id route", () => {
+    expect(ideaIdFromPath("/vault")).toBeNull();
+    expect(ideaIdFromPath("")).toBeNull();
+  });
+});
+
+test("ideaHref is the hash form of a per-id path, and round-trips through ideaIdFromPath", () => {
+  expect(ideaHref("x")).toBe("#/ideas/x");
+  expect(ideaIdFromPath(ideaHref("x").slice(1))).toBe("x");
 });

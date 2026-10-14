@@ -62,3 +62,20 @@ export function useHashPath(): string {
   }, []);
   return path;
 }
+
+/** The S4 detail route's hash for one idea (`#/ideas/<id>`). Ids are opaque — never encoded here. */
+export function ideaHref(id: string): string {
+  return `#/ideas/${id}`;
+}
+
+/**
+ * The id in an `#/ideas/<id>` path, or `null` when the path is not a per-id route. A trailing slash
+ * resolves, so a pasted `#/ideas/abc/` is not a not-found — the same courtesy `matchScreen` extends
+ * to `#/vault/`. An empty id or a further `/` does not: `/ideas/a/b` is not a route. The server
+ * agrees (`docs/API.md` §6 — it answers the `not_found` envelope), and the two must not be "fixed"
+ * into disagreement.
+ */
+export function ideaIdFromPath(path: string): string | null {
+  const match = /^\/ideas\/([^/]+)$/.exec(path.replace(/\/+$/, ""));
+  return match ? match[1]! : null;
+}
