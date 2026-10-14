@@ -179,6 +179,16 @@ Filters: `domain` (exact tag match), `lineage` ∈ `ROOT|ITERATION|FORK`, `statu
 `ACTIVE|NEEDS_COMPLETION`. Absent filter = no restriction.
 `200` → `{ "ideas": [Idea, …] }`.
 
+Readings this doc had not pinned (settled in V2 `#13`):
+
+- **Order: `created_at DESC, id DESC`.** Newest first; `id` breaks a same-second tie, which is real
+  because timestamps are second-resolution (§1).
+- **`domain` matches the tag exactly** — `fin` does not match `fintech` (not a prefix, not a substring).
+- **A repeated query key takes its first occurrence**; an unknown parameter name is ignored (§1).
+- **A filter present with an empty value is `422`**, not "no restriction" — §1's unknown-enum rule
+  applied to the filters' own vocabulary; `lineage=NOPE` is the same envelope.
+- **No pagination in the MVP**: `ideas` is unbounded. A stated limit, not an oversight.
+
 ### 4.5 `GET /v1/ideas/{id}` — Idea detail (S4)
 `200` →
 ```json
@@ -193,6 +203,23 @@ Filters: `domain` (exact tag match), `lineage` ∈ `ROOT|ITERATION|FORK`, `statu
   chain. `provenance` = **muted** metadata, never merged into `lineage` (`FLOW.md` §2.3).
 - `referenced_by` supplies the T26 delete warning: `forks` = ideas whose `lineage_parent_id` is this
   idea; `derived` = ideas that reference this idea as a provenance source. Empty arrays when none.
+
+Readings this doc had not pinned (settled in V2 `#13`):
+
+- **`versions` is every `idea_version` row for the node, ascending, the current one included** —
+  excluding it would leave the editor's own values invisible in history; the client marks the current
+  row "current" (`DESIGN.md` §8).
+- **`lineage` is root-first and ends at the immediate parent**; the node itself is the `idea` field and
+  is **not** a member of the chain. A `ROOT` has `lineage: []`.
+- **`provenance` is sorted by `(source_idea_id, spark_id)`** — `source_idea_id` alone can tie, since the
+  PK is `(derived_idea_id, source_idea_id, spark_id)`, and insertion order need not survive a restore.
+  `forks` and `derived` are sorted by id, for the same reason.
+- **`lineage` and `provenance` are never merged.** An idea bearing provenance has **no** lineage parent
+  (§5 invariant 3): the two arrays answer different questions and one never feeds the other.
+- **The absent case is empty, never an error** — no provenance, no ancestors, and no reverse references
+  all answer `200` with `[]`.
+- **The five reads are one snapshot** — they run inside a single read transaction, so a concurrent commit
+  cannot land between them and ship a `versions` list that `idea.current_version` disagrees with.
 
 ### 4.6 `POST /v1/ideas/{id}/iterate` — S6 Iterate
 Request: the mandatory fields (`hypothesis`, `problem`, `monetization`, `domain_tags`).
@@ -341,8 +368,22 @@ rather than left to the implementation:
   exactly one present is `422` (ignoring the half-present one would drop provenance silently). An
   unknown `origin_spark_id` is `404 not_found` (§2's "unknown … spark"). A repeat on `decision_id`
   writes nothing but returns the first `Idea` with the same `201` — §4.2's only named success.
+- **The vault read path (settled in V2 `#13`)** — §4.4's list order, its exact-tag `domain` filter,
+  first-occurrence-wins on a repeated key, and the `422` on a present-but-empty filter value, plus
+  §4.5's `versions` / `lineage` / `provenance` / `referenced_by` orderings and its single-snapshot
+  read, are recorded at the endpoints they belong to. Three readings belong here instead:
+  - **`/v1/ideas/` and `/v1/ideas/a/b` are the `not_found` envelope.** This is F4's rule and not a new
+    one — but the **client** router resolves `#/vault/` happily, so it is written down: the two must
+    not be "fixed" into agreement.
+  - **The list has no pagination in the MVP.** `{ "ideas": [ … ] }` is unbounded, so the client lane
+    must not build a pager against a contract with no cursor.
+  - **The normalised path is the router's input, so the encoded spellings route.** Once V2 implements
+    `GET /v1/ideas`, `//v1/ideas` and `/v1%2Fideas` **reach it** with a token rather than falling
+    through to the envelope. V1's note above is about the *gate* (they are `401` without one); routing
+    matches the same normalised string, which is the point of having one.
 
 ---
 
 *Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`;
-carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`.*
+carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`; and by **V2** (`#13`),
+branch `feat/v2-vault-read-api`.*
