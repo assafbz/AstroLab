@@ -44,3 +44,18 @@ skills."* Applied to this repo's harness, that means:
    evidence. The `.gitignore` commit in `using-git-worktrees` and the install/build
    steps in `using-git-worktrees` / `ponytail-help` are therefore fine to run on a
    branch.
+
+## Guard discipline — what counts as evidence
+
+A structural claim a test asserts — an import boundary, a single call site, a deterministic
+order — counts only once the guard has been seen **failing in the state it forbids**: plant
+the violation, watch the suite fail, restore. The guard also carries its own **non-vacuity**
+assertion, so it cannot silently scan nothing, miss files, or guard the wrong package.
+
+Three checks in this repo shipped green in exactly the state they existed to catch
+(2026-10-14, the W1/W2 lane): `worker/src/queue.test.ts`'s `cutVault` ascending-id assertion
+(the planner's covering-index scan made `ORDER BY id` unobservable);
+`store/test/vault-writes.test.ts`'s re-export check (a text grep, blind to
+`export * from "./store.js"`); and `worker/src/provider/boundary.test.ts`'s specifier
+extractor (it matched `from "…"` only, so a side-effect import slipped past). A text grep and
+a planner-dependent assertion are not evidence; a guard never seen failing is a comment.
