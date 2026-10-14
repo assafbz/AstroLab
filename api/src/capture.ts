@@ -22,14 +22,21 @@ export type { Idea };
 export const MAX_HYPOTHESIS_LENGTH = 280;
 
 /**
- * The fields §4.2 accepts. `origin_spark_id`/`decision_id` are **both-or-neither**: both null is a
- * blank capture, both set is a seeded one (`parseCaptureInput` rejects exactly one).
+ * The four mandatory fields every idea write carries (`docs/API.md` §2's mandatory set). Shared by
+ * capture and iterate, so "validation as §4.2" has **one** implementation.
  */
-export interface CaptureInput {
+export interface IdeaFields {
   hypothesis: string;
   problem: string;
   monetization: string;
   domain_tags: string[];
+}
+
+/**
+ * The fields §4.2 accepts. `origin_spark_id`/`decision_id` are **both-or-neither**: both null is a
+ * blank capture, both set is a seeded one (`parseCaptureInput` rejects exactly one).
+ */
+export interface CaptureInput extends IdeaFields {
   origin_spark_id: string | null;
   decision_id: string | null;
 }
@@ -42,9 +49,10 @@ export class NotFoundError extends Error {}
 
 /**
  * docs/API.md §4.2 — "hypothesis ≤ 280 and all of hypothesis, problem, monetization, and ≥ 1
- * domain_tags non-empty → else 422". Runs before the transaction; it is pure input validation.
+ * domain_tags non-empty → else 422". Pure input validation, so it runs before any transaction; the
+ * iterate path (`docs/API.md` §4.6, "validation as §4.2") calls this same function.
  */
-export function parseCaptureInput(body: unknown): CaptureInput {
+export function parseIdeaFields(body: unknown): IdeaFields {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     throw new ValidationError("request body must be a JSON object");
   }
@@ -54,19 +62,31 @@ export function parseCaptureInput(body: unknown): CaptureInput {
   if (hypothesis.length > MAX_HYPOTHESIS_LENGTH) {
     throw new ValidationError(`hypothesis exceeds ${MAX_HYPOTHESIS_LENGTH} characters`);
   }
-  const problem = requiredText(raw, "problem");
-  const monetization = requiredText(raw, "monetization");
-  const domain_tags = requiredTags(raw);
+
+  return {
+    hypothesis,
+    problem: requiredText(raw, "problem"),
+    monetization: requiredText(raw, "monetization"),
+    domain_tags: requiredTags(raw),
+  };
+}
+
+/**
+ * §4.2's spark pair, on top of the mandatory fields: `origin_spark_id` and `decision_id` are
+ * **both-or-neither** — a seeded save needs the idempotency key (`decision_id`) *and* the spark the
+ * provenance edges point at; accepting one and ignoring it would drop provenance silently.
+ */
+export function parseCaptureInput(body: unknown): CaptureInput {
+  const fields = parseIdeaFields(body);
+  const raw = body as Record<string, unknown>;
 
   const origin_spark_id = optionalId(raw, "origin_spark_id");
   const decision_id = optionalId(raw, "decision_id");
   if ((origin_spark_id === null) !== (decision_id === null)) {
-    // A seeded save needs both: `decision_id` is the idempotency key and the spark is what the
-    // provenance edges point at. Accepting one and ignoring it would drop provenance silently.
     throw new ValidationError("origin_spark_id and decision_id must be provided together");
   }
 
-  return { hypothesis, problem, monetization, domain_tags, origin_spark_id, decision_id };
+  return { ...fields, origin_spark_id, decision_id };
 }
 
 /**
