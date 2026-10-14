@@ -93,6 +93,19 @@ export const W9_VAULT_PATH = fileURLToPath(new URL("./w9-vault.yaml", import.met
 /** The swept range (bar §4 step 3). A τ above it is the free upward re-score (bar §4 step 6). */
 export const W9_TAUS = [0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65] as const;
 
+/**
+ * The **widened** sweep (bar §4 step 6.4 — the pre-authorized "extend below 0.35" phase). `W9_TAUS`
+ * brackets the *provisional default* (`store/src/config.ts`, `min_alignment = 0.5`), not the metric:
+ * `descriptorSimilarity` is a uniform mean of per-field Jaccard, and cross-domain ideas share a
+ * mechanism *concept*, not lexemes, so alignment sits well below `0.35`. This list spans the metric's
+ * range under the ratified floor and then carries `W9_TAUS` unchanged for continuity. It is passed at
+ * **runtime** — `W9_TAUS` is not touched, so `selectTau`'s tests still assert `0.35`.
+ */
+export const W9_WIDE_TAUS = [
+  0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.15, 0.2, 0.25, 0.3, 0.35,
+  0.4, 0.45, 0.5, 0.55, 0.6, 0.65,
+] as const;
+
 /** The union floor — P2 adjudicates every pair at or above it, once (bar §4 step 3; slice 3). */
 export const W9_UNION_TAU = 0.35;
 
@@ -242,6 +255,13 @@ export interface CalibrationRunOptions {
   adjudicator: SparkAdjudicator;
   /** The pinned model (`AI_MODEL` unset ⇒ `deepseek/deepseek-v4-flash`) — construction data, not re-derived. */
   model: string;
+  /**
+   * The union floor `union()` **and** `adjudicate()` both filter at — resolved **once** so the harness's
+   * cap input (the dry `union().length`) cannot diverge from the live spend. Omitted ⇒ `W9_UNION_TAU`
+   * (`0.35`, the bar's ratified floor). The below-`0.35` widening (bar §4 step 6.4) passes a lower value
+   * at runtime, so `W9_UNION_TAU` — read by `selectTau`'s tests — stays untouched.
+   */
+  unionTau?: number;
 }
 
 export interface CalibrationRun {
@@ -249,13 +269,13 @@ export interface CalibrationRun {
   readonly cut: { revision: number; ideaIds: string[] };
   /** P1 requests made so far — `28` on a cold cache, `0` on a warm one. The posting's evidence. */
   readonly extractCalls: number;
-  /** P2 requests made so far — `|union@0.35|`, and never more (bar §5's hard cap). */
+  /** P2 requests made so far — `|union|` at the run's floor, and never more (bar §5's hard cap). */
   readonly adjudicateCalls: number;
   /** P1 (slice 2): extract and cache a descriptor per idea. Reaches the provider once per *miss*. */
   extract(): Promise<{ calls: number }>;
   /** The alignment matrix (slice 2): every cross-cluster pair, `pair_key`-sorted, AI-free once warm. */
   matrix(): Promise<CalibrationPair[]>;
-  /** The paid union (slice 3): the matrix's pairs at `alignment ≥ 0.35`. Deterministic; no calls. */
+  /** The paid union (slice 3): the matrix's pairs at the run's floor (`W9_UNION_TAU`, or widened — §4 step 6.4). Deterministic; no calls. */
   union(): Promise<CalibrationPair[]>;
   /** P2 (slice 3): one adjudication call per union pair, in one pass. */
   adjudicate(): Promise<Adjudication>;
@@ -271,6 +291,10 @@ export function createCalibrationRun(
 ): CalibrationRun {
   let extractCalls = 0;
   let adjudicateCalls = 0;
+  // One floor, consumed by both `union()` and `adjudicate()`: the dry pass the harness caps against and
+  // the live pass it spends on filter the identical set by construction, never by two filters kept in sync
+  // by hand. `w9-run.test.ts` pins that equality at a non-default floor.
+  const unionTau = options.unionTau ?? W9_UNION_TAU;
 
   const extractor: MechanismExtractor = {
     async extract(text) {
@@ -313,7 +337,7 @@ export function createCalibrationRun(
   }
 
   async function union(): Promise<CalibrationPair[]> {
-    return (await matrix()).filter((pair) => pair.alignment >= W9_UNION_TAU);
+    return (await matrix()).filter((pair) => pair.alignment >= unionTau);
   }
 
   return {
@@ -337,7 +361,7 @@ export function createCalibrationRun(
     async adjudicate() {
       // One gate pass, then the union filter — the `GatedPair` payloads (descriptors included) the
       // adjudicator compares travel straight through; no second materialisation.
-      const gated = (await gate.gatedPairs(cut)).filter((pair) => pair.alignment >= W9_UNION_TAU);
+      const gated = (await gate.gatedPairs(cut)).filter((pair) => pair.alignment >= unionTau);
       return adjudicate.adjudicate(gated);
     },
   };

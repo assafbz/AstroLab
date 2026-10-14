@@ -22,6 +22,7 @@ import {
 import {
   coverageViolations,
   createCalibrationRun,
+  ideaTextOf,
   p1Posting,
   parseVault,
   perTauCurve,
@@ -290,6 +291,57 @@ describe("the driver — slice boundaries (28 → 0 → M)", () => {
     expect(await run.union()).toEqual([]);
     expect((await run.adjudicate()).confirmed).toEqual([]);
     expect(run.adjudicateCalls).toBe(0);
+  });
+
+  /**
+   * The widening (bar §4 step 6.4) makes the floor a **runtime** value, and the floor is filtered in
+   * **two** independent places — `union()` (the dry pass the harness caps against) and `adjudicate()`
+   * (the live spend). If only one honoured `unionTau` the cap would stop tracking the spend:
+   * parameterizing `union()` alone silently **under-spends** (`M_wide` claimed over `adjudicateCalls:
+   * 0`), and `adjudicate()` alone spends `M_wide` before a cap computed as `0` trips. This pins the two
+   * filters equal at a non-default floor, so a future edit to one site fails the suite (David/Max, #34).
+   */
+  test("the widened floor is one source of truth — union() and adjudicate() filter the same set", async () => {
+    const db = newDb();
+    seedVault(db, loadVault());
+    // Every pair aligns at exactly 0.25: below the default 0.35 floor, above the widened 0.02 one.
+    const { extractor } = countExtractor(weaklyAligned);
+    // The adjudicator sees `IdeaText`, not ids — so key each pair through its text back to its id.
+    const idByText = new Map(
+      loadVault().map((idea) => [JSON.stringify(ideaTextOf(idea)), idea.id]),
+    );
+    const keys: string[] = [];
+    const widened = createCalibrationRun(db, {
+      extractor,
+      adjudicator: {
+        async adjudicate(a, b) {
+          const ka = idByText.get(JSON.stringify(a))!;
+          const kb = idByText.get(JSON.stringify(b))!;
+          keys.push([ka, kb].sort().join("|"));
+          return null;
+        },
+      },
+      model: "deepseek/deepseek-v4-flash",
+      unionTau: 0.02,
+    });
+
+    const union = await widened.union();
+    await widened.adjudicate();
+
+    // The whole matrix clears the widened floor; the default floor would have surfaced nothing.
+    expect(union).toHaveLength(378);
+    // The cap input (`union.length`) equals the live spend, and the pair sets are key-equal.
+    expect(widened.adjudicateCalls).toBe(union.length);
+    expect(new Set(keys)).toEqual(new Set(union.map((pair) => pair.key)));
+
+    // Defaults untouched: the same (now warm) cache with no `unionTau` yields an empty union, 0 calls.
+    const atDefault = createCalibrationRun(db, {
+      extractor,
+      adjudicator: noAdjudicator,
+      model: "deepseek/deepseek-v4-flash",
+    });
+    expect(await atDefault.union()).toEqual([]);
+    expect(atDefault.extractCalls).toBe(0);
   });
 });
 
