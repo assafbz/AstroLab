@@ -1,4 +1,4 @@
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi, type Mock } from "vitest";
 
 import { vaultSummary } from "./vault.ts";
 import type { VaultSummary } from "./types.ts";
@@ -21,7 +21,10 @@ function json(body: unknown, status = 200): Response {
 afterEach(() => vi.unstubAllGlobals());
 
 test("vaultSummary reads GET /v1/vault/summary and returns the payload unreshaped", async () => {
-  const mock = vi.fn(() => Promise.resolve(json(SUMMARY)));
+  // The stub takes no argument; the `Mock` annotation is what types the recorded call.
+  const mock: Mock<(url: string) => Promise<Response>> = vi.fn(() =>
+    Promise.resolve(json(SUMMARY)),
+  );
   vi.stubGlobal("fetch", mock);
 
   expect(await vaultSummary()).toEqual(SUMMARY);

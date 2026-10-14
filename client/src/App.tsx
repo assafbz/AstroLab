@@ -2,13 +2,14 @@ import { EmptyState } from "./components/EmptyState.tsx";
 import { TABS, ideaIdFromPath, matchScreen, routeHref, useHashPath } from "./router.ts";
 import { Capture } from "./screens/Capture.tsx";
 import { IdeaDetail } from "./screens/IdeaDetail.tsx";
+import { Onboarding } from "./screens/Onboarding.tsx";
 import { Vault } from "./screens/Vault.tsx";
 
 /**
  * The shell — the bottom nav, the shared frame, and the route table.
  *
- * V8 fills S2, S3 and S4 (plus the per-id S4 route); S0/S1/S5/S6 stay placeholders until their own
- * issues land. The per-id route is resolved **first**: `#/ideas/<id>` is not one of `SCREENS`
+ * V8 filled S2, S3 and S4 (plus the per-id S4 route) and O3 fills S0; S1/S5/S6 stay placeholders until
+ * their own issues land. The per-id route is resolved **first**: `#/ideas/<id>` is not one of `SCREENS`
  * (whose S4 entry is the bare `#/ideas`), so `matchScreen` alone would call it a not-found.
  */
 export function App() {
@@ -18,6 +19,10 @@ export function App() {
 
   // D8 — S4 is reached from the Vault, so the Vault tab is the active tab on both `#/ideas` and
   // `#/ideas/<id>`: a screen with no tab of its own must not read as "nowhere".
+  //
+  // S0 is the exception and deliberately so: it is the **first-run entry**, reached before home
+  // (`FLOW.md` T01/T05), so no tab is active on it — the tab bar stays usable, but lighting "Sparks"
+  // or "Add" while the user is still onboarding would claim a position in the app they have not taken.
   const onS4 = ideaId !== null || screen?.id === "S4";
   const activeTab = onS4 ? TABS.find((tab) => tab.id === "S3") : screen;
 
@@ -26,6 +31,8 @@ export function App() {
       <main className="screen">
         {ideaId !== null ? (
           <IdeaDetail id={ideaId} />
+        ) : screen?.id === "S0" ? (
+          <Onboarding />
         ) : screen?.id === "S2" ? (
           <Capture />
         ) : screen?.id === "S3" ? (

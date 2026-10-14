@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { afterEach, expect, test, vi } from "vitest";
+import { afterEach, expect, test, vi, type Mock } from "vitest";
 
 import { DOMAIN_CLUSTERS } from "../domain/taxonomy.ts";
 import { Onboarding } from "./Onboarding.tsx";
@@ -36,14 +36,17 @@ function json(body: unknown, status = 200): Response {
 }
 
 /** The summary read and the capture write answer differently; both are stubbed by path. */
-function stubFetch(summary: unknown = SUMMARY) {
-  const mock = vi.fn((url: string) => {
+function stubFetch(summary: unknown = SUMMARY): FetchStub {
+  const mock: FetchStub = vi.fn((url: string) => {
     if (url.startsWith("/v1/vault/summary")) return Promise.resolve(json(summary));
     return Promise.resolve(json(IDEA, 201));
   });
   vi.stubGlobal("fetch", mock);
   return mock;
 }
+
+/** The stubbed `fetch`, typed so the recorded `(url, init)` pair is readable at the assertion. */
+type FetchStub = Mock<(url: string, init?: RequestInit) => Promise<Response>>;
 
 const addIdea = () => fireEvent.click(screen.getByRole("button", { name: "Add idea" }));
 const type = (label: string, value: string) =>
@@ -59,7 +62,7 @@ function fillValidDraft() {
 }
 
 /** The capture call the screen sent, if any. */
-function captureCall(mock: ReturnType<typeof stubFetch>) {
+function captureCall(mock: FetchStub) {
   const call = mock.mock.calls.find(([url]) => url === "/v1/ideas");
   return call ? JSON.parse(String((call[1] as RequestInit | undefined)?.body)) : null;
 }
@@ -153,9 +156,7 @@ test("a saved idea advances the prompt, blanks the form, and re-reads the summar
   fillValidDraft();
   addIdea();
 
-  await vi.waitFor(() =>
-    expect(screen.getByText("A frustration nobody has fixed")).toBeTruthy(),
-  );
+  await vi.waitFor(() => expect(screen.getByText("A frustration nobody has fixed")).toBeTruthy());
   // T02 is S0 → S0: the draft is blank and the domain chip is gone.
   expect((screen.getByLabelText("Core Hypothesis") as HTMLInputElement).value).toBe("");
   expect(screen.queryByText("ai-ml")).toBeNull();
@@ -165,7 +166,7 @@ test("a saved idea advances the prompt, blanks the form, and re-reads the summar
 
 test("a failed summary read composes a retry state instead of a bare line", async () => {
   let fail = true;
-  const mock = vi.fn((url: string) => {
+  const mock: FetchStub = vi.fn((url: string) => {
     if (url.startsWith("/v1/vault/summary") && fail) {
       fail = false;
       return Promise.resolve(json({ error: { code: "internal_error", message: "no" } }, 500));

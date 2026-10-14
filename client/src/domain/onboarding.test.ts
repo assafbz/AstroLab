@@ -72,9 +72,9 @@ test("validation is S2's, applied to S0's four mandatory fields", () => {
   expect(validateOnboardingIdea({ ...COMPLETE, hypothesis: "   " }).hypothesis).toBe(
     "Hypothesis is required",
   );
-  expect(
-    validateOnboardingIdea({ ...COMPLETE, hypothesis: "x".repeat(281) }).hypothesis,
-  ).toBe("Hypothesis exceeds 280 characters");
+  expect(validateOnboardingIdea({ ...COMPLETE, hypothesis: "x".repeat(281) }).hypothesis).toBe(
+    "Hypothesis exceeds 280 characters",
+  );
 });
 
 test("a picked domain enters the capture as its one-element tag list, blank-seeded", () => {

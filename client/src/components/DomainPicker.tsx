@@ -1,6 +1,11 @@
 import { useState } from "react";
 
-import { chooseCluster, chooseFreeText, isProvisional, type DomainChoice } from "../domain/onboarding.ts";
+import {
+  chooseCluster,
+  chooseFreeText,
+  isProvisional,
+  type DomainChoice,
+} from "../domain/onboarding.ts";
 import { DOMAIN_CLUSTERS } from "../domain/taxonomy.ts";
 
 /**

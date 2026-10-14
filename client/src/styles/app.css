@@ -621,3 +621,146 @@ a {
 .confirm__actions .button {
   flex: 1;
 }
+
+/* --- S0 Onboarding (O3 #23): the prompt card, the readout, the star-chart mark --- */
+
+/* The prompt card: mono label, one prompt at a time (PRD.md §3.4 item 1; stitch-prompts.md §7). */
+.prompt {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  background: var(--card);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+}
+
+.prompt__label {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.prompt__line {
+  margin: 0;
+  font-size: 1.125rem;
+  color: var(--ink);
+}
+
+/* Progress is domains, not steps: mono readout + a three-segment bar (stitch-prompts.md §7). */
+.progress {
+  text-align: center;
+}
+
+.progress__label {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.progress__value {
+  margin: 0.25rem 0 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 1.25rem;
+  color: var(--ink);
+}
+
+.progress__bar {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+
+.progress__seg {
+  width: 40px;
+  height: 2px;
+  background: var(--hairline);
+}
+
+.progress__seg--filled {
+  background: var(--brass);
+}
+
+/* The mark: astrolabe rings in indigo, points in brass (resolved) and faint ink (provisional).
+   No arcs — no S0 endpoint exposes domain distance (see the screen's note). */
+.chart {
+  position: relative;
+  height: 120px;
+  margin: 1rem 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.chart__ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  border: 1px solid var(--indigo);
+  border-radius: 50%;
+  opacity: 0.35;
+}
+
+.chart__ring--outer {
+  width: 112px;
+  height: 112px;
+  transform: translate(-50%, -50%);
+}
+
+.chart__ring--middle {
+  width: 76px;
+  height: 76px;
+  transform: translate(-50%, -50%);
+}
+
+.chart__ring--inner {
+  width: 40px;
+  height: 40px;
+  transform: translate(-50%, -50%);
+}
+
+.chart__points {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 88px;
+  justify-content: center;
+}
+
+.star {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.star--covered {
+  background: var(--brass);
+}
+
+.star--provisional {
+  background: var(--faint);
+}
+
+/* The typed lane, marked in words — never colour alone (the flag is text, so it is announced). */
+.chip--provisional {
+  border-style: dashed;
+}
+
+.chip__flag {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.field__note {
+  margin: 0.375rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--dim);
+}

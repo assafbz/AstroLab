@@ -182,7 +182,9 @@ function ProgressMark(props: {
     return (
       <section className="empty" aria-label="Progress unavailable">
         <h2 className="empty__title">Your progress is out of reach.</h2>
-        <p className="empty__body">Capture still works — the readout needs the vault read to answer.</p>
+        <p className="empty__body">
+          Capture still works — the readout needs the vault read to answer.
+        </p>
         <button type="button" className="button" onClick={props.onRetry}>
           Try again
         </button>

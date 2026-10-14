@@ -27,10 +27,7 @@ const META = new Set(["adjacency", "version", "corrections"]);
 
 /** The shipped clusters, read the way the loader reads them: file order, META keys dropped. */
 function shippedClusters(): Array<{ key: string; name: string }> {
-  const doc = parseYaml(readFileSync(TAXONOMY_PATH, "utf8")) as Record<
-    string,
-    { name?: unknown }
-  >;
+  const doc = parseYaml(readFileSync(TAXONOMY_PATH, "utf8")) as Record<string, { name?: unknown }>;
   return Object.keys(doc)
     .filter((key) => !META.has(key))
     .map((key) => ({ key, name: String(doc[key]?.name) }));
