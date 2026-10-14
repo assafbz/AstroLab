@@ -45,7 +45,6 @@ skills."* Applied to this repo's harness, that means:
    steps in `using-git-worktrees` / `ponytail-help` are therefore fine to run on a
    branch.
 
-
 ## Guard discipline — what counts as evidence
 
 A structural claim a test asserts — an import boundary, a single call site, a deterministic
