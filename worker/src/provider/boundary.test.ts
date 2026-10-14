@@ -245,3 +245,27 @@ describe("every call pins provider.zdr (ARCH §5, NFR-PRIV1) — pin 4", () => {
     expect(callers).toEqual([PROVIDER_MODULE]);
   });
 });
+
+describe("Axis 1 stays in the worker (ARCH §3.2; NFR-A1) — W4", () => {
+  // The distance module, the normaliser interface, and its method are the axis's names. None may
+  // appear under `api/` or `client/`: the vault path resolves no cluster and reaches no model — a
+  // domain tag is stored raw and read raw (`api/src/vault-summary.ts`'s exact match depends on it).
+  const AXIS = /DomainDistance|TagNormalizer|normalizeTag/;
+  const names = (): string[] =>
+    FILES.filter((file) => AXIS.test(file.text)).map((file) => file.rel);
+
+  test("the scan is real — each name bites somewhere in the worker", () => {
+    // Non-vacuity: a typo'd pattern would pass the assertion below by matching nothing.
+    expect(names()).toContain("worker/src/engine/domain.ts");
+    expect(names()).toContain("worker/src/provider/types.ts");
+  });
+
+  test("no api/ or client/ source names the axis, its normaliser, or its method", () => {
+    const offenders = FILES.filter(
+      (file) =>
+        VAULT_PACKAGES.some((pkg) => file.rel.startsWith(`${pkg}/`)) && AXIS.test(file.text),
+    ).map((file) => file.rel);
+
+    expect(offenders).toEqual([]);
+  });
+});
