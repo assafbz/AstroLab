@@ -55,7 +55,7 @@ Every idea is a structured knowledge unit, not arbitrary rich text.
 - **Problem Solved (Mandatory):** The specific friction, pain point, or operational bottleneck addressed.
 - **Monetization / Value Angle (Mandatory):** How value is captured — revenue model, unit economics, or cost savings.
 - **Domain Tag(s) (Mandatory):** One or more cross-disciplinary tags (e.g., `#fintech`, `#audio-dsp`, `#logistics`, `#developer-tooling`). Domain is the axis along which the distance between ideas is measured; **an idea without a domain cannot take part in a spark.**
-- **Lineage:** `Root`, `Iteration of ⟨X⟩`, or `Fork of ⟨Y⟩` — strictly single-parent.
+- **Lineage:** `Root` or `Fork of ⟨Y⟩` — strictly single-parent. A **fork** is the only lineage edge; an **iteration** refines the *same* node in place (a version, not a lineage kind — Sec. 3.2 item 1).
 - **Provenance (optional):** `Sparked from ⟨A⟩ + ⟨B⟩` — the ideas a spark was generated from. Recorded as muted metadata, **not** part of Lineage: accepting a spark creates a **new root idea** (Sec. 3.3 item 5).
 - **Visibility Scope:** `PRIVATE` only in the MVP. Sharing scopes (Circle / Company / Public) are deferred.
 
