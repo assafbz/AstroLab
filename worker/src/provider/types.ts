@@ -1,8 +1,8 @@
 /**
  * The AI-provider boundary (`ARCHITECTURE.md` §5; `ADR-0003`).
  *
- * **One interface, no vendor.** The engine depends on these two operations — Stage 1's extraction and
- * Stage 2's adjudication — and a single adapter implements both. The boundary is a *module*: nothing in
+ * **One interface, no vendor.** The engine depends on these operations — Stage 1's extraction, Stage 2's
+ * adjudication, and (W4) §3.2 step 2's tag normalisation — and a single adapter implements them. The boundary is a *module*: nothing in
  * `api/` or `store/` may import it, which is what makes NFR-A1 hold by construction rather than by
  * discipline (`store` and `api` have no reachable path to a provider at all).
  * `worker/src/provider/boundary.test.ts` fails the suite if such an import appears.
