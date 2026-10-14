@@ -1,9 +1,9 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import { MIGRATIONS, migrate, openStore, stampAndEnqueue } from "@astrolab/store";
+import { MIGRATIONS, enqueueRun, migrate, openStore, stampAndEnqueue } from "@astrolab/store";
 import { describe, expect, test } from "vitest";
 
-import { cutVault, runOnce, stubRunBody, type VaultCut } from "./queue.js";
+import { cutVault, runOnce, stubRunBody, type RunOutcome, type VaultCut } from "./queue.js";
 
 /** A fresh migrated in-memory vault — the same schema `main` ships (`0001_init` + `0002`). */
 function newDb(): DatabaseSync {
@@ -78,6 +78,77 @@ describe("runOnce", () => {
 
   test("the default stub body produces no candidates and reaches no provider", () => {
     expect(stubRunBody({ revision: 1, ideaIds: [] })).toEqual({ candidates: [] });
+  });
+});
+
+describe("runOnce — reproducibility & supersession (issue #26, Done #4)", () => {
+  test("re-running the same revision hands the body an identical cut", async () => {
+    const db = newDb();
+    seedIdea(db, "b");
+    seedIdea(db, "a");
+    stampAndEnqueue(db);
+
+    const cuts: VaultCut[] = [];
+    const body = (cut: VaultCut): RunOutcome => {
+      cuts.push(cut);
+      return { candidates: ["a|b"] };
+    };
+
+    await runOnce(db, body);
+    enqueueRun(db, 1); // the same revision again
+    await runOnce(db, body);
+
+    expect(cuts).toHaveLength(2);
+    expect(cuts[1]).toEqual(cuts[0]);
+    expect(cuts[0]).toEqual({ revision: 1, ideaIds: ["a", "b"] });
+  });
+
+  test("a run that goes stale mid-body is DONE and discarded; the newer run supersedes it", async () => {
+    const db = newDb();
+    seedIdea(db, "a");
+    const stale = stampAndEnqueue(db); // revision 1
+
+    const result = await runOnce(db, () => {
+      stampAndEnqueue(db); // the vault moves *during* the run → revision 2
+      return { candidates: ["a|b"] };
+    });
+
+    // The stale run completed, but its outcome is discarded — never offered (§4 / I).
+    expect(result).toMatchObject({ discarded: true, error: null });
+    expect(result?.outcome).toEqual({ candidates: ["a|b"] });
+
+    const all = runRows(db);
+    expect(all).toHaveLength(2);
+    expect(all[0]).toMatchObject({
+      id: stale.id,
+      vault_revision: 1,
+      status: "DONE",
+      error: "discarded: superseded by revision 2",
+    });
+    expect(all[1]).toMatchObject({ vault_revision: 2, status: "PENDING" });
+
+    // The superseding run is what the loop picks up next.
+    const next = await runOnce(db);
+    expect(next).toMatchObject({ discarded: false });
+    expect(next?.run.vault_revision).toBe(2);
+  });
+
+  test("enqueue during a run keeps the RUNNING row and leaves exactly one PENDING (pin: at most one *pending*)", async () => {
+    const db = newDb();
+    stampAndEnqueue(db); // revision 1
+
+    const during: ReturnType<typeof runRows> = [];
+    await runOnce(db, () => {
+      stampAndEnqueue(db); // revision 2 while revision 1 is RUNNING
+      during.push(...runRows(db));
+      return { candidates: [] };
+    });
+
+    expect(during).toHaveLength(2);
+    expect(during).toMatchObject([
+      { vault_revision: 1, status: "RUNNING" },
+      { vault_revision: 2, status: "PENDING" },
+    ]);
   });
 });
 
