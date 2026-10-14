@@ -157,6 +157,20 @@ describe("retractOffersOutside — a live offer is not history (§4 recompute)",
       },
     ]);
   });
+
+  test("a resolved spark stays outside a non-empty set too — the `status` filter is the guard", () => {
+    const db = withOffers();
+
+    // `b` is outside a candidate set that is *not* empty, so `a|b` is swept — but only the live row:
+    // nothing but the `status = 'OFFERED'` filter separates the resolved `a|b` from it, so dropping
+    // that filter sweeps history with the offer. (The empty-set case above cannot see this arm.)
+    expect(retractOffersOutside(db, ["a", "c"])).toBe(1);
+
+    expect(sparkRows(db).map((row) => [row.pair_key, row.status])).toEqual([
+      ["a|b", "RESOLVED-ACCEPTED"],
+      ["a|c", "OFFERED"],
+    ]);
+  });
 });
 
 describe("the engine's spark writes touch no vault state (C7)", () => {
