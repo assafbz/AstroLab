@@ -17,6 +17,8 @@ import { engineState } from "./engine-state.js";
 import { forkIdea, parseForkInput } from "./fork.js";
 import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
 import { iterateIdea } from "./iterate.js";
+import { handleSparkEvents, type SparkEventsOptions } from "./spark-events.js";
+import { listOfferedSparks, parseSparkQuery } from "./sparks.js";
 import { vaultSummary } from "./vault-summary.js";
 
 /**
@@ -118,13 +120,26 @@ function looksLikeV1(path: string): boolean {
 export interface AppOptions {
   /** The open store. V1's first resource route reads and writes it (docs/API.md §4.2). */
   db: DatabaseSync;
+  /**
+   * A **second, read-only** handle on the same database file, used only to sample `PRAGMA
+   * data_version` for the SSE stream (docs/API.md §4.11, K1 `#35`). A connection is blind to its own
+   * commit, so the sampler cannot be `db` — it must see the API's own writes (§4.16's run enqueue,
+   * every `vaultMutation`) as well as the worker's. It never writes. Defaults to `db`, which is only
+   * correct for `:memory:` (a test-only path: a second handle there is a different database);
+   * `api/src/index.ts` always passes a distinct handle.
+   */
+  watchDb?: DatabaseSync;
+  /** Test affordances for the SSE sampler's cadence and heartbeat; production uses the defaults. */
+  sparkEvents?: SparkEventsOptions;
 }
 
-export function createApp({ db }: AppOptions): Server {
+export function createApp({ db, watchDb = db, sparkEvents }: AppOptions): Server {
   return createServer((req, res) => {
     // `handleRequest` catches its own failures; this is only a last resort for a rejection it did
     // not see, so a bug here still answers the envelope rather than hanging the socket.
-    handleRequest(req, res, db).catch(() => fail(res, new Error("unexpected error")));
+    handleRequest(req, res, db, watchDb, sparkEvents).catch(() =>
+      fail(res, new Error("unexpected error")),
+    );
   });
 }
 
@@ -132,6 +147,8 @@ async function handleRequest(
   req: IncomingMessage,
   res: ServerResponse,
   db: DatabaseSync,
+  watchDb: DatabaseSync,
+  sparkEvents?: SparkEventsOptions,
 ): Promise<void> {
   try {
     const method = req.method ?? "GET";
@@ -171,10 +188,25 @@ async function handleRequest(
       return sendJson(res, 200, vaultSummary(db));
     }
 
+    // §4.9 — the deck read (S1, K1 #35). `state` is **required** and only `offered` validates, so the
+    // query is validated **before** any row is read (the §4.6 posture: the body contract first, then the
+    // store). `Spark` carries no `status`, which is why "no restriction" is not an option here — the
+    // reading is recorded at §4.9.
+    if (method === "GET" && path === "/v1/sparks") {
+      parseSparkQuery(query); // ValidationError → the outer catch → the 422 envelope
+      return sendJson(res, 200, { sparks: listOfferedSparks(db) });
+    }
+
     // §4.10 — the engine state (S1): E0–E4 from one place (`engine-state.ts`). Provider-free, so the
     // readout answers while the engine is down — which is the state it exists to report (E4).
     if (method === "GET" && path === "/v1/sparks/state") {
       return sendJson(res, 200, engineState(db));
+    }
+
+    // §4.11 — the run-progress SSE stream (S1, K1 `#35`). The handler owns the response from here:
+    // it flushes headers and never returns a JSON body, so it is *not* awaited and must not throw.
+    if (method === "GET" && path === "/v1/sparks/events") {
+      return handleSparkEvents(req, res, db, watchDb, sparkEvents);
     }
 
     // §4.16 — Recompute: enqueue a run at the current revision and answer immediately (NFR-P1: the

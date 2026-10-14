@@ -138,7 +138,9 @@ test("no path under /v1 answers anything but 401 without a valid token", async (
     "/v1/",
     "/v1/ideas",
     "/v1/ideas/9f1c",
+    "/v1/sparks",
     "/v1/sparks/state",
+    "/v1/sparks/events",
     "/v1/vault/summary",
     "/v1/export",
     "/v1/nope",
@@ -174,11 +176,12 @@ test("authorized, the encoded spellings route to the same place or the envelope 
 });
 
 test("an authorized but unimplemented /v1 route is the not_found envelope — never a 200", async () => {
-  // W8 (#33) implements `GET /v1/sparks/state` and `POST /v1/sparks/run`; the two entries that pinned
-  // their *absence* are removed here (each has its own coverage below). Bare `/v1/sparks` stays 404 —
-  // the deck read (§4.9) is not this ticket.
+  // W8 (#33) implemented `GET /v1/sparks/state` and `POST /v1/sparks/run`, and K1 (#35) makes bare
+  // `/v1/sparks` a route; each entry that pinned their *absence* is removed here as it lands (each has
+  // its own coverage below). The bare `/v1/sparks` entry is replaced by a **deeper** unknown spark path,
+  // so the not_found envelope is still pinned for the `{id}` shape K3 will claim (§4.12).
   for (const [method, path] of [
-    ["GET", "/v1/sparks"],
+    ["GET", "/v1/sparks/9f1c"],
     ["GET", "/v1/export"],
     ["GET", "/v1"],
   ] as const) {
@@ -217,6 +220,11 @@ test("GET /v1/sparks/state needs a token like every /v1 route (§1)", async () =
   expectEnvelope(await call("GET", "/v1/sparks/state"), 401, "unauthorized");
 });
 
+test("GET /v1/sparks/events needs a token like every /v1 route (§1, §4.11)", async () => {
+  // The SSE route is gated by the same `/v1` auth; an unauthenticated call never opens a stream.
+  expectEnvelope(await call("GET", "/v1/sparks/events"), 401, "unauthorized");
+});
+
 test("POST /v1/sparks/run enqueues at the current revision and answers 202 (§4.16)", async () => {
   seedSpread();
   const result = await call("POST", "/v1/sparks/run", { authorization: `Bearer ${TOKEN}` });
@@ -252,6 +260,70 @@ test("the sparks routes dispatch by method — the wrong verb on a known path is
   const auth = { authorization: `Bearer ${TOKEN}` };
   expectEnvelope(await call("GET", "/v1/sparks/run", auth), 404, "not_found");
   expectEnvelope(await call("POST", "/v1/sparks/state", auth), 404, "not_found");
+  expectEnvelope(await call("POST", "/v1/sparks", auth), 404, "not_found");
+});
+
+/** K1 (#35) — `GET /v1/sparks?state=offered`, the deck read (§4.9). */
+test("GET /v1/sparks requires `state`, and only `offered` — bare is 422, never an unfiltered read", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  // Change A: a `Spark` carries no `status` (§3.3), so a read with no restriction is indistinguishable
+  // from an offers read — it would hand back resolved sparks with nothing marking them. Missing, empty,
+  // and out-of-enum are one status for two reasons (§2's mandatory field, §1's unknown enum), and the
+  // comparison is case-sensitive.
+  expectEnvelope(await call("GET", "/v1/sparks", auth), 422, "validation_failed");
+  expectEnvelope(await call("GET", "/v1/sparks?state=", auth), 422, "validation_failed");
+  expectEnvelope(await call("GET", "/v1/sparks?state=OFFERED", auth), 422, "validation_failed");
+  expectEnvelope(await call("GET", "/v1/sparks?state=all", auth), 422, "validation_failed");
+});
+
+test("GET /v1/sparks?state=offered is the deck body — `{ sparks: [] }` on an empty vault (§4.9)", async () => {
+  const result = await call("GET", "/v1/sparks?state=offered", {
+    authorization: `Bearer ${TOKEN}`,
+  });
+  expect(result.status).toBe(200);
+  expect(result.contentType).toBe(JSON_UTF8);
+  expect(result.body).toEqual({ sparks: [] });
+});
+
+test("GET /v1/sparks?state=offered returns the live deck and never a resolved spark (§4.9)", async () => {
+  // The data-bearing path *over HTTP*, at the W8 bar: the deck read returns §3.3's `Spark` for a live
+  // offer and drops a resolved one, with `domain_tags` the pair-order union of the two source ideas.
+  for (const [id, tag] of [
+    ["a", "fintech"],
+    ["b", "health"],
+    ["c", "audio-dsp"],
+  ] as const) {
+    db.prepare(
+      `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
+                         lineage_parent_id, status, visibility, current_version, created_at, updated_at)
+       VALUES (?, 'h', 'p', 'm', ?, 'ROOT', NULL, 'ACTIVE', 'PRIVATE', 1, 't', 't')`,
+    ).run(id, JSON.stringify([tag]));
+  }
+  const spark = (id: string, a: string, b: string, status: string): void => {
+    const [x, y] = [a, b].sort();
+    db.prepare(
+      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, status, created_at)
+       VALUES (?, ?, ?, ?, 'a direction', 'a claim', ?, '2026-01-01T00:00:00Z')`,
+    ).run(id, a, b, `${x}|${y}`, status);
+  };
+  spark("live", "a", "b", "OFFERED");
+  spark("resolved", "a", "c", "RESOLVED-DISMISSED");
+
+  const result = await call("GET", "/v1/sparks?state=offered", {
+    authorization: `Bearer ${TOKEN}`,
+  });
+  expect(result.status).toBe(200);
+  expect(result.body).toEqual({
+    sparks: [
+      {
+        id: "live",
+        direction: "a direction",
+        claim: "a claim",
+        domain_tags: ["fintech", "health"],
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ],
+  });
 });
 
 test("a path outside /v1 is the envelope, and needs no token", async () => {

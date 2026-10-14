@@ -130,6 +130,15 @@ Readings this doc had not pinned (settled in O2 `#22`):
 No `mechanism`, no `domain_distance`, no `structural_alignment`, no source idea ids — selection
 internals never surface (`PRD.md` §3.3 items 2–4; `ARCHITECTURE.md` §2.3).
 
+`domain_tags` is **derived, not stored**: `spark` has no tags column (`ARCHITECTURE.md` §2.3), so
+§4.9's read joins the two source ideas and returns the **deduped union in the writer's stored
+`idea_a_id`→`idea_b_id` order**, which `ux_spark_live` pins to a single live row per pair — first
+appearance winning. A client may rely on that determinism **per row**; it must **not** assume id order
+(`pair_key = min|max` keys the pair but does not fix which id lands in `idea_a_id`). A tag may be
+**provisional** — an S0 `Other → free text` lane the worker has not resolved yet
+(`ARCHITECTURE.md` §3.2) — and `Spark` carries no cluster field, so the card shows the raw tag: a
+client must not read chips as resolved clusters.
+
 ### 3.4 `SparkDetail` (S1b — `ARCHITECTURE.md` §6)
 `Spark` plus:
 ```json
@@ -335,6 +344,24 @@ Readings this doc had not pinned (settled in V5 `#16`):
 `200` → `{ "sparks": [Spark, …] }` in **server order** (deck order = server order).
 `state=offered` returns live offers only (`status = OFFERED`).
 
+Readings this doc had not pinned (settled in K1 `#35`):
+
+- **`state` is REQUIRED, and `offered` is its only value.** A missing or empty `state`, or any value
+  outside the enum — the comparison is **case-sensitive**, so `?state=OFFERED` is not `offered` — is
+  `422 validation_failed` (§2's mandatory field and §1's unknown enum are the same status for two
+  reasons). This **departs from §4.4's "an absent filter means no restriction"** deliberately: `Spark`
+  (§3.3) carries **no `status`**, so an unfiltered read is indistinguishable from an offers read — it
+  would hand a caller resolved sparks with nothing marking them, against this endpoint's own "live
+  offers only". The departure is here so it is a decision, not an accident.
+- **Deck order is insertion order, oldest offer first** (`spark.rowid ASC`). This is a **departure from
+  §4.4's** newest-first vault list (`created_at DESC, id DESC`): `spark.created_at` is
+  second-resolution (§1), so it cannot separate two offers written in one run, and `rowid` is the same
+  monotonic sequence W8's run reads use. Neither list should be "fixed" into agreement with the other.
+- **The read is a read**: no engine state, no provider, and — unlike §4.10 — nothing computed. E0–E4 is
+  §4.10's, in one place (`api/src/engine-state.ts`); the deck read does not re-derive it.
+- **Live-only, and no cursor.** The body is bounded by what the engine has offered, not by a page: there
+  is no pagination and no cursor, exactly as §4.4's list has none.
+
 ### 4.10 `GET /v1/sparks/state` — engine state (S1)
 `200` → `EngineState` (§3.6). Provider-free.
 
@@ -373,6 +400,36 @@ data: {Spark}
 - **Polling fallback** (part of NFR-P1's bound, not polish): when SSE is unavailable the client polls
   `GET /v1/sparks/state` + `GET /v1/sparks?state=offered` with **bounded backoff, only while
   `state = E1`**.
+
+Readings this doc had not pinned (settled in K1 `#35`):
+
+- **The store is the notifier; the API is a subscriber.** The two processes share one SQLite file
+  (`ARCHITECTURE.md` §1) and SQLite has no cross-process pub/sub, so the stream samples SQLite's own
+  cross-connection change signal — `PRAGMA data_version` — and re-reads the deck (`liveOffers`, §4.9)
+  and the state (`engineState`, §4.10) **only when that signal moves**. A commit on *any other*
+  connection moves it: the worker's offer write, and the API's own `POST /v1/sparks/run` enqueue.
+  A commit on the sampling connection itself does not (SQLite's documented semantics). The cadence is
+  therefore a bound on **latency**, not a timer that emits: with nothing committed, no frame is sent.
+- **The sampler is a second, read-only handle — never the API's `db`.** A connection is blind to its
+  own commit, so a watcher on `db` would miss every change the API process itself makes — §4.16's run
+  enqueue and every `vaultMutation` — and, with the worker down, "every change" would be silently
+  narrower. Hence `createApp({ db, watchDb })`: `watchDb` is a second handle on the same file, used
+  **only** to read `PRAGMA data_version`, and it **never writes**. (`:memory:` is a test-only path —
+  a second handle there is a different database — so the sampler falls back to `db`; `api/src/index.ts`
+  always passes a distinct handle.)
+- **Connect primes, then states.** A subscriber's first frame is one baseline `state`, and the diff
+  caches are primed from the current deck — so connecting does not replay the whole deck as `offer`
+  frames. The change signal is sampled **before** that snapshot, so a commit landing while the
+  connection is being set up is never lost: it is either in the baseline or on the next tick's diff,
+  never neither. A client subscribes, then reads §4.9 for the deck; the stream carries the changes
+  after.
+- **Per-subscriber, live-only.** The sampler exists only while a client is connected: no subscriber
+  means no sampling, no buffering and no replay. A `state` change with no client connected is simply
+  not observed; a reconnecting client gets the baseline `state` and re-reads §4.9. Heartbeat comment
+  frames (`: keepalive`) keep an intermediary from reaping an idle stream.
+- **Auth is the `/v1` gate's, and it is a client constraint.** `EventSource` cannot set an
+  `Authorization` header, so a client reaches this route with a `fetch`-stream, or falls back to the
+  polling path above. K1 records the constraint; the client lane resolves it.
 
 ### 4.12 `GET /v1/sparks/{id}` — spark detail (S1b)
 `200` → `SparkDetail` (§3.4). No scores, no similarity readout (`ARCHITECTURE.md` §6).
@@ -551,11 +608,18 @@ rather than left to the implementation:
     clusters** is `eligible: true` and still E0, so the client reads E0 from §4.10 and never derives it
     from the summary. *(Recorded from O2 `#22`; implemented in W8 `#33`.)*
 
+- **The deck read (settled in K1 `#35`)** — §4.9's readings live at the endpoint, and two of them are
+  deliberate **departures from this doc's own §4.4 precedent**: `state` is **mandatory** and
+  `offered`-only (a `Spark` carries no `status`, so an unfiltered read cannot be told apart from an
+  offers read), and the deck is **insertion-ordered, oldest first**, where §4.4's vault list is
+  newest-first. §3.3 carries the derived-`domain_tags` reading. The endpoint answers **no** engine
+  state: E0–E4 stays §4.10's, computed in one place, so the deck read cannot grow a second ladder.
+
 ---
 
 *Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`;
 carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`; by **V2** (`#13`),
 branch `feat/v2-vault-read-api`; by **O2** (`#22`), branch `feat/o2-vault-summary`; by **V5**
 (`#16`), branch `feat/v5-delete-api`; by **V3** (`#14`), branch `feat/v3-iterate-api`; by **W8**
-(`#33`), branch `feat/w8-run-surface`; and by the **#94 docs pass**, branch
-`docs/94-e0-definition-scope`.*
+(`#33`), branch `feat/w8-run-surface`; by **K1** (`#35`), branch `feat/k1-sparks-read`;
+and by the **#94 docs pass**, branch `docs/94-e0-definition-scope`.*

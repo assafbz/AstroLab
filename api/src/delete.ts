@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import { vaultMutation } from "@astrolab/store";
+import { LIVE_STATUS, vaultMutation } from "@astrolab/store";
 
 /**
  * Delete — `DELETE /v1/ideas/{id}` (`docs/API.md` §4.8; `FLOW.md` T26 / M3).
@@ -36,7 +36,7 @@ export function deleteIdea(db: DatabaseSync, id: string): boolean {
     // decision moves its spark out of `OFFERED` — so a decision can never name the row this deletes.
     // That is an invariant of the writers, asserted in the tests rather than assumed here.
     db.prepare(
-      `DELETE FROM spark WHERE status = 'OFFERED' AND (idea_a_id = ? OR idea_b_id = ?)`,
+      `DELETE FROM spark WHERE status = '${LIVE_STATUS}' AND (idea_a_id = ? OR idea_b_id = ?)`,
     ).run(id, id);
     return true;
   });

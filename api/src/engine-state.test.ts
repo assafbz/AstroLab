@@ -278,15 +278,54 @@ describe("the state read cannot reach a provider (ARCH §5, NFR-A1)", () => {
     expect(specifiers(MODULE_TEXT)).toContain("node:sqlite");
   });
 
-  test("its only specifiers are the SQLite type, the store's types, and the summary", () => {
-    // `node:sqlite` and `@astrolab/store` are **type-only** imports (erased at runtime); the one value
-    // import is the sibling summary, which is itself guarded to `node:sqlite` alone. An equality, not a
-    // denylist: the next specifier must be a deliberate edit with its reason.
+  test("its only specifiers are the SQLite type, the store's `LIVE_STATUS`, and the summary", () => {
+    // `node:sqlite` is a **type-only** import (erased at runtime). `@astrolab/store` supplies one value
+    // — `LIVE_STATUS`, the live-offer predicate this module's `unreviewed` count shares with the deck
+    // read and the delete path (K1 `#35`) — plus types. The sibling summary is guarded to
+    // `node:sqlite` alone. An equality, not a denylist: the next specifier must be a deliberate edit
+    // with its reason.
     expect(specifiers(MODULE_TEXT)).toEqual([
       "node:sqlite",
       "@astrolab/store",
       "./vault-summary.js",
     ]);
+  });
+
+  /**
+   * The specifier equality above is a **module**-level check: a second *value* added to the existing
+   * `@astrolab/store` import (`import { LIVE_STATUS, vaultMutation }`) keeps the specifier list
+   * unchanged and stays green. The invariant has teeth — the state read must hold **no store value but
+   * the one predicate** — so the *bindings* are asserted too (David's ruling on Max's slice-2 review,
+   * K1 `#35`).
+   */
+  function storeBindings(text: string): string[] {
+    const bindings: string[] = [];
+    const importRe = /import\s+(?:type\s+)?\{([^}]*)\}\s*from\s*["']@astrolab\/store["']/g;
+    for (const match of text.matchAll(importRe)) {
+      // `import type { … }` carries no runtime binding at all — type-only, like `node:sqlite` above.
+      if (/^import\s+type\s*\{/.test(match[0])) continue;
+      for (const part of (match[1] ?? "").split(",")) {
+        const name = part.trim();
+        if (name !== "" && !name.startsWith("type ")) bindings.push(name);
+      }
+    }
+    return bindings;
+  }
+
+  test("the binding extractor separates values from types, and sees every import form", () => {
+    // Non-vacuity: the shapes it must classify, so a broken extractor cannot pass silently.
+    expect(storeBindings('import { LIVE_STATUS, type RunStatus } from "@astrolab/store";')).toEqual(
+      ["LIVE_STATUS"],
+    );
+    expect(storeBindings('import { vaultMutation, openStore } from "@astrolab/store";')).toEqual([
+      "vaultMutation",
+      "openStore",
+    ]);
+    expect(storeBindings('import type { RunStatus } from "@astrolab/store";')).toEqual([]);
+  });
+
+  test("its one store value is `LIVE_STATUS` — the state read holds nothing else", () => {
+    expect(storeBindings(MODULE_TEXT)).toEqual(["LIVE_STATUS"]);
   });
 });
 
