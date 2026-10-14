@@ -92,6 +92,7 @@ idea(
   domain_tags        TEXT NOT NULL,    -- JSON array; ≥ 1 (PRD §2: no domain ⇒ no spark)
   lineage_kind       TEXT NOT NULL,    -- ROOT | FORK (iteration is a version, not a lineage kind)
   lineage_parent_id  TEXT NULL,        -- NOT a foreign key (T26): set only for FORK (single parent)
+  mutation_delta     TEXT NULL,        -- the fork's mutation delta (V4 #15, `0005`); set only for a FORK
   status             TEXT NOT NULL,    -- ACTIVE | NEEDS_COMPLETION
   visibility         TEXT NOT NULL,    -- PRIVATE (MVP only)
   current_version    INTEGER NOT NULL,
@@ -390,7 +391,7 @@ HTTP/JSON, bearer-authenticated. Endpoints map 1:1 to `FLOW.md` surfaces; decisi
 | **S3** Vault | `GET /v1/ideas?domain=&lineage=&status=` | |
 | **S4** Idea detail | `GET /v1/ideas/{id}` | fields + lineage chain + provenance (muted) |
 | **S6** Iterate | `POST /v1/ideas/{id}/iterate` | new version, same node |
-| **S5** Fork | `POST /v1/ideas/{id}/fork` `{mutation_delta, domain}` | rejects same-domain (offers Iterate), `FLOW.md` T25 |
+| **S5** Fork | `POST /v1/ideas/{id}/fork` `{mutation_delta, domain_tags}` | rejects same-domain (offers Iterate), `FLOW.md` T25; the text fields are **copied from the parent** (two-field request, `docs/API.md` §4.7) |
 | **delete** | `DELETE /v1/ideas/{id}` | orphan-with-warning; fork children keep parent ref; provenance source ⇒ dangling ref (`FLOW.md` T26) |
 | **Recompute** | `POST /v1/sparks/run` | enqueues a run (E1) |
 | **Export** | `GET /v1/export` | NFR-D1 (§8) |
@@ -582,4 +583,11 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
   sketches are the schema of record, so they move with it rather than the change landing only in
   `docs/SCHEMA.md`.
 
-*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.3, 2026-10-14. Review: adversarial passes by Max. Branch `docs/architecture`.*
+- **2026-10-14 — r3.4.** **V4 (`#15`) — `idea.mutation_delta`, and §6's fork row.** §2.1's `idea(` sketch
+  gains the nullable `mutation_delta` — the fork's delta (`PRD.md` §3.2 item 2), set only for a FORK
+  (`0005`, `docs/SCHEMA.md` §1d) — closing the gap where §6 named the field but §2 did not. §6's S5 row
+  corrected `{mutation_delta, domain}` → `{mutation_delta, domain_tags}`: `domain_tags` is the field every
+  route already uses, and this document is the source of record, so the row was the defect. No
+  state-machine change.
+
+*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.4, 2026-10-14. Review: adversarial passes by Max. Branch `docs/architecture`.*

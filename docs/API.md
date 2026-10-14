@@ -273,6 +273,37 @@ Guard: `mutation_delta` non-empty **and** the fork's domain set differs from the
 (the client offers **Iterate** instead).
 `201` → new `Idea` with `lineage_kind = FORK`, `lineage_parent_id = {id}`. Single parent, forever.
 
+Readings this doc had not pinned (settled in V4 `#15`):
+
+- **The request is the frozen two fields, and the text arrives by copy.** `mutation_delta` and
+  `domain_tags` are the whole request; the fork's `hypothesis` / `problem` / `monetization` are the
+  **parent's, copied verbatim**. With no text in the request the parent is the only possible source, so
+  the copy is the only reading — not a choice. (The S5 sketch, `stitch-prompts.md` §6, shows the same two
+  inputs: parent dimmed, a delta field, a domain picker.)
+- **`201`, not `200`.** A fork creates a **new**, addressable node — the id is the server's and it is a
+  new resource. Capture and fork create (`201`); iterate and delete do not (§4.6, §4.8).
+- **The `idea` row and its `idea_version` 1 commit in one `vaultMutation`.** A fork is
+  candidate-affecting (`ARCHITECTURE.md` §4), so the revision stamps and a run enqueues in the same
+  transaction — the same trigger §4.6/§4.8 record, through the same `vaultMutation(db, body)` primitive
+  (`SCHEMA.md` §1c).
+- **No `provenance_edge` row.** The parent is a **lineage** edge (`lineage_parent_id`), not provenance:
+  provenance is a different relation (`FLOW.md` §2.3), and `provenance_edge.spark_id` is NOT NULL while a
+  fork has no spark. `PRD.md` §3.2 item 2's word "provenance" for a fork's parent means the lineage edge.
+- **The delta is stored on `idea.mutation_delta`** (`0005`, `SCHEMA.md` §1d) — nullable, and only a
+  `FORK` may carry one (a column `CHECK`, so the rule is in the schema). It is **write-only** in the MVP:
+  §3.1's `Idea` has no `mutation_delta` field, so §4.5 detail does not expose it.
+- **Same-domain is set equality, order- and duplicate-insensitive.** The fork's domain set must
+  **differ** from the parent's, so `F == P` is the `409`; a **superset differs** and is legal (the
+  widening/flywheel case — `["health","compliance"]` forking `["health"]`). *Known gap:* the literal rule
+  also admits a **subset** (`["health"]` forking `["health","compliance"]`, a narrowing); it is
+  **accepted** here, and a stricter `reject iff F ⊆ P` is a recorded follow-up rather than implemented in
+  this ticket.
+- **Check order `422` → `404` → `409`.** The body is validated before the id is looked up (§6's ordering,
+  as at §4.6); the write then answers an unknown id before a same-domain set. All three checks run
+  **inside** the transaction, so a refused fork writes nothing and moves no revision.
+- **Only `POST` on `{id}/fork` is a route.** `GET`/`DELETE` on `…/fork`, and any deeper path, are the
+  `not_found` envelope (§2) — the rule §4.5/§4.6 record.
+
 ### 4.8 `DELETE /v1/ideas/{id}` — delete, orphan-with-warning
 `200` → `{ "deleted": true, "id": "…" }`. Semantics (`FLOW.md` T26 / M3):
 - a fork **child** keeps its `lineage_parent_id` (dangling parent ref, tolerated);
@@ -470,6 +501,13 @@ rather than left to the implementation:
   the alternative (id first) would make one malformed request *sometimes* `422` and *sometimes* `404`,
   decided by whether the id happened to exist. §4.6 records the endpoint's other readings. Pinned in
   `api/src/server.test.ts` — the malformed/unknown pair, so the ordering cannot silently flip.
+- **The fork ordering, and the same-domain rule (settled in V4 `#15`)** — the check order is
+  **`422` (body) → `404` (unknown id) → `409` (same domain)**: the body contract is checked first (the
+  same ordering as §4.2/§4.6), and both state checks run **inside** the transaction, so a refused fork
+  writes nothing. Same-domain is **set equality** (`F == P` → `409`, order- and duplicate-insensitive); a
+  **superset** differs and is legal, and the **subset** the literal rule admits is a recorded **known gap**
+  (a `reject iff F ⊆ P` follow-up), not implemented here. §4.7 records the endpoint's other readings.
+  Pinned in `api/src/server.test.ts`.
 
 ---
 
