@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
+import { isoTimestamp } from "./iso.js";
+import { writeTransaction } from "./store.js";
+
 /**
  * The run queue, as SQL over `spark_run` + `vault_meta` (`ARCHITECTURE.md` §4; `ADR-0004`).
  *
@@ -76,4 +79,78 @@ export function enqueueRun(db: DatabaseSync, revision: number): SparkRun {
      VALUES (?, ?, 'PENDING', NULL, NULL, NULL)`,
   ).run(run.id, revision);
   return run;
+}
+
+/**
+ * Claims the newest `PENDING` run for the worker: discards a run whose stamp is behind the vault
+ * (never ran, produced nothing — so nothing is lost), then marks the survivor `RUNNING`.
+ *
+ * One transaction, because the discard-and-claim is the unit other writers serialize against: the
+ * `BEGIN IMMEDIATE` in `writeTransaction` is what stops two workers claiming one run.
+ */
+export function claimNextRun(db: DatabaseSync): SparkRun | null {
+  return writeTransaction(db, () => {
+    const revision = currentVaultRevision(db);
+    // Sweep the queue of stale work first (§4 / I — discarded, not queued). `enqueueRun` already
+    // supersedes, so a behind-stamp PENDING row here is a crash artifact; clearing it keeps the
+    // queue's meaning ("the newest outstanding revision") true even after a rough restart.
+    db.prepare("DELETE FROM spark_run WHERE status = 'PENDING' AND vault_revision < ?").run(
+      revision,
+    );
+
+    const head = db
+      .prepare(
+        `SELECT ${COLUMNS} FROM spark_run WHERE status = 'PENDING' ORDER BY vault_revision DESC LIMIT 1`,
+      )
+      .get() as SparkRun | undefined;
+    if (head === undefined) return null;
+
+    const started_at = isoTimestamp();
+    db.prepare("UPDATE spark_run SET status = 'RUNNING', started_at = ? WHERE id = ?").run(
+      started_at,
+      head.id,
+    );
+    return { ...head, status: "RUNNING", started_at };
+  });
+}
+
+/**
+ * Records a run's terminal state. Guarded on `RUNNING` and loud on a miss: finishing a run that is
+ * not running means the claim/finish pair is out of order, which must fail rather than wedge a row.
+ */
+export function finishRun(
+  db: DatabaseSync,
+  id: string,
+  status: "DONE" | "FAILED",
+  error: string | null = null,
+): void {
+  writeTransaction(db, () => {
+    const result = db
+      .prepare(
+        "UPDATE spark_run SET status = ?, finished_at = ?, error = ? WHERE id = ? AND status = 'RUNNING'",
+      )
+      .run(status, isoTimestamp(), error, id);
+    if (Number(result.changes) !== 1) {
+      throw new Error(`run ${id} is not RUNNING; nothing to finish`);
+    }
+  });
+}
+
+/**
+ * ADR-0004 — *"the queue is not durable across a process crash mid-run … a restart simply
+ * re-enqueues"*: a `RUNNING` row left by a dead process is returned to `PENDING`. Safe to call at
+ * every boot. The stamp is kept, so a run left behind a vault that has since moved is discarded by
+ * the next `claimNextRun`, and a mutation enqueued in the meantime still supersedes it.
+ *
+ * **Assumes one worker** (the MVP runs one). Two workers racing a boot would both re-enqueue.
+ */
+export function requeueOrphanedRuns(db: DatabaseSync): number {
+  return writeTransaction(db, () => {
+    const result = db
+      .prepare(
+        "UPDATE spark_run SET status = 'PENDING', started_at = NULL WHERE status = 'RUNNING'",
+      )
+      .run();
+    return Number(result.changes);
+  });
 }
