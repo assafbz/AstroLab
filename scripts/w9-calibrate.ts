@@ -32,6 +32,16 @@
  * deliberately **0 calls**: it re-reads the cached descriptors and prints the numbers before anything
  * spends.
  *
+ * ## `p2`'s artifact — the record the thread carries (David/Max, #34)
+ *
+ * `p2-actuals.json` is the artifact of record. Beyond the four counts and `confirmed`/`rejected` (key
+ * arrays, unchanged), it carries **`confirmedSparks`** — each confirmed key's `draft` (the field set
+ * G3/G4/G5 score, dropped in-process before this change) plus **both source ideas**, so the blind
+ * scoring sheet is a pure `jq` transform of the attached bytes — **`descriptors`** (the 28 cached rows,
+ * with `source_hash`) and **`perFieldJaccard`** (the 67×4 terms behind each union pair's `alignment`).
+ * The last two are what make step 4 re-runnable **from the artifact alone**, rather than from the
+ * gitignored `data/` cache the descriptors actually lived in.
+ *
  * ## Why this lives in `scripts/` and not in `worker/src/`
  *
  * It reads a file and writes `idea`, and `worker/src/provider/boundary.test.ts` forbids both inside a
@@ -51,6 +61,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { readDescriptors, vaultMutation } from "@astrolab/store";
 
 import { bootWorker } from "../worker/src/boot.js";
+import { descriptorSimilarity } from "../worker/src/engine/alignment.js";
 import {
   coverageViolations,
   createCalibrationRun,
@@ -266,6 +277,96 @@ function adjudicationCost(
   };
 }
 
+/** §3.3 step 2's four descriptor fields — `alignment.ts`'s own list, named once here. */
+const DESCRIPTOR_FIELDS = ["verb", "object_class", "constraint", "transferable_structure"] as const;
+
+/** One descriptor with three fields blanked, so `descriptorSimilarity` leaves a single per-field term. */
+function maskedField(
+  descriptor: MechanismDescriptor,
+  field: (typeof DESCRIPTOR_FIELDS)[number],
+): MechanismDescriptor {
+  return {
+    verb: field === "verb" ? descriptor.verb : "",
+    object_class: field === "object_class" ? descriptor.object_class : "",
+    constraint: field === "constraint" ? descriptor.constraint : "",
+    transferable_structure:
+      field === "transferable_structure" ? descriptor.transferable_structure : "",
+  };
+}
+
+/**
+ * The 28 descriptors, raw (David/Max, #34): step 4's arithmetic was validated against the *summary*
+ * (the posted per-field table), not the source, because the descriptors lived only in the gitignored
+ * `data/` cache. These are the rows `matrix()` reads — plus `source_hash`, which ties each to the
+ * vault text — so the alignment column is recomputable from the artifact alone.
+ */
+function descriptorRows(db: DatabaseSync, ideas: readonly W9Idea[]) {
+  return readDescriptors(
+    db,
+    ideas.map((idea) => idea.id),
+  ).map((row) => ({
+    ideaId: row.idea_id,
+    sourceHash: row.source_hash,
+    descriptor: JSON.parse(row.descriptor) as MechanismDescriptor,
+  }));
+}
+
+/**
+ * The four per-field Jaccard terms behind each union pair's `alignment`, read through the engine's own
+ * public `descriptorSimilarity` — so this file ships **no second copy of the metric**. That function is
+ * the uniform mean of the four terms, and a blank field tokenises to the empty set with `both-empty ⇒ 0`
+ * (`engine/alignment.ts`), so masking three fields leaves one: `sim(mask_F(a), mask_F(b)) = jac(F) / 4`.
+ * The four terms must then mean back to the recorded `alignment` exactly; a drift fails the write rather
+ * than shipping a second opinion about the metric (W5 D1).
+ */
+function perFieldTable(
+  union: readonly CalibrationPair[],
+  descriptorOf: ReadonlyMap<string, MechanismDescriptor>,
+) {
+  return union.map((pair) => {
+    const a = descriptorOf.get(pair.aId);
+    const b = descriptorOf.get(pair.bId);
+    if (a === undefined || b === undefined) {
+      throw new Error(
+        `p2: no descriptor for pair ${pair.key} — the step-4 evidence cannot be built`,
+      );
+    }
+    const perField = Object.fromEntries(
+      DESCRIPTOR_FIELDS.map((field) => [
+        field,
+        4 * descriptorSimilarity(maskedField(a, field), maskedField(b, field)),
+      ]),
+    ) as Record<(typeof DESCRIPTOR_FIELDS)[number], number>;
+    const mean =
+      DESCRIPTOR_FIELDS.reduce((total, field) => total + perField[field], 0) /
+      DESCRIPTOR_FIELDS.length;
+    if (Math.abs(mean - pair.alignment) > 1e-12) {
+      throw new Error(
+        `p2: per-field mean ${mean} ≠ recorded alignment ${pair.alignment} for ${pair.key} — the metric ` +
+          "moved out from under this table; refusing to write a second opinion (W5 D1)",
+      );
+    }
+    return { key: pair.key, alignment: pair.alignment, ...perField };
+  });
+}
+
+/**
+ * One confirmed pair's two vault ideas — the sources G4's *"traceable to both sources"* is read against.
+ * They ride in the artifact so the blind scoring sheet is a pure `jq` transform of the attached bytes
+ * (David, #34 step 3) — a sheet the reviewer can build without this workspace or the gitignored cache.
+ */
+function sourcesOf(
+  byId: ReadonlyMap<string, W9Idea>,
+  spark: { aId: string; bId: string },
+): { a: W9Idea; b: W9Idea } {
+  const a = byId.get(spark.aId);
+  const b = byId.get(spark.bId);
+  if (a === undefined || b === undefined) {
+    throw new Error(`p2: spark ${spark.aId}|${spark.bId} names an idea that is not in the vault`);
+  }
+  return { a, b };
+}
+
 async function main(): Promise<void> {
   const [command, ...argv] = process.argv.slice(2);
   const ideas = loadVault();
@@ -416,6 +517,14 @@ async function main(): Promise<void> {
           `${union.length}, one per gated pair (${direction}).`,
       );
     }
+    // Additive (David/Max, #34): the counts and the two key arrays above are unchanged; the draft the
+    // run used to drop into a local variable, the raw descriptors, and the per-field terms now travel
+    // with the artifact. `confirmedSparks` is the input G3/G4/G5 need (the sources ride along so the
+    // blind sheet is a pure `jq` transform of these bytes); `descriptors` + `perFieldJaccard` make
+    // step 4 re-runnable from the artifact alone, not from the gitignored `data/` cache.
+    const descriptors = descriptorRows(db, ideas);
+    const descriptorOf = new Map(descriptors.map((row) => [row.ideaId, row.descriptor]));
+    const ideasById = new Map(ideas.map((idea) => [idea.id, idea]));
     const artifact = {
       floor,
       union: union.length,
@@ -425,6 +534,17 @@ async function main(): Promise<void> {
       extractCalls: run.extractCalls,
       confirmed: adjudication.confirmed.map((spark) => spark.key),
       rejected: adjudication.rejected.map((pair) => pair.key),
+      confirmedSparks: adjudication.confirmed.map((spark) => ({
+        key: spark.key,
+        aId: spark.aId,
+        bId: spark.bId,
+        distance: spark.distance,
+        alignment: spark.alignment,
+        draft: spark.draft,
+        sources: sourcesOf(ideasById, spark),
+      })),
+      descriptors,
+      perFieldJaccard: perFieldTable(union, descriptorOf),
     };
     writeArtifact("p2-actuals.json", artifact);
     process.stdout.write(`${JSON.stringify(artifact, null, 2)}\n`);
