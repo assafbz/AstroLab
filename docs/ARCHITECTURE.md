@@ -68,9 +68,11 @@ choice is load-bearing it is recorded as an **ADR** in `docs/adr/` and summarise
 **Deployment shape (MVP):** one host, three units — the **API service**, the **worker**, and the **SQLite
 file** — plus an **outbound-only** dependency on the AI provider. The API and worker are two processes of one
 codebase; the API owns vault-table writes and the worker owns spark-table writes, but **both open the same
-SQLite file**, so writes are *serialized by SQLite's file lock*, not by a single process. The store runs in
-**WAL mode** with a `busy_timeout` and bounded retry (§9, ADR-0001); every write is a short transaction.
-Stateless service, state on disk and in the provider — no message broker (ADR-0004).
+SQLite file**, so writes are *serialized by SQLite's file lock*, not by a single process. One named
+exception to that split: a candidate-affecting vault mutation also inserts its `spark_run` row (§4)
+**inside the mutation's own transaction** — so the revision stamp and its run commit together or not at
+all. The store runs in **WAL mode** with a `busy_timeout` and bounded retry (§9, ADR-0001); every write is a
+short transaction. Stateless service, state on disk and in the provider — no message broker (ADR-0004).
 
 ---
 
