@@ -26,6 +26,31 @@ export interface VaultFilters {
 const LINEAGE_KINDS = ["ROOT", "ITERATION", "FORK"] as const;
 const STATUSES = ["ACTIVE", "NEEDS_COMPLETION"] as const;
 
+/** One `idea_version` row under the same node (`docs/API.md` §4.5). */
+export interface IdeaVersion {
+  version: number;
+  hypothesis: string;
+  problem: string;
+  monetization: string;
+  domain_tags: string[];
+  created_at: string;
+}
+
+/** docs/API.md §4.5 — muted provenance metadata. `source_idea_id` is never an ancestor. */
+export interface ProvenanceRef {
+  source_idea_id: string;
+  spark_id: string;
+}
+
+export interface IdeaDetail {
+  idea: Idea;
+  versions: IdeaVersion[];
+  /** The single-parent ancestor chain, root-first, excluding the node itself; `[]` for a `ROOT`. */
+  lineage: Idea[];
+  provenance: ProvenanceRef[];
+  referenced_by: { forks: string[]; derived: string[] };
+}
+
 /**
  * `docs/API.md` §4.4 + §1. An absent key means no restriction; a key that is present with an empty
  * value, or with a value outside its enum, is `422 validation_failed` — the contract's "unknown enum
@@ -67,6 +92,97 @@ export function listIdeas(db: DatabaseSync, filters: VaultFilters): Idea[] {
   // `node:sqlite` types `.all()` as rows of `SQLOutputValue`; the select above fixes the shape, so this
   // is a narrowing, not a guess — `as unknown as` is the cast that does not require an index signature.
   return (db.prepare(sql).all(...params) as unknown as IdeaRow[]).map(toIdea);
+}
+
+/** `docs/API.md` §4.5, or `null` for an unknown id — the caller answers the `not_found` envelope. */
+export function getIdeaDetail(db: DatabaseSync, id: string): IdeaDetail | null {
+  return readSnapshot(db, () => {
+    const row = db.prepare("SELECT * FROM idea WHERE id = ?").get(id) as IdeaRow | undefined;
+    if (row === undefined) return null;
+    return {
+      idea: toIdea(row),
+      versions: versionsOf(db, id),
+      lineage: ancestorChain(db, row),
+      provenance: provenanceOf(db, id),
+      referenced_by: { forks: forksOf(db, id), derived: derivedOf(db, id) },
+    };
+  });
+}
+
+/**
+ * One read, one snapshot. Under WAL each statement otherwise takes its own, so five of them can
+ * straddle a commit and ship a `versions` list that `idea.current_version` disagrees with (V2 ruling).
+ * A deferred read holds no write lock, so this costs writers nothing.
+ */
+function readSnapshot<T>(db: DatabaseSync, read: () => T): T {
+  db.exec("BEGIN");
+  try {
+    const result = read();
+    db.exec("COMMIT");
+    return result;
+  } catch (err) {
+    db.exec("ROLLBACK");
+    throw err;
+  }
+}
+
+/** Ascending, and **every** version including the current one — the editor's own values are history too. */
+function versionsOf(db: DatabaseSync, id: string): IdeaVersion[] {
+  const rows = db
+    .prepare(
+      `SELECT version, hypothesis, problem, monetization, domain_tags, created_at
+       FROM idea_version WHERE idea_id = ? ORDER BY version`,
+    )
+    .all(id) as Array<Omit<IdeaVersion, "domain_tags"> & { domain_tags: string }>;
+  return rows.map((row) => ({ ...row, domain_tags: JSON.parse(row.domain_tags) as string[] }));
+}
+
+/**
+ * Walks `lineage_parent_id` to the root, then reverses: `docs/API.md` §4.5's chain reads root-first,
+ * and the node itself is the `idea` field, not a member. A parent that no longer exists is a
+ * **dangling ref the contract tolerates** (§4.8: a deleted fork child keeps its `lineage_parent_id`),
+ * so the walk stops rather than failing — and the `seen` set stops a cycle rather than looping.
+ */
+function ancestorChain(db: DatabaseSync, row: IdeaRow): Idea[] {
+  const chain: Idea[] = [];
+  const seen = new Set<string>([row.id]);
+  let parent = row.lineage_parent_id;
+  while (parent !== null && !seen.has(parent)) {
+    seen.add(parent);
+    const ancestor = db.prepare("SELECT * FROM idea WHERE id = ?").get(parent) as
+      IdeaRow | undefined;
+    if (ancestor === undefined) break;
+    chain.push(toIdea(ancestor));
+    parent = ancestor.lineage_parent_id;
+  }
+  return chain.reverse();
+}
+
+/** Sorted, because a restore need not preserve insertion order (V2 ruling) — and the PK can tie on the id. */
+function provenanceOf(db: DatabaseSync, id: string): ProvenanceRef[] {
+  return db
+    .prepare(
+      `SELECT source_idea_id, spark_id FROM provenance_edge WHERE derived_idea_id = ?
+       ORDER BY source_idea_id, spark_id`,
+    )
+    .all(id) as unknown as ProvenanceRef[];
+}
+
+/** `referenced_by` supplies the T26 delete warning (`docs/API.md` §4.5); never used to block a delete. */
+function forksOf(db: DatabaseSync, id: string): string[] {
+  const rows = db
+    .prepare("SELECT id FROM idea WHERE lineage_parent_id = ? ORDER BY id")
+    .all(id) as Array<{ id: string }>;
+  return rows.map((row) => row.id);
+}
+
+function derivedOf(db: DatabaseSync, id: string): string[] {
+  const rows = db
+    .prepare(
+      "SELECT derived_idea_id FROM provenance_edge WHERE source_idea_id = ? ORDER BY derived_idea_id",
+    )
+    .all(id) as Array<{ derived_idea_id: string }>;
+  return rows.map((row) => row.derived_idea_id);
 }
 
 function optionalText(query: URLSearchParams, key: string): string | null {

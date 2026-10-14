@@ -3,12 +3,14 @@ import type { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import { ValidationError } from "./capture.js";
-import { listIdeas, parseVaultFilters } from "./ideas.js";
+import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
 
 /**
- * V2 (#13) — the vault read path against a fresh migrated vault. `docs/API.md` §4.4 (list, filters).
- * The property worth naming here: the filter vocabulary is the contract's, so an unknown enum value
- * or a present-but-empty value is the `422` envelope and never a silently-empty list.
+ * V2 (#13) — the vault read path against a fresh migrated vault. `docs/API.md` §4.4 (list, filters)
+ * and §4.5 (detail). Properties worth naming: the filter vocabulary is the contract's, so an unknown
+ * enum value or a present-but-empty value is the `422` envelope and never a silently-empty list; and
+ * in the detail the absent case is **empty, never an error**, with `provenance` never feeding
+ * `lineage`.
  */
 
 function newDb(): DatabaseSync {
@@ -42,6 +44,19 @@ function seedIdea(db: DatabaseSync, seed: Seed): void {
     at,
     at,
   );
+}
+
+function seedVersion(db: DatabaseSync, id: string, version: number, domain_tags: string[]): void {
+  db.prepare(
+    `INSERT INTO idea_version (idea_id, version, hypothesis, problem, monetization, domain_tags, created_at)
+     VALUES (?, ?, ?, 'p', 'm', ?, '2026-01-01T00:00:00Z')`,
+  ).run(id, version, `h${version}`, JSON.stringify(domain_tags));
+}
+
+function seedProvenance(db: DatabaseSync, derived: string, source: string, spark: string): void {
+  db.prepare(
+    `INSERT INTO provenance_edge (derived_idea_id, source_idea_id, spark_id) VALUES (?, ?, ?)`,
+  ).run(derived, source, spark);
 }
 
 const NO_FILTERS = { domain: null, lineage: null, status: null } as const;
@@ -159,5 +174,113 @@ describe("listIdeas — docs/API.md §4.4", () => {
       created_at: "2026-01-03T00:00:00Z",
       updated_at: "2026-01-03T00:00:00Z",
     });
+  });
+});
+
+describe("getIdeaDetail — docs/API.md §4.5", () => {
+  test("an unknown id is null, so the caller answers the not_found envelope", () => {
+    expect(getIdeaDetail(newDb(), "nope")).toBeNull();
+  });
+
+  test("a ROOT with nothing attached returns empty arrays, never an error", () => {
+    const db = newDb();
+    seedIdea(db, { id: "root" });
+    seedVersion(db, "root", 1, ["fintech"]);
+    expect(getIdeaDetail(db, "root")).toEqual({
+      idea: expect.objectContaining({ id: "root", lineage_kind: "ROOT", lineage_parent_id: null }),
+      versions: [expect.objectContaining({ version: 1, hypothesis: "h1" })],
+      lineage: [],
+      provenance: [],
+      referenced_by: { forks: [], derived: [] },
+    });
+  });
+
+  test("versions are every row for the node, ascending, the current one included", () => {
+    const db = newDb();
+    seedIdea(db, { id: "root" });
+    seedVersion(db, "root", 1, ["fintech"]);
+    seedVersion(db, "root", 3, ["fintech", "health"]);
+    seedVersion(db, "root", 2, ["health"]);
+    expect(getIdeaDetail(db, "root")?.versions.map((v) => v.version)).toEqual([1, 2, 3]);
+    expect(getIdeaDetail(db, "root")?.versions.at(-1)?.domain_tags).toEqual(["fintech", "health"]);
+  });
+
+  test("lineage is the ancestor chain, root-first, and excludes the node itself", () => {
+    const db = newDb();
+    seedIdea(db, { id: "root" });
+    seedIdea(db, { id: "mid", lineage_kind: "FORK", lineage_parent_id: "root" });
+    seedIdea(db, { id: "leaf", lineage_kind: "FORK", lineage_parent_id: "mid" });
+    const detail = getIdeaDetail(db, "leaf");
+    expect(detail?.lineage.map((idea) => idea.id)).toEqual(["root", "mid"]);
+    expect(detail?.idea.id).toBe("leaf");
+  });
+
+  test("a lineage cycle terminates instead of looping", () => {
+    // The FK will not let a child point at a row that does not exist, so the reachable degenerate
+    // shape is a cycle, not a dangling ref: build `a → b`, then re-point `b` at `a`. The walk still
+    // has to stop.
+    const db = newDb();
+    seedIdea(db, { id: "b" });
+    seedIdea(db, { id: "a", lineage_kind: "FORK", lineage_parent_id: "b" });
+    db.exec("UPDATE idea SET lineage_kind = 'FORK', lineage_parent_id = 'a' WHERE id = 'b'");
+    expect(getIdeaDetail(db, "a")?.lineage.map((idea) => idea.id)).toEqual(["b"]);
+  });
+
+  test("provenance is its own array, sorted, and never folded into lineage", () => {
+    const db = newDb();
+    seedIdea(db, { id: "left" });
+    seedIdea(db, { id: "right" });
+    // A derived idea carries provenance and NO lineage parent — the §5 invariant-3 shape.
+    seedIdea(db, { id: "born" });
+    seedProvenance(db, "born", "right", "spark-2");
+    seedProvenance(db, "born", "left", "spark-1");
+    seedProvenance(db, "born", "left", "spark-0");
+
+    const detail = getIdeaDetail(db, "born");
+    expect(detail?.provenance).toEqual([
+      { source_idea_id: "left", spark_id: "spark-0" },
+      { source_idea_id: "left", spark_id: "spark-1" },
+      { source_idea_id: "right", spark_id: "spark-2" },
+    ]);
+    expect(detail?.lineage).toEqual([]);
+    expect(detail?.referenced_by).toEqual({ forks: [], derived: [] });
+    // Guard discipline, stated rather than implied: this assertion is **not** discriminating on this
+    // schema. The PK's covering index on `(derived_idea_id, …)` already returns these rows in
+    // `(source_idea_id, spark_id)` order, so deleting the `ORDER BY` leaves the result unchanged — the
+    // same undiscriminating shape AGENTS.md records for `cutVault`. The clause is kept because it is
+    // the contract (the V2 ruling), not because this test can see it. The `referenced_by` orderings in
+    // the test below **are** discriminating: `EXPLAIN QUERY PLAN` shows both of those queries scan, so
+    // insertion order is observable and the sort is what makes the answer deterministic.
+  });
+
+  test("referenced_by names the forks and the ideas derived from this one, in id order", () => {
+    const db = newDb();
+    seedIdea(db, { id: "origin" });
+    // Seeded with the *later* id first, so rowid (scan) order is the reverse of id order: a missing
+    // `ORDER BY id` answers `["z-fork", "a-fork"]` here, and the assertion below goes red.
+    seedIdea(db, { id: "z-fork", lineage_kind: "FORK", lineage_parent_id: "origin" });
+    seedIdea(db, { id: "a-fork", lineage_kind: "FORK", lineage_parent_id: "origin" });
+    seedIdea(db, { id: "z-born" });
+    seedIdea(db, { id: "a-born" });
+    seedProvenance(db, "z-born", "origin", "spark-1");
+    seedProvenance(db, "a-born", "origin", "spark-2");
+    expect(getIdeaDetail(db, "origin")?.referenced_by).toEqual({
+      forks: ["a-fork", "z-fork"],
+      derived: ["a-born", "z-born"],
+    });
+  });
+
+  test("the five reads run inside one transaction — a single snapshot", () => {
+    // The only observable proof that the read opens its own transaction: SQLite refuses to nest one.
+    // Without it each of the five statements takes its own WAL snapshot, and a concurrent commit can
+    // land between them, shipping a `versions` list that disagrees with `idea.current_version`.
+    const db = newDb();
+    seedIdea(db, { id: "root" });
+    db.exec("BEGIN");
+    try {
+      expect(() => getIdeaDetail(db, "root")).toThrow(/transaction/i);
+    } finally {
+      db.exec("ROLLBACK");
+    }
   });
 });
