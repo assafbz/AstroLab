@@ -298,9 +298,9 @@ Readings this doc had not pinned (settled in V4 `#15`):
   also admits a **subset** (`["health"]` forking `["health","compliance"]`, a narrowing); it is
   **accepted** here, and a stricter `reject iff F ⊆ P` is a recorded follow-up rather than implemented in
   this ticket.
-- **Check order `422` → `404` → `409`.** The body is validated before the id is looked up (§6's ordering,
-  as at §4.6); the write then answers an unknown id before a same-domain set. All three checks run
-  **inside** the transaction, so a refused fork writes nothing and moves no revision.
+- **Check order `422` → `404` → `409`.** The body is validated **before** the transaction opens (as at
+  §4.2/§4.6); the two state checks — unknown id, then same-domain — run **inside** it, so a refused fork
+  writes nothing and moves no revision.
 - **Only `POST` on `{id}/fork` is a route.** `GET`/`DELETE` on `…/fork`, and any deeper path, are the
   `not_found` envelope (§2) — the rule §4.5/§4.6 record.
 
