@@ -210,8 +210,10 @@ describe("liveOffers — the deck read (K1 #35, §4.9)", () => {
 
   test("live offers only, in insertion order — a resolved spark never reaches the deck", () => {
     const db = newDb();
-    insertOfferedSparks(db, [offer({ direction: "first" })], "t");
+    // The lexicographically-**later** pair goes in **first**, so `rowid` order and `pair_key` order
+    // differ and neither can stand in for the other (Max, #35 slice-1 review).
     insertOfferedSparks(db, [offer({ idea_b_id: "c", pair_key: "a|c", direction: "second" })], "t");
+    insertOfferedSparks(db, [offer({ direction: "first" })], "t");
     // History keeps its pair (`0003` dropped the FKs so the ids may dangle), and a resolved spark is
     // exactly the row §4.9 must not hand back — this is the row the missing `status` filter would leak.
     db.prepare(
@@ -220,8 +222,9 @@ describe("liveOffers — the deck read (K1 #35, §4.9)", () => {
     ).run();
 
     // Every row shares `created_at = 't'` (second-resolution, `API.md` §1), so only the insertion
-    // sequence can produce this order — `ORDER BY created_at` would leave it unchanged.
-    expect(liveOffers(db).map((row) => row.direction)).toEqual(["first", "second"]);
+    // sequence can produce this order: `ORDER BY created_at` would leave it unchanged, and both
+    // `ORDER BY pair_key ASC` and a dropped clause would sort it the other way (`a|b` before `a|c`).
+    expect(liveOffers(db).map((row) => row.direction)).toEqual(["second", "first"]);
   });
 
   test("the projection is the contract's five fields — no mechanism, no scores, no source ids", () => {

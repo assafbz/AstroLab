@@ -130,6 +130,13 @@ Readings this doc had not pinned (settled in O2 `#22`):
 No `mechanism`, no `domain_distance`, no `structural_alignment`, no source idea ids — selection
 internals never surface (`PRD.md` §3.3 items 2–4; `ARCHITECTURE.md` §2.3).
 
+`domain_tags` is **derived, not stored**: `spark` has no tags column (`ARCHITECTURE.md` §2.3), so
+§4.9's read joins the two source ideas and returns the **deduped union in pair order** — `idea_a_id`'s
+tags then `idea_b_id`'s, first appearance winning, deterministic because `pair_key = min|max` fixes the
+order. A tag may be **provisional** — an S0 `Other → free text` lane the worker has not resolved yet
+(`ARCHITECTURE.md` §3.2) — and `Spark` carries no cluster field, so the card shows the raw tag: a
+client must not read chips as resolved clusters.
+
 ### 3.4 `SparkDetail` (S1b — `ARCHITECTURE.md` §6)
 `Spark` plus:
 ```json
@@ -333,6 +340,24 @@ Readings this doc had not pinned (settled in V5 `#16`):
 ### 4.9 `GET /v1/sparks?state=offered` — deck read (S1)
 `200` → `{ "sparks": [Spark, …] }` in **server order** (deck order = server order).
 `state=offered` returns live offers only (`status = OFFERED`).
+
+Readings this doc had not pinned (settled in K1 `#35`):
+
+- **`state` is REQUIRED, and `offered` is its only value.** A missing or empty `state`, or any value
+  outside the enum — the comparison is **case-sensitive**, so `?state=OFFERED` is not `offered` — is
+  `422 validation_failed` (§2's mandatory field and §1's unknown enum are the same status for two
+  reasons). This **departs from §4.4's "an absent filter means no restriction"** deliberately: `Spark`
+  (§3.3) carries **no `status`**, so an unfiltered read is indistinguishable from an offers read — it
+  would hand a caller resolved sparks with nothing marking them, against this endpoint's own "live
+  offers only". The departure is here so it is a decision, not an accident.
+- **Deck order is insertion order, oldest offer first** (`spark.rowid ASC`). This is a **departure from
+  §4.4's** newest-first vault list (`created_at DESC, id DESC`): `spark.created_at` is
+  second-resolution (§1), so it cannot separate two offers written in one run, and `rowid` is the same
+  monotonic sequence W8's run reads use. Neither list should be "fixed" into agreement with the other.
+- **The read is a read**: no engine state, no provider, and — unlike §4.10 — nothing computed. E0–E4 is
+  §4.10's, in one place (`api/src/engine-state.ts`); the deck read does not re-derive it.
+- **Live-only, and no cursor.** The body is bounded by what the engine has offered, not by a page: there
+  is no pagination and no cursor, exactly as §4.4's list has none.
 
 ### 4.10 `GET /v1/sparks/state` — engine state (S1)
 `200` → `EngineState` (§3.6). Provider-free.
@@ -549,6 +574,13 @@ rather than left to the implementation:
     *"< 2 ideas"* arm, which `VaultSummary` deliberately cannot carry. A vault holding **one idea with two
     clusters** is `eligible: true` and still E0, so the client reads E0 from §4.10 and never derives it
     from the summary. *(Recorded from O2 `#22`; implemented in W8 `#33`.)*
+
+- **The deck read (settled in K1 `#35`)** — §4.9's readings live at the endpoint, and two of them are
+  deliberate **departures from this doc's own §4.4 precedent**: `state` is **mandatory** and
+  `offered`-only (a `Spark` carries no `status`, so an unfiltered read cannot be told apart from an
+  offers read), and the deck is **insertion-ordered, oldest first**, where §4.4's vault list is
+  newest-first. §3.3 carries the derived-`domain_tags` reading. The endpoint answers **no** engine
+  state: E0–E4 stays §4.10's, computed in one place, so the deck read cannot grow a second ladder.
 
 ---
 

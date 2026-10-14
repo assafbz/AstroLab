@@ -278,10 +278,12 @@ describe("the state read cannot reach a provider (ARCH §5, NFR-A1)", () => {
     expect(specifiers(MODULE_TEXT)).toContain("node:sqlite");
   });
 
-  test("its only specifiers are the SQLite type, the store's types, and the summary", () => {
-    // `node:sqlite` and `@astrolab/store` are **type-only** imports (erased at runtime); the one value
-    // import is the sibling summary, which is itself guarded to `node:sqlite` alone. An equality, not a
-    // denylist: the next specifier must be a deliberate edit with its reason.
+  test("its only specifiers are the SQLite type, the store's `LIVE_STATUS`, and the summary", () => {
+    // `node:sqlite` is a **type-only** import (erased at runtime). `@astrolab/store` supplies one value
+    // — `LIVE_STATUS`, the live-offer predicate this module's `unreviewed` count shares with the deck
+    // read and the delete path (K1 `#35`) — plus types. The sibling summary is guarded to
+    // `node:sqlite` alone. An equality, not a denylist: the next specifier must be a deliberate edit
+    // with its reason.
     expect(specifiers(MODULE_TEXT)).toEqual([
       "node:sqlite",
       "@astrolab/store",

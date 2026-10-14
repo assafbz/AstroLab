@@ -138,7 +138,9 @@ test("no path under /v1 answers anything but 401 without a valid token", async (
     "/v1/",
     "/v1/ideas",
     "/v1/ideas/9f1c",
+    "/v1/sparks",
     "/v1/sparks/state",
+    "/v1/sparks/events",
     "/v1/vault/summary",
     "/v1/export",
     "/v1/nope",
@@ -174,11 +176,12 @@ test("authorized, the encoded spellings route to the same place or the envelope 
 });
 
 test("an authorized but unimplemented /v1 route is the not_found envelope — never a 200", async () => {
-  // W8 (#33) implements `GET /v1/sparks/state` and `POST /v1/sparks/run`; the two entries that pinned
-  // their *absence* are removed here (each has its own coverage below). Bare `/v1/sparks` stays 404 —
-  // the deck read (§4.9) is not this ticket.
+  // W8 (#33) implemented `GET /v1/sparks/state` and `POST /v1/sparks/run`, and K1 (#35) makes bare
+  // `/v1/sparks` a route; each entry that pinned their *absence* is removed here as it lands (each has
+  // its own coverage below). The bare `/v1/sparks` entry is replaced by a **deeper** unknown spark path,
+  // so the not_found envelope is still pinned for the `{id}` shape K3 will claim (§4.12).
   for (const [method, path] of [
-    ["GET", "/v1/sparks"],
+    ["GET", "/v1/sparks/9f1c"],
     ["GET", "/v1/export"],
     ["GET", "/v1"],
   ] as const) {
@@ -252,6 +255,29 @@ test("the sparks routes dispatch by method — the wrong verb on a known path is
   const auth = { authorization: `Bearer ${TOKEN}` };
   expectEnvelope(await call("GET", "/v1/sparks/run", auth), 404, "not_found");
   expectEnvelope(await call("POST", "/v1/sparks/state", auth), 404, "not_found");
+  expectEnvelope(await call("POST", "/v1/sparks", auth), 404, "not_found");
+});
+
+/** K1 (#35) — `GET /v1/sparks?state=offered`, the deck read (§4.9). */
+test("GET /v1/sparks requires `state`, and only `offered` — bare is 422, never an unfiltered read", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  // Change A: a `Spark` carries no `status` (§3.3), so a read with no restriction is indistinguishable
+  // from an offers read — it would hand back resolved sparks with nothing marking them. Missing, empty,
+  // and out-of-enum are one status for two reasons (§2's mandatory field, §1's unknown enum), and the
+  // comparison is case-sensitive.
+  expectEnvelope(await call("GET", "/v1/sparks", auth), 422, "validation_failed");
+  expectEnvelope(await call("GET", "/v1/sparks?state=", auth), 422, "validation_failed");
+  expectEnvelope(await call("GET", "/v1/sparks?state=OFFERED", auth), 422, "validation_failed");
+  expectEnvelope(await call("GET", "/v1/sparks?state=all", auth), 422, "validation_failed");
+});
+
+test("GET /v1/sparks?state=offered is the deck body — `{ sparks: [] }` on an empty vault (§4.9)", async () => {
+  const result = await call("GET", "/v1/sparks?state=offered", {
+    authorization: `Bearer ${TOKEN}`,
+  });
+  expect(result.status).toBe(200);
+  expect(result.contentType).toBe(JSON_UTF8);
+  expect(result.body).toEqual({ sparks: [] });
 });
 
 test("a path outside /v1 is the envelope, and needs no token", async () => {

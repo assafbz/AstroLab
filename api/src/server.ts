@@ -17,6 +17,7 @@ import { engineState } from "./engine-state.js";
 import { forkIdea, parseForkInput } from "./fork.js";
 import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
 import { iterateIdea } from "./iterate.js";
+import { listOfferedSparks, parseSparkQuery } from "./sparks.js";
 import { vaultSummary } from "./vault-summary.js";
 
 /**
@@ -169,6 +170,15 @@ async function handleRequest(
     // answered straight from the vault with no filter vocabulary to validate.
     if (method === "GET" && path === "/v1/vault/summary") {
       return sendJson(res, 200, vaultSummary(db));
+    }
+
+    // §4.9 — the deck read (S1, K1 #35). `state` is **required** and only `offered` validates, so the
+    // query is validated **before** any row is read (the §4.6 posture: the body contract first, then the
+    // store). `Spark` carries no `status`, which is why "no restriction" is not an option here — the
+    // reading is recorded at §4.9.
+    if (method === "GET" && path === "/v1/sparks") {
+      parseSparkQuery(query); // ValidationError → the outer catch → the 422 envelope
+      return sendJson(res, 200, { sparks: listOfferedSparks(db) });
     }
 
     // §4.10 — the engine state (S1): E0–E4 from one place (`engine-state.ts`). Provider-free, so the
