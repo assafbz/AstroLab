@@ -5,6 +5,18 @@ export {
   upsertDomainTag,
   type ClusterOption,
 } from "./domain-map.js";
+// The gate thresholds (`ARCHITECTURE.md` §3.4). Like `idea_mechanism` / `domain_map`, these writes go
+// directly (`withRetry`), never through `vaultMutation` — the reason is in the module.
+export {
+  GATE_CONFIG_DEFAULTS,
+  InvalidConfigError,
+  MIN_ALIGNMENT_KEY,
+  MIN_DOMAIN_DISTANCE_KEY,
+  readGateConfig,
+  seedGateConfig,
+  setConfig,
+  type GateConfig,
+} from "./config.js";
 export { parseTaxonomy, seedDomainTaxonomy, TAXONOMY_PATH, type Taxonomy } from "./domain-seed.js";
 export { isoTimestamp } from "./iso.js";
 // The `idea_mechanism` cache writes directly, never through `vaultMutation` — it is derived state,

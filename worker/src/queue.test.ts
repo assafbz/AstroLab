@@ -48,6 +48,9 @@ describe("runOnce", () => {
       return { candidates: ["a|b"] };
     });
 
+    // Content, not order: `SELECT id FROM idea` walks the covering `sqlite_autoindex_idea_1`, so these
+    // ids come back ASC whatever the insert order — seeding "b" before "a" does *not* exercise the sort
+    // (see `cutVault`'s `shortcut:`). The falsifiable ordering test is W5's gate determinism (gate.test).
     expect(cuts).toEqual([{ revision: 1, ideaIds: ["a", "b"] }]);
     expect(result).toMatchObject({
       outcome: { candidates: ["a|b"] },
@@ -99,7 +102,9 @@ describe("runOnce — reproducibility & supersession (issue #26, Done #4)", () =
     await runOnce(db, body);
 
     expect(cuts).toHaveLength(2);
-    expect(cuts[1]).toEqual(cuts[0]);
+    expect(cuts[1]).toEqual(cuts[0]); // the determinism claim: two runs, one revision, one cut
+    // Content, not order (same `shortcut:` as `cutVault`): `sqlite_autoindex_idea_1` yields ids ASC
+    // regardless of insert order, so this literal cannot discriminate a sort.
     expect(cuts[0]).toEqual({ revision: 1, ideaIds: ["a", "b"] });
   });
 

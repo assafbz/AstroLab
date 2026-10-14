@@ -8,11 +8,13 @@ import {
   openStore,
   requeueOrphanedRuns,
   seedDomainTaxonomy,
+  seedGateConfig,
 } from "@astrolab/store";
 
 /**
  * The worker's boot — deliberately the **same sequence as the API** (`api/src/index.ts`):
- * `openStore → migrate → seedDomainTaxonomy`. That carry (#26, flagged by Ari on PR #68 / O1 #21) is
+ * `openStore → migrate → seedDomainTaxonomy → seedGateConfig`. That carry (#26, flagged by Ari on
+ * PR #68 / O1 #21) is
  * why the engine can never read an unseeded `domain_map` on a box where the API has not booted: a
  * taxonomy-less `domain_map` would make every domain read *provisional*, and provisional tags never
  * open the spread gate (`ARCHITECTURE.md` §3.2 / R1).
@@ -31,6 +33,9 @@ export function bootWorker(
   const db = openStore(dbPath);
   migrate(db, MIGRATIONS);
   seedDomainTaxonomy(db);
+  // W5 (#30): the gate thresholds, insert-only, beside the taxonomy — a worker can never boot without
+  // config, and a tuned value survives the restart (§3.4).
+  seedGateConfig(db);
   requeueOrphanedRuns(db);
   return db;
 }

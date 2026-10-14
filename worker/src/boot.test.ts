@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { SCHEMA_VERSION, stampAndEnqueue } from "@astrolab/store";
+import { readGateConfig, SCHEMA_VERSION, setConfig, stampAndEnqueue } from "@astrolab/store";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { bootWorker } from "./boot.js";
@@ -31,6 +31,23 @@ describe("bootWorker — same sequence as the API (#26 carry, O1 #21)", () => {
     expect(seeded.n).toBeGreaterThan(0);
     // and the queue table is there and empty
     expect(db.prepare("SELECT COUNT(*) AS n FROM spark_run").get()).toEqual({ n: 0 });
+  });
+
+  test("seeds gate config, so a run can never read thresholds from an unseeded table (§3.4)", () => {
+    const db = bootWorker(":memory:");
+    expect(readGateConfig(db)).toEqual({ minDomainDistance: 1, minAlignment: 0.5 });
+  });
+
+  test("a tuned threshold survives a re-boot — seeding is insert-only, not a revert", () => {
+    const path = tempStorePath();
+    const first = bootWorker(path);
+    setConfig(first, "min_alignment", "0.9");
+    first.close();
+
+    const second = bootWorker(path);
+
+    expect(readGateConfig(second)).toEqual({ minDomainDistance: 1, minAlignment: 0.9 });
+    second.close();
   });
 
   test("re-enqueues a crash-orphaned RUNNING run (ADR-0004: a restart simply re-enqueues)", () => {

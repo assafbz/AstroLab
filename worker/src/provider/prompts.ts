@@ -1,7 +1,7 @@
 import type { ClusterOption, IdeaText, MechanismPair } from "./types.js";
 
 /**
- * The two prompts, kept beside the adapter that sends them and out of the engine's logic: what is asked
+ * The three prompts, kept beside the adapter that sends them and out of the engine's logic: what is asked
  * of the model is part of *talking to the model*, and §5's interface (`extract(idea)`,
  * `adjudicate(a, b, mechanisms)`) has no prompt parameter for a caller to supply.
  *
