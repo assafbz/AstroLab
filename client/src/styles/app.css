@@ -446,3 +446,178 @@ a {
   white-space: nowrap;
   border: 0;
 }
+
+/* --- S4 Idea Detail: the fields, LIVING LINEAGE, muted provenance, the delete confirm --- */
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.section__label {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 400;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+.detail__id {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+
+.detail__headline {
+  margin: 0.25rem 0 0.75rem;
+  font-size: 1.3125rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.detail__meta {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+
+/* A chip that is a label, not a control: no pointer, no hover state (DESIGN.md §4). */
+.chip--static {
+  cursor: default;
+}
+
+.detail__field {
+  margin-top: 1.5rem;
+}
+
+.detail__body {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* The measured chain: hairline spine, brass markers, the current node filled (DESIGN.md §4). */
+.chain {
+  position: relative;
+  margin: 0;
+  padding: 0 0 0 1.25rem;
+  list-style: none;
+  border-left: 1px solid var(--hairline);
+}
+
+.chain__node {
+  position: relative;
+  padding: 0.5rem 0;
+}
+
+.chain__node::before {
+  content: "";
+  position: absolute;
+  top: 1rem;
+  left: calc(-1.25rem - 4px);
+  width: 8px;
+  height: 8px;
+  border: 1px solid var(--brass);
+  border-radius: 50%;
+  background: var(--canvas);
+}
+
+.chain__node--current::before {
+  background: var(--brass);
+}
+
+.chain__link {
+  display: block;
+  text-decoration: none;
+}
+
+.chain__id {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--dim);
+}
+
+.chain__title {
+  display: block;
+  color: var(--muted);
+}
+
+.chain__node--current .chain__title {
+  color: var(--ink);
+}
+
+.chain__marker {
+  display: inline-block;
+  margin-top: 0.25rem;
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--brass-highlight);
+}
+
+/* Muted provenance — recorded, not displayed as lineage (FLOW.md §2.3; docs/API.md §4.5). */
+.provenance {
+  margin-top: 1.5rem;
+}
+
+.provenance__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.provenance__ref {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.25rem 0;
+}
+
+.provenance__id,
+.provenance__spark {
+  font-size: 0.75rem;
+  color: var(--faint);
+}
+
+.provenance__spark::before {
+  content: "· ";
+}
+
+/* The delete confirm. Destructive is for delete and validation only (DESIGN.md §2). */
+.confirm {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--card);
+  border: 1px solid var(--destructive);
+  border-radius: var(--radius);
+}
+
+.confirm__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.confirm__detail {
+  margin: 0 0 0.5rem;
+  color: var(--muted);
+}
+
+.confirm__actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.button--destructive {
+  background: none;
+  border-color: var(--destructive);
+  color: var(--destructive);
+  font-weight: 600;
+}
+
+.confirm__actions .button {
+  flex: 1;
+}

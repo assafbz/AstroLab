@@ -114,7 +114,7 @@ export function Vault() {
             action={{ label: "Retry", onClick: retry }}
           />
         ) : (
-          <Shimmer />
+          <Shimmer label="Loading the vault…" />
         )
       ) : (
         <>
