@@ -102,7 +102,9 @@ describe("runOnce — reproducibility & supersession (issue #26, Done #4)", () =
     await runOnce(db, body);
 
     expect(cuts).toHaveLength(2);
-    expect(cuts[1]).toEqual(cuts[0]);
+    expect(cuts[1]).toEqual(cuts[0]); // the determinism claim: two runs, one revision, one cut
+    // Content, not order (same `shortcut:` as `cutVault`): `sqlite_autoindex_idea_1` yields ids ASC
+    // regardless of insert order, so this literal cannot discriminate a sort.
     expect(cuts[0]).toEqual({ revision: 1, ideaIds: ["a", "b"] });
   });
 

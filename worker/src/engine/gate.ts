@@ -36,9 +36,10 @@ import type { MechanismCache } from "./mechanism.js";
  * ## Cost posture (§3.1, D4)
  *
  * Extraction is O(N) and is **not** the scan. The pairwise loop calls neither the extractor, the
- * adjudicator, nor (once a tag has been seen) the normaliser — the scan makes **no AI calls**. The one
- * AI touch inside `between` is W4's, paid once per **distinct tag**, outside the comparison. `gate.test.ts`
- * asserts the count in call-count terms, independently of pair count.
+ * adjudicator, nor (once a tag has been seen) the normaliser. The load-bearing claim is **AI calls per
+ * pair = 0**: an unmapped tag's normalisation fires once, inside `between`, on first sight — a cost
+ * bounded by **distinct tags**, never by pair count. `gate.test.ts` asserts that in call-count terms,
+ * independently of how many pairs the scan visits.
  *
  * ## Two deliberate properties
  *
