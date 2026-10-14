@@ -3,6 +3,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { beforeEach, describe, expect, test } from "vitest";
 
 import { ValidationError } from "./capture.js";
+import { deleteIdea } from "./delete.js";
 import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
 
 /**
@@ -215,15 +216,30 @@ describe("getIdeaDetail — docs/API.md §4.5", () => {
     expect(detail?.idea.id).toBe("leaf");
   });
 
-  test("a lineage cycle terminates instead of looping", () => {
-    // The FK will not let a child point at a row that does not exist, so the reachable degenerate
-    // shape is a cycle, not a dangling ref: build `a → b`, then re-point `b` at `a`. The walk still
-    // has to stop.
+  test("a lineage cycle terminates instead of looping — the `seen` guard", () => {
+    // `0003` (V5 #16) dropped `idea`'s self-reference, so **two** degenerate shapes are reachable
+    // now, and the walk has a guard for each. This is the cycle: build `a → b`, then re-point `b` at
+    // `a`. It exits through `seen`, and must stop rather than loop.
     const db = newDb();
     seedIdea(db, { id: "b" });
     seedIdea(db, { id: "a", lineage_kind: "FORK", lineage_parent_id: "b" });
     db.exec("UPDATE idea SET lineage_kind = 'FORK', lineage_parent_id = 'a' WHERE id = 'b'");
     expect(getIdeaDetail(db, "a")?.lineage.map((idea) => idea.id)).toEqual(["b"]);
+  });
+
+  test("a dangling lineage parent stops the walk instead of failing — T26's tolerated ref", () => {
+    // The **other** degenerate shape, and the one `0003` made reachable: T26 tolerates a deleted fork
+    // parent, so the child keeps a `lineage_parent_id` naming a row that is gone (asserted at the
+    // schema level in `store/test/references.test.ts`). The read path must answer §4.5's absent case
+    // — `lineage: []` — through `ancestorChain`'s `break`, not by throwing and not through `seen`.
+    const db = newDb();
+    seedIdea(db, { id: "parent" });
+    seedIdea(db, { id: "child", lineage_kind: "FORK", lineage_parent_id: "parent" });
+    expect(deleteIdea(db, "parent")).toBe(true);
+
+    const detail = getIdeaDetail(db, "child");
+    expect(detail?.idea.lineage_parent_id).toBe("parent"); // the ref survives the delete
+    expect(detail?.lineage).toEqual([]); // …and the walk stops on it
   });
 
   test("provenance is its own array, sorted, and never folded into lineage", () => {

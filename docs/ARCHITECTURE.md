@@ -91,7 +91,7 @@ idea(
   monetization       TEXT NOT NULL,
   domain_tags        TEXT NOT NULL,    -- JSON array; ≥ 1 (PRD §2: no domain ⇒ no spark)
   lineage_kind       TEXT NOT NULL,    -- ROOT | ITERATION | FORK
-  lineage_parent_id  TEXT NULL,        -- FK idea(id); set only for FORK (single parent)
+  lineage_parent_id  TEXT NULL,        -- NOT a foreign key (T26): set only for FORK (single parent)
   status             TEXT NOT NULL,    -- ACTIVE | NEEDS_COMPLETION
   visibility         TEXT NOT NULL,    -- PRIVATE (MVP only)
   current_version    INTEGER NOT NULL,
@@ -99,7 +99,8 @@ idea(
 )
 
 idea_version(                          -- iteration history, same node (PRD §3.2 item 1)
-  idea_id  TEXT FK, version INTEGER, hypothesis, problem, monetization, domain_tags, created_at,
+  idea_id  TEXT FK ON DELETE CASCADE,  -- the idea's own rows: meaningless without it
+  version INTEGER, hypothesis, problem, monetization, domain_tags, created_at,
   PRIMARY KEY(idea_id, version)
 )
 ```
@@ -115,9 +116,12 @@ idea_version(                          -- iteration history, same node (PRD §3.
 
 ```
 provenance_edge(
-  derived_idea_id TEXT FK idea(id),    -- the accepted / inspired idea (a ROOT)
-  source_idea_id  TEXT FK idea(id),    -- one of the two source ideas
-  spark_id        TEXT,                -- the spark it came from
+  derived_idea_id TEXT FK idea(id) ON DELETE CASCADE,
+                                       -- the accepted / inspired idea (a ROOT). The edge belongs to it,
+                                       -- so it goes when the idea does
+  source_idea_id  TEXT NOT NULL,       -- one of the two source ideas; deliberately NOT a foreign key —
+                                       -- deleting a source leaves this ref dangling (T26)
+  spark_id        TEXT NOT NULL,       -- the spark it came from
   PRIMARY KEY(derived_idea_id, source_idea_id, spark_id)
 )
 ```
@@ -135,7 +139,8 @@ same-spark one.
 ```
 spark(
   id                  TEXT PK,
-  idea_a_id, idea_b_id TEXT,           -- ordered ids; both FK idea(id)
+  idea_a_id, idea_b_id TEXT,           -- ordered ids; NOT foreign keys — a spark's pair is history,
+                                       -- so a resolved spark keeps them when an idea is deleted
   pair_key            TEXT,            -- canonical unordered key: min(a,b) || '|' || max(a,b)
   direction           TEXT,            -- the proposed idea (headline)
   claim               TEXT,            -- one–two lines, why it matters
@@ -151,7 +156,7 @@ spark(
 --   CREATE UNIQUE INDEX ux_spark_live ON spark(pair_key) WHERE status = 'OFFERED';
 
 idea_mechanism(                        -- per-idea descriptor cache (§3.3 step 1; W3)
-  idea_id      TEXT PK,                -- one descriptor per idea
+  idea_id      TEXT PK FK idea(id) ON DELETE CASCADE,  -- one descriptor per idea; the idea's own row
   descriptor   TEXT,                   -- JSON {verb, object_class, constraint, transferable_structure}
   source_hash  TEXT,                   -- hash of the idea text the descriptor was extracted from
   extracted_at TEXT
@@ -161,7 +166,9 @@ decision(                              -- one row per RESOLVING action (FLOW.md 
   id            TEXT PK,               -- === the client-supplied decision_id (FLOW.md §2.2)
   spark_id      TEXT FK spark(id),
   kind          TEXT,                  -- ACCEPT | DISMISS | INSPIRED
-  result_idea_id TEXT NULL,            -- the root created by ACCEPT or a committed seeded save
+  result_idea_id TEXT NULL,            -- the root created by ACCEPT or a committed seeded save;
+                                       -- NOT a foreign key — it dangles if that idea is deleted later
+                                       -- (FLOW.md §5.4's permanence point)
   decided_at    TEXT
 )
 -- idempotency key IS the primary key: (spark_id, decision_id) is unique because `id` is
@@ -173,6 +180,14 @@ suppressed_pair(pair_key TEXT PK, reason TEXT, updated_at TEXT)          -- CLIC
 vault_meta(revision INTEGER)            -- monotonic; bumped on every vault mutation (§4)
 config(key TEXT PK, value TEXT)                                          -- thresholds (§3.4)
 ```
+
+**Delete semantics (T26).** The references above split one way, and it is the schema that says so rather
+than each call site: **the row's owner cascades** — `idea_version`, `idea_mechanism`, and `provenance_edge`'s
+*derived* side go with the idea — while **historical refs dangle** — `lineage_parent_id`, the provenance
+*source* side, a spark's pair, and `decision.result_idea_id` survive it. One case is neither: a **live
+`OFFERED` spark** named by the deleted idea is **retracted**, because a live offer is a promise made from the
+vault's current state and the state changed; a *resolved* spark is history and keeps its dangling pair
+(`docs/API.md` §4.8).
 
 **Status vocabulary** is `FLOW.md` §3's verbatim: a spark is `OFFERED`, then terminal `RESOLVED-ACCEPTED` /
 `RESOLVED-DISMISSED` / `RESOLVED-INSPIRED` (H). There is no separate `ACCEPTED`/`INSPIRED` spelling.
@@ -553,4 +568,16 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
   so it ships in the `0001_init` migration with **F3**. §2 now reads as the complete table set. No other
   schema, API, or state-machine change.
 
-*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.2, 2026-10-13. Review: adversarial passes by Max. Branch `docs/architecture`.*
+- **2026-10-14 — r3.3.** **V5 (`#16`) — the delete semantics T26 needs, written into §2.** §2.1, §2.2 and
+  §2.3 previously showed all eight `REFERENCES idea(id)` as bare references, which is what made a delete
+  impossible: with `foreign_keys = ON` a bare reference is *immediate*, so deleting any idea that was ever
+  captured failed on its own `idea_version` row. They now read as the rule the delete path implements —
+  **the row's owner cascades** (`idea_version`, `idea_mechanism`, and `provenance_edge`'s derived side),
+  **historical refs dangle** (`lineage_parent_id`, the provenance source side, a spark's pair,
+  `decision.result_idea_id`) — plus the one case that is neither: a **live `OFFERED` spark** named by a
+  deleted idea is retracted (`docs/API.md` §4.8). Shipped as `0003_reference_actions`, a table rebuild
+  (SQLite cannot `ALTER` a constraint). No API or state-machine change beyond §4.8's implementation; the
+  sketches are the schema of record, so they move with it rather than the change landing only in
+  `docs/SCHEMA.md`.
+
+*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.3, 2026-10-14. Review: adversarial passes by Max. Branch `docs/architecture`.*

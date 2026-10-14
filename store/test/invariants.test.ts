@@ -79,7 +79,7 @@ test("provenance-bearing ⇒ lineage_parent_id IS NULL (ARCH §2.2, closes D1)",
   expect(provenanceViolations(db)).toBe(1);
 });
 
-test("lineage is single-parent — one nullable FK, set only for a FORK", () => {
+test("lineage is single-parent — one nullable column, set only for a FORK", () => {
   const db = migrated();
 
   // Structural half: exactly one parent column, so "two parents" is not expressible.
@@ -92,13 +92,15 @@ test("lineage is single-parent — one nullable FK, set only for a FORK", () => 
   insertIdea(db, "fork", { lineageKind: "FORK", lineageParentId: "root" });
   expect(rows(db, "SELECT lineage_parent_id AS p FROM idea WHERE id = 'fork'")[0]?.p).toBe("root");
 
-  // The CHECK confines the parent to FORK; the FK catches a dangling one.
+  // The CHECK confines the parent to FORK. The FK is deliberately **gone** (V5 #16): T26 tolerates a
+  // dangling parent ref so a fork child survives its parent's deletion, and V2's read path stops the
+  // ancestor walk on one rather than failing.
   expect(() =>
     insertIdea(db, "iter", { lineageKind: "ITERATION", lineageParentId: "root" }),
   ).toThrow(/CHECK/);
   expect(() =>
     insertIdea(db, "dangling", { lineageKind: "FORK", lineageParentId: "ghost" }),
-  ).toThrow(/FOREIGN KEY/);
+  ).not.toThrow();
 });
 
 test("a repeated decision_id insert is a no-op returning the first row (FLOW §2.2, N4/H4)", () => {

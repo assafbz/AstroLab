@@ -1,20 +1,23 @@
 # Schema: Astrolab store (SQLite) — issue F3 design
 
-> **Status:** The schema of record, in DDL form — and **shipped**: `0001_init` (the twelve tables) and
-> `0002_seed_vault_meta` live in `store/src/migrations.ts`, and this file tracks them.
+> **Status:** The schema of record, in DDL form — and **shipped**: `0001_init` (the twelve tables),
+> `0002_seed_vault_meta` and `0003_reference_actions` live in `store/src/migrations.ts`, and this file
+> tracks them.
 > **Source of record:** `docs/ARCHITECTURE.md` §2 (data model — the complete table set incl.
 > `idea_mechanism`) and ADR-0001 / ADR-0002. Where this file and §2 differ, **§2 wins** and this file
 > is the defect — file it.
 > **Scope:** the tables, keys, and the partial unique index. Connection/WAL/retry belong to **F2**;
 > the invariant *tests* belong to **F3**.
 
-The DDL below applies as one forward-only migration (`0001_init`). `PRAGMA journal_mode=WAL` and
+The DDL below applies as one forward-only migration (`0001_init`) — restated here **as amended** by
+`0003_reference_actions` (§1b), which changes only the eight `REFERENCES idea(id)` of V5 `#16`.
+`PRAGMA journal_mode=WAL` and
 `PRAGMA foreign_keys=ON` are set by the store's connection setup (F2), not by the migration — the
 foreign-keys pragma is per-connection and a no-op inside the migration's `BEGIN IMMEDIATE`.
 
 ---
 
-## 1. The tables of §2 — DDL (`0001_init`)
+## 1. The tables of §2 — DDL (`0001_init`, the idea references as amended by `0003`)
 
 **Twelve** tables: the eleven enumerated in §2.1–§2.4, plus **`idea_mechanism`** (the per-idea
 descriptor cache — `ARCHITECTURE.md` §2.3, §3.3 step 1; ADR-0002; W3 `#28`), added to the schema of
@@ -31,7 +34,8 @@ CREATE TABLE idea (
   monetization      TEXT NOT NULL,
   domain_tags       TEXT NOT NULL,                -- JSON array; length >= 1 (PRD §2)
   lineage_kind      TEXT NOT NULL CHECK (lineage_kind IN ('ROOT','ITERATION','FORK')),
-  lineage_parent_id TEXT REFERENCES idea(id),     -- set ONLY for FORK; single parent
+  lineage_parent_id TEXT,                          -- set ONLY for FORK; single parent. NOT a FK since
+                                                   -- `0003` (V5 #16): the ref dangles by design (T26)
   status            TEXT NOT NULL CHECK (status IN ('ACTIVE','NEEDS_COMPLETION')),
   visibility        TEXT NOT NULL CHECK (visibility IN ('PRIVATE')),
   current_version   INTEGER NOT NULL DEFAULT 1,
@@ -42,7 +46,7 @@ CREATE TABLE idea (
 );
 
 CREATE TABLE idea_version (                        -- iteration history, same node (PRD §3.2 item 1)
-  idea_id      TEXT NOT NULL REFERENCES idea(id),
+  idea_id      TEXT NOT NULL REFERENCES idea(id) ON DELETE CASCADE,
   version      INTEGER NOT NULL,
   hypothesis   TEXT NOT NULL,
   problem      TEXT NOT NULL,
@@ -54,8 +58,11 @@ CREATE TABLE idea_version (                        -- iteration history, same no
 
 -- §2.2 Provenance — explicitly NOT lineage
 CREATE TABLE provenance_edge (
-  derived_idea_id TEXT NOT NULL REFERENCES idea(id),   -- the accepted / inspired idea (a ROOT)
-  source_idea_id  TEXT NOT NULL REFERENCES idea(id),   -- one of the two source ideas
+  derived_idea_id TEXT NOT NULL REFERENCES idea(id) ON DELETE CASCADE,
+                                                   -- the accepted / inspired idea (a ROOT); the edge
+                                                   -- belongs to it, so it goes when the idea does
+  source_idea_id  TEXT NOT NULL,                    -- one of the two source ideas; NOT a FK since
+                                                   -- `0003` — deleting a source leaves this ref (T26)
   spark_id        TEXT NOT NULL,
   PRIMARY KEY (derived_idea_id, source_idea_id, spark_id)
 );
@@ -63,8 +70,8 @@ CREATE TABLE provenance_edge (
 -- §2.3 Sparks, runs, decisions, suppression, mechanism cache
 CREATE TABLE spark (
   id                   TEXT PRIMARY KEY,
-  idea_a_id            TEXT NOT NULL REFERENCES idea(id),
-  idea_b_id            TEXT NOT NULL REFERENCES idea(id),
+  idea_a_id            TEXT NOT NULL,               -- ordered ids; NOT FKs since `0003` — a spark's
+  idea_b_id            TEXT NOT NULL,               -- pair is history and outlives a deleted idea
   pair_key             TEXT NOT NULL,               -- min(a,b)||'|'||max(a,b)
   direction            TEXT NOT NULL,               -- proposed idea (headline)
   claim                TEXT NOT NULL,
@@ -82,7 +89,7 @@ CREATE TABLE spark (
 CREATE UNIQUE INDEX ux_spark_live ON spark(pair_key) WHERE status = 'OFFERED';
 
 CREATE TABLE idea_mechanism (                       -- per-idea descriptor cache (ARCH §3.3 step 1; W3)
-  idea_id      TEXT PRIMARY KEY REFERENCES idea(id),-- one descriptor per idea
+  idea_id      TEXT PRIMARY KEY REFERENCES idea(id) ON DELETE CASCADE, -- one descriptor per idea
   descriptor   TEXT NOT NULL,                       -- JSON {verb, object_class, constraint, transferable_structure}
   source_hash  TEXT NOT NULL,                       -- hash of the idea text the descriptor was extracted from
   extracted_at TEXT NOT NULL
@@ -92,7 +99,9 @@ CREATE TABLE decision (                             -- one row per RESOLVING act
   id             TEXT PRIMARY KEY,                  -- == the client-supplied decision_id (the idempotency key)
   spark_id       TEXT NOT NULL REFERENCES spark(id),
   kind           TEXT NOT NULL CHECK (kind IN ('ACCEPT','DISMISS','INSPIRED')),
-  result_idea_id TEXT REFERENCES idea(id),          -- root from ACCEPT or committed seeded save; NULL for DISMISS
+  result_idea_id TEXT,                              -- root from ACCEPT or committed seeded save; NULL for
+                                                    -- DISMISS. NOT a FK since `0003` — the resolution
+                                                    -- is permanent (FLOW §5.4)
   decided_at     TEXT NOT NULL
 );
 
@@ -156,6 +165,37 @@ INSERT INTO vault_meta (id, revision) VALUES (1, 0);
 A new migration rather than an edit to `0001_init`, which is already applied — rewriting it would break
 forward-only and skip every store already at v1.
 
+### 1b. `0003_reference_actions` — the eight `REFERENCES idea(id)` (V5 `#16`, 2026-10-14)
+
+`0001_init` declared all eight references bare, and a bare reference is **immediate** with
+`foreign_keys = ON` (which `openStore` sets) — so deleting *any* idea that had ever been captured failed on
+its own `idea_version` row. `0003` restates them as the delete semantics T26 needs — **the row's owner
+cascades, historical refs dangle** — so §1's DDL for those six tables reads as follows:
+
+| table | column | now |
+| :--- | :--- | :--- |
+| `idea_version` | `idea_id` | `REFERENCES idea(id) ON DELETE CASCADE` |
+| `idea_mechanism` | `idea_id` | `REFERENCES idea(id) ON DELETE CASCADE` |
+| `provenance_edge` | `derived_idea_id` | `REFERENCES idea(id) ON DELETE CASCADE` |
+| `provenance_edge` | `source_idea_id` | **no reference** — the source ref dangles (T26) |
+| `idea` | `lineage_parent_id` | **no reference** — a fork child keeps its parent id (T26) |
+| `spark` | `idea_a_id`, `idea_b_id` | **no references** — a resolved spark's pair is history |
+| `decision` | `result_idea_id` | **no reference** — the resolution is permanent (`FLOW.md` §5.4) |
+| `decision` | `spark_id` | unchanged: `REFERENCES spark(id)` |
+
+SQLite cannot `ALTER` a constraint, so each change is a **table rebuild** (create new → copy → drop old →
+rename), and `ux_spark_live` is recreated with `spark`. The rebuild runs under `PRAGMA foreign_keys = OFF`,
+set **outside** the migration's transaction by `migrate()` (the `rebuildReferences` flag on a `Migration`):
+inside a transaction that pragma is a **silent no-op**, so `migrate()` reads it back and throws if it did not
+take, checks `PRAGMA foreign_key_check` **inside** the transaction (a violation rolls the migration back —
+and the check must be code, because the pragma is a *query*, so a migration string containing it cannot fail
+anything), and restores the pragma in a `finally`. `legacy_alter_table` is not needed;
+`defer_foreign_keys` does **not** work (it defers the violation to `COMMIT`, which then fails).
+
+The one case that is neither cascade nor dangle lives in application code, not in the schema: a **live
+`OFFERED` spark** named by a deleted idea is retracted by the delete path (`docs/API.md` §4.8), because a
+live offer is a promise made from the vault's current state and the state has changed.
+
 ---
 
 ## 2. Invariants F3's tests assert
@@ -163,7 +203,7 @@ forward-only and skip every store already at v1.
 | Invariant (source) | How it holds |
 | :--- | :--- |
 | **Provenance-bearing ⇒ `lineage_parent_id IS NULL`** (ARCH §2.2, closes D1) | cross-table; asserted by test. Optionally a trigger — see §4. |
-| **Single-parent lineage** (PRD §2) | structural: one nullable `lineage_parent_id` FK, plus the `FORK`-only `CHECK`. |
+| **Single-parent lineage** (PRD §2) | structural: one nullable `lineage_parent_id` column (no longer a FK — `0003`), plus the `FORK`-only `CHECK`. |
 | **A repeated `decision_id` insert is a no-op** (FLOW §2.2/N4, H4) | PK on `decision.id`; write via `INSERT … ON CONFLICT(id) DO NOTHING` (then read the existing row). |
 | **`vault_meta.revision` monotonicity** (ARCH §4) | every candidate-affecting vault mutation bumps it inside the same transaction; test asserts non-decreasing and single-row. |
 | **At most one live offer per pair** (ARCH §3.5) | `ux_spark_live` partial unique index. |

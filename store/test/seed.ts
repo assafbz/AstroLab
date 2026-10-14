@@ -39,7 +39,7 @@ export function insertSpark(
   ).run(id, pairKey, status);
 }
 
-/** The two source ideas every spark's foreign keys need. */
+/** The two source ideas a spark's ids name (`0003` dropped the FKs, but this is still the shape the write paths produce). */
 export function insertPair(db: DatabaseSync): void {
   insertIdea(db, "a");
   insertIdea(db, "b");
