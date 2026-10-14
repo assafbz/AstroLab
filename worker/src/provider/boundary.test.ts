@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { MIGRATIONS } from "@astrolab/store";
 import { describe, expect, test } from "vitest";
 
 /**
@@ -250,7 +251,9 @@ describe("Axis 1 stays in the worker (ARCH §3.2; NFR-A1) — W4", () => {
   // The distance module, the normaliser interface, and its method are the axis's names. None may
   // appear under `api/` or `client/`: the vault path resolves no cluster and reaches no model — a
   // domain tag is stored raw and read raw (`api/src/vault-summary.ts`'s exact match depends on it).
-  const AXIS = /DomainDistance|TagNormalizer|normalizeTag/;
+  // `\b` so the axis *type* is matched as a whole word: W5's `minDomainDistance` / `parseDomainDistance`
+  // contain the substring `DomainDistance` without naming the type, and a substring match would flag them.
+  const AXIS = /\bDomainDistance\b|TagNormalizer|normalizeTag/;
   const names = (): string[] =>
     FILES.filter((file) => AXIS.test(file.text)).map((file) => file.rel);
 
@@ -266,6 +269,55 @@ describe("Axis 1 stays in the worker (ARCH §3.2; NFR-A1) — W4", () => {
         VAULT_PACKAGES.some((pkg) => file.rel.startsWith(`${pkg}/`)) && AXIS.test(file.text),
     ).map((file) => file.rel);
 
+    expect(offenders).toEqual([]);
+  });
+});
+
+describe("Axis 2 stays in the worker; thresholds stay out of schema and API (#30 Done) — W5", () => {
+  // Two #30 claims, stated structurally rather than in prose:
+  //
+  // 1. **The gate is selection-internal.** `descriptorSimilarity` / `gatedPairs` / `GatedPair` may not
+  //    appear on a *surface* (`api/`, `client/`) — an alignment number in a response is exactly what
+  //    `PRD.md` §3.3 item 4 forbids. `store/` is excluded because it owns `GateConfig` legitimately: the
+  //    thresholds' type lives beside their SQL, not on a surface.
+  // 2. **Changing a threshold touches no schema and no API.** The `config` table is created once (no
+  //    migration adds a threshold), and no `api/` or `client/` source names a threshold key or its reader.
+  const SURFACES = VAULT_PACKAGES.filter((pkg) => pkg !== "store");
+  const AXIS = /descriptorSimilarity|gatedPairs|GatedPair/;
+  const THRESHOLD = /readGateConfig|min_domain_distance|min_alignment/;
+  const onSurface = (file: { rel: string }): boolean =>
+    SURFACES.some((pkg) => file.rel.startsWith(`${pkg}/`));
+
+  test("the scan is real — each name bites somewhere, and every surface is reached", () => {
+    const hits = (pattern: RegExp): string[] =>
+      FILES.filter((file) => pattern.test(file.text)).map((file) => file.rel);
+    // A typo'd pattern would pass the assertions below by matching nothing.
+    expect(hits(/descriptorSimilarity/)).toContain("worker/src/engine/alignment.ts");
+    expect(hits(/gatedPairs/)).toContain("worker/src/engine/gate.ts");
+    expect(hits(/GateConfig/)).toContain("store/src/config.ts");
+    for (const pkg of SURFACES) {
+      expect(FILES.some((file) => file.rel.startsWith(`${pkg}/`)), `no files under ${pkg}/`).toBe(
+        true,
+      );
+    }
+  });
+
+  test("no api/ or client/ source names the alignment axis", () => {
+    const offenders = FILES.filter((file) => onSurface(file) && AXIS.test(file.text)).map(
+      (file) => file.rel,
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  test("the `config` table is created once — no migration adds a threshold", () => {
+    const creators = MIGRATIONS.filter((migration) => /CREATE TABLE config\b/.test(migration.sql));
+    expect(creators.map((migration) => migration.version)).toEqual([1]);
+  });
+
+  test("no api/ or client/ source names a threshold key or its reader", () => {
+    const offenders = FILES.filter((file) => onSurface(file) && THRESHOLD.test(file.text)).map(
+      (file) => file.rel,
+    );
     expect(offenders).toEqual([]);
   });
 });
