@@ -47,5 +47,14 @@ export {
 export { openStore, type OpenStoreOptions } from "./store.js";
 // The `spark` writes are the engine's (`worker/` calls them), and like `domain_map` / `idea_mechanism`
 // they are derived engine state: written directly, never through `vaultMutation` (`src/sparks.ts`).
-export { insertOfferedSparks, retractOffersOutside, type OfferedSpark } from "./sparks.js";
+// `liveOffers` is the read twin (the API's deck, K1 `#35`), and `LIVE_STATUS` is the one definition of
+// "a live offer" that the writes, the read and the API's retraction/count all share.
+export {
+  insertOfferedSparks,
+  LIVE_STATUS,
+  liveOffers,
+  retractOffersOutside,
+  type LiveSpark,
+  type OfferedSpark,
+} from "./sparks.js";
 export { vaultMutation } from "./vault.js";
