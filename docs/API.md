@@ -337,6 +337,27 @@ Readings this doc had not pinned (settled in V5 `#16`):
 ### 4.10 `GET /v1/sparks/state` — engine state (S1)
 `200` → `EngineState` (§3.6). Provider-free.
 
+Readings this doc had not pinned (settled in W8 `#33`):
+
+- **One place, and it answers while the engine is down.** E0–E4 is computed once, here
+  (`api/src/engine-state.ts`), and the readout reaches no provider — it must answer in exactly the state
+  it exists to report (E4, `FLOW.md` §5.6).
+- **The precedence ladder is `E0 → E4 → E1 → E2 → E3`.** E0 dominates all; E4 > E3 (the transient cause
+  with Retry, never Exhausted); E1 is the reported state whenever a run is in flight, above E2.
+- **E0 has two arms, and either one is "no pair is possible"**: `resolved_domains` below the floor — read
+  through the same `vaultSummary` the S0 gate reads, never re-derived — **or** fewer than two ideas. The
+  second arm is why this route, not the summary, owns E0: `VaultSummary` carries no idea count.
+- **E1 is `PENDING` or `RUNNING`** — not `PENDING` alone, or §4.16's `202` would leave the client on
+  E0/E2 until the worker claimed the run.
+- **E4's signal is the most recent `spark_run` row `FAILED`, with nothing in flight.** A `DONE` row is
+  informational even when its `error` carries the stale-run note (`discarded: …`), and a `RUNNING` row
+  under a newer `FAILED` one still reads E1. Insertion order is the sequence — `spark_run` has no
+  created-at and `started_at` is second-resolution (§1).
+- **`unreviewed` is the count of `OFFERED` sparks in every state**, so a run in flight cannot blank the
+  deck's count: the E1/E2 coexistence is the `state` field plus this truthful number.
+- **`run` is the newest in-flight row, or `null`** — reported even where E0 dominates, since §3.6 defines
+  the field by what is in flight and not by which state won.
+
 ### 4.11 `GET /v1/sparks/events` — run progress stream (SSE)
 `200`, `Content-Type: text/event-stream`. Events:
 ```
@@ -398,6 +419,18 @@ undo window is server-side policy (`FLOW.md` §5.4 leaves its duration unspecifi
 `202` → `{ "run_id": "…", "vault_revision": 42 }`. Enqueues an async run (→ `E1`); the request never
 waits on the engine (NFR-P1). Runs are **idempotent per revision** and a stale run is **discarded, not
 queued** (`ARCHITECTURE.md` §4 / I).
+
+Readings this doc had not pinned (settled in W8 `#33`):
+
+- **The request has no body, and none is read.** A body is ignored, not validated — there is nothing to
+  validate.
+- **It enqueues at the current revision and stamps nothing.** §4's stamp belongs to the *mutation* that
+  changed the vault; a recompute runs at the revision it finds. A run that stamped would enqueue its own
+  successor, forever (`ARCHITECTURE.md` §4 / I).
+- **Idempotent per revision:** a repeat while a `PENDING` run exists at that stamp returns **the same**
+  `run_id` rather than adding a second row.
+- **Under the prefix, exactly two routes exist.** `/v1/sparks/state` (§4.10) and this one are the
+  implemented paths; bare `/v1/sparks` (§4.9) and the unwritten §4.17 remain the `not_found` envelope.
 
 ### 4.17 `GET /v1/export` — open, complete export (NFR-D1)
 `200` → a single self-describing JSON document (`ARCHITECTURE.md` §8):
@@ -509,9 +542,18 @@ rather than left to the implementation:
   (a `reject iff F ⊆ P` follow-up), not implemented here. §4.7 records the endpoint's other readings.
   Pinned in `api/src/server.test.ts`.
 
+- **The engine state read and the run surface (settled in W8 `#33`)** — §4.10 and §4.16 are implemented,
+  and their readings live at the endpoints. One belongs here instead:
+  - **`eligible` is the S0→S1 spread gate; E0 is the engine state.** §4.10's E0 reads the same
+    `resolved_domains` through the same function, but it is **not** the same quantity: E0 adds the
+    *"< 2 ideas"* arm, which `VaultSummary` deliberately cannot carry. A vault holding **one idea with two
+    clusters** is `eligible: true` and still E0, so the client reads E0 from §4.10 and never derives it
+    from the summary. *(Recorded from O2 `#22`; implemented in W8 `#33`.)*
+
 ---
 
 *Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`;
 carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`; by **V2** (`#13`),
 branch `feat/v2-vault-read-api`; by **O2** (`#22`), branch `feat/o2-vault-summary`; by **V5**
-(`#16`), branch `feat/v5-delete-api`; and by **V3** (`#14`), branch `feat/v3-iterate-api`.*
+(`#16`), branch `feat/v5-delete-api`; by **V3** (`#14`), branch `feat/v3-iterate-api`; and by **W8**
+(`#33`), branch `feat/w8-run-surface`.*

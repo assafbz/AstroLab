@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
 
 import { MIGRATIONS, migrate, openStore, seedDomainTaxonomy } from "@astrolab/store";
 import { describe, expect, test } from "vitest";
@@ -233,6 +235,58 @@ describe("E2 Ready(n) — the deck's count (API.md §3.6)", () => {
     spread(db);
     spark(db, "a", "b", "RESOLVED-DISMISSED");
     expect(engineState(db)).toEqual({ state: "E3", unreviewed: 0, run: null });
+  });
+});
+
+describe("the state read cannot reach a provider (ARCH §5, NFR-A1)", () => {
+  // The `vault-summary.test.ts` precedent, applied to the module beside it: a *module-specifier* guard,
+  // so the provider-free claim is checked rather than documented. `boundary.test.ts` already fails if
+  // any vault package imports the boundary; this pins that this module's reach is the three specifiers
+  // it needs and nothing more — a transport, an `fs`, or a `../worker/…` escape reddens it by name.
+  const MODULE_PATH = fileURLToPath(new URL("./engine-state.ts", import.meta.url));
+  const MODULE_TEXT = readFileSync(MODULE_PATH, "utf8");
+
+  /** Every module specifier in a file — the same extractor the worker's boundary guard uses. */
+  function specifiers(text: string): string[] {
+    return [...text.matchAll(/(?:from\s+|import\s*\(\s*|^\s*import\s+)["']([^"']+)["']/gm)].map(
+      (match) => match[1] ?? "",
+    );
+  }
+
+  test("the extractor sees every import form — a side-effect import has no `from`", () => {
+    const text = [
+      'import "@astrolab/worker";',
+      'import { a } from "./a.js";',
+      'import type { B } from "@astrolab/worker";',
+      'export * from "../worker/src/provider/index.js";',
+      'const c = await import("./c.js");',
+    ].join("\n");
+
+    expect(specifiers(text)).toEqual([
+      "@astrolab/worker",
+      "./a.js",
+      "@astrolab/worker",
+      "../worker/src/provider/index.js",
+      "./c.js",
+    ]);
+  });
+
+  test("the scan is real — it read this module and found its imports", () => {
+    // Non-vacuity: without this, a broken regex turns the assertion below into a silent pass.
+    expect(MODULE_PATH.endsWith("/api/src/engine-state.ts")).toBe(true);
+    expect(MODULE_TEXT.length).toBeGreaterThan(0);
+    expect(specifiers(MODULE_TEXT)).toContain("node:sqlite");
+  });
+
+  test("its only specifiers are the SQLite type, the store's types, and the summary", () => {
+    // `node:sqlite` and `@astrolab/store` are **type-only** imports (erased at runtime); the one value
+    // import is the sibling summary, which is itself guarded to `node:sqlite` alone. An equality, not a
+    // denylist: the next specifier must be a deliberate edit with its reason.
+    expect(specifiers(MODULE_TEXT)).toEqual([
+      "node:sqlite",
+      "@astrolab/store",
+      "./vault-summary.js",
+    ]);
   });
 });
 
