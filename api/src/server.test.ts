@@ -1,4 +1,4 @@
-import { MIGRATIONS, migrate, openStore } from "@astrolab/store";
+import { MIGRATIONS, migrate, openStore, seedDomainTaxonomy } from "@astrolab/store";
 import type { Server } from "node:http";
 import type { DatabaseSync } from "node:sqlite";
 
@@ -139,6 +139,7 @@ test("no path under /v1 answers anything but 401 without a valid token", async (
     "/v1/ideas",
     "/v1/ideas/9f1c",
     "/v1/sparks/state",
+    "/v1/vault/summary",
     "/v1/export",
     "/v1/nope",
     "/v1/does/not/exist",
@@ -324,4 +325,66 @@ test("a path or method that is not a defined route is the not_found envelope (§
   expectEnvelope(await call("GET", "/v1/ideas/", auth), 404, "not_found");
   expectEnvelope(await call("GET", "/v1/ideas/a/b", auth), 404, "not_found");
   expectEnvelope(await call("POST", "/v1/ideas/9f1c", { ...auth, json: VALID }), 404, "not_found");
+});
+
+test("GET /v1/vault/summary answers the §3.2 shape — deterministic and provider-free", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  seedDomainTaxonomy(db); // what `api/src/index.ts` does at boot, before the first gate reads it
+  expect(await call("GET", "/v1/vault/summary", auth)).toEqual({
+    status: 200,
+    contentType: JSON_UTF8,
+    body: {
+      resolved_domains: 0,
+      provisional_domains: 0,
+      target: 3,
+      floor: 2,
+      eligible: false,
+    },
+  });
+});
+
+test("the summary counts captured domains, collapsing two tags of one cluster (R1)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  seedDomainTaxonomy(db);
+
+  // `#fintech` + `#banking` are both tags of the `fintech` cluster in the shipped file, so two ideas
+  // are still **one** resolved domain and the gate stays shut — the collapse R1 exists to prevent.
+  await call("POST", "/v1/ideas", { ...auth, json: { ...VALID, domain_tags: ["fintech"] } });
+  const one = (await call("GET", "/v1/vault/summary", auth)).body;
+  expect(one).toMatchObject({ resolved_domains: 1, provisional_domains: 0, eligible: false });
+
+  await call("POST", "/v1/ideas", { ...auth, json: { ...VALID, domain_tags: ["banking"] } });
+  const collapsed = (await call("GET", "/v1/vault/summary", auth)).body;
+  expect(collapsed).toMatchObject({ resolved_domains: 1, eligible: false });
+
+  // A genuinely different cluster clears the floor.
+  await call("POST", "/v1/ideas", { ...auth, json: { ...VALID, domain_tags: ["health"] } });
+  const spread = (await call("GET", "/v1/vault/summary", auth)).body;
+  expect(spread).toMatchObject({ resolved_domains: 2, provisional_domains: 0, eligible: true });
+
+  // A free-text lane is provisional and never counts toward the gate (§4.2/T02).
+  await call("POST", "/v1/ideas", { ...auth, json: { ...VALID, domain_tags: ["defi-xyz"] } });
+  const provisional = (await call("GET", "/v1/vault/summary", auth)).body;
+  expect(provisional).toMatchObject({
+    resolved_domains: 2,
+    provisional_domains: 1,
+    eligible: true,
+  });
+});
+
+test("the summary route reads no query parameter, and only GET is a route", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  seedDomainTaxonomy(db);
+  // §1: an unknown query parameter is ignored — and this route takes none at all.
+  const ignored = await call("GET", "/v1/vault/summary?nope=1&domain=fintech", auth);
+  expect(ignored.status).toBe(200);
+  expect(ignored.body).toEqual({
+    resolved_domains: 0,
+    provisional_domains: 0,
+    target: 3,
+    floor: 2,
+    eligible: false,
+  });
+  expectEnvelope(await call("POST", "/v1/vault/summary", auth), 404, "not_found");
+  expectEnvelope(await call("GET", "/v1/vault/summary/", auth), 404, "not_found");
 });
