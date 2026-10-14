@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { captureIdea, NotFoundError, parseCaptureInput, ValidationError } from "./capture.js";
 import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
+import { vaultSummary } from "./vault-summary.js";
 
 /**
  * The API (docs/API.md): HTTP/JSON, bearer auth on every `/v1` route, and **one** error envelope.
@@ -149,6 +150,12 @@ async function handleRequest(
 
     if (method === "GET" && path === "/v1/ideas") {
       return handleListIdeas(res, db, query);
+    }
+
+    // §4.3 — the S0 progress readout. Deterministic and provider-free (`vault-summary.ts`), so it is
+    // answered straight from the vault with no filter vocabulary to validate.
+    if (method === "GET" && path === "/v1/vault/summary") {
+      return sendJson(res, 200, vaultSummary(db));
     }
 
     const detailId = method === "GET" ? ideaIdFromPath(path) : null;
