@@ -1,5 +1,8 @@
 export { parseTaxonomy, seedDomainTaxonomy, TAXONOMY_PATH, type Taxonomy } from "./domain-seed.js";
 export { isoTimestamp } from "./iso.js";
+// The `idea_mechanism` cache writes directly, never through `vaultMutation` — it is derived state,
+// not a vault table. The reason is in the module: `store/src/mechanism.ts`.
+export { readDescriptors, upsertDescriptor, type IdeaMechanism } from "./mechanism.js";
 export { migrate, schemaVersion, type Migration } from "./migrate.js";
 export { MIGRATIONS, SCHEMA_VERSION } from "./migrations.js";
 export { isBusyError, withRetry, type RetryOptions } from "./retry.js";
