@@ -93,13 +93,14 @@ describe("vault writes go through vaultMutation (ARCHITECTURE.md §4)", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("writeTransaction stays un-exported, so a raw cross-package transaction cannot compile", () => {
-    // The closure for the hole the file-level scan cannot see: with `writeTransaction` off the public
-    // surface, a new vault-write module cannot open its own transaction *at all* — it has to reach for
-    // `vaultMutation`. The store's own modules import it by relative path, which this does not touch.
-    const index = FILES.find((f) => f.rel === "store/src/index.ts");
-    expect(index).toBeDefined();
+  test("writeTransaction stays off the surface — asserted on the module, not on its source text", async () => {
+    // A text grep of index.ts is blind to the one re-export form without braces: add
+    // `export * from "./store.js"` and the text still looks clean while `writeTransaction` is back on
+    // the namespace. Ask the module itself instead.
+    const store = await import("../src/index.js");
+    const exported = Object.keys(store);
 
-    expect(index?.text ?? "").not.toMatch(/export\s*\{[^}]*\bwriteTransaction\b[^}]*\}/);
+    expect(exported).toContain("vaultMutation"); // sanity: the module loaded and does export things
+    expect(exported).not.toContain("writeTransaction");
   });
 });
