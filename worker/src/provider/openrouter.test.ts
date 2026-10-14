@@ -12,7 +12,7 @@ import {
   type Transport,
   type ZdrPinnedRequest,
 } from "./openrouter.js";
-import { InvalidOutputError, ProviderError, type IdeaText } from "./types.js";
+import { InvalidOutputError, ProviderError, type ClusterOption, type IdeaText } from "./types.js";
 
 const idea: IdeaText = {
   hypothesis: "Batch cooking for one",
@@ -352,6 +352,66 @@ describe("createAdapterFromEnv — the env-selection contract (ADR-0003; W3's ca
     expect((calls[0]?.init.headers as Record<string, string>)["authorization"]).toBe(
       "Bearer sk-test",
     );
+  });
+});
+
+const CLUSTERS: ClusterOption[] = [
+  { id: "fintech", name: "Fintech" },
+  { id: "health", name: "Health" },
+  { id: "devtools", name: "Developer tools" },
+];
+
+describe("createOpenRouterAdapter — normalizeTag (ARCH §3.2 step 2; W4)", () => {
+  test("returns the cluster id the model chose, through the same pinned call", async () => {
+    const { provider, requests } = build(async () =>
+      chatReply(JSON.stringify({ cluster_id: "fintech" })),
+    );
+
+    await expect(provider.normalizeTag("neobank-xyz", CLUSTERS)).resolves.toBe("fintech");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.provider).toEqual({ zdr: true });
+  });
+
+  test("sends the tag and the offered clusters — nothing wider", async () => {
+    const { provider, requests } = build(async () =>
+      chatReply(JSON.stringify({ cluster_id: "health" })),
+    );
+
+    await provider.normalizeTag("neobank-xyz", CLUSTERS);
+
+    const user = requests[0]?.messages.find((message) => message.role === "user")?.content ?? "";
+    expect(user).toContain("neobank-xyz");
+    for (const cluster of CLUSTERS) expect(user).toContain(cluster.id);
+  });
+
+  test("an id outside the offered set is an InvalidOutputError — never returned", async () => {
+    const { provider } = build(async () =>
+      chatReply(JSON.stringify({ cluster_id: "not-a-cluster" })),
+    );
+
+    await expect(provider.normalizeTag("neobank-xyz", CLUSTERS)).rejects.toBeInstanceOf(
+      InvalidOutputError,
+    );
+  });
+
+  test("a missing or blank cluster_id is an InvalidOutputError", async () => {
+    const missing = build(async () => chatReply(JSON.stringify({})));
+    await expect(missing.provider.normalizeTag("x", CLUSTERS)).rejects.toBeInstanceOf(
+      InvalidOutputError,
+    );
+
+    const blank = build(async () => chatReply(JSON.stringify({ cluster_id: "   " })));
+    await expect(blank.provider.normalizeTag("x", CLUSTERS)).rejects.toBeInstanceOf(
+      InvalidOutputError,
+    );
+  });
+
+  test("a transport failure propagates as a ProviderError (§4: a failed call)", async () => {
+    const { provider } = build(async () => {
+      throw new ProviderError("provider returned HTTP 503");
+    });
+
+    await expect(provider.normalizeTag("x", CLUSTERS)).rejects.toBeInstanceOf(ProviderError);
   });
 });
 

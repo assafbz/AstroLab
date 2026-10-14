@@ -7,8 +7,8 @@
  * discipline (`store` and `api` have no reachable path to a provider at all).
  * `worker/src/provider/boundary.test.ts` fails the suite if such an import appears.
  *
- * W4's tag normalisation (`§3.2` step 2) is a **third** operation on this same adapter; it is not built
- * here because §5's interface list and #27's Done list both name exactly these two.
+ * W4's tag normalisation (`§3.2` step 2) is a **third** operation on this same adapter — W4 built it, so
+ * `Provider` is now the union of all three.
  */
 
 /**
@@ -71,8 +71,29 @@ export interface SparkAdjudicator {
   ): Promise<SparkDraft | null>;
 }
 
-/** `ARCHITECTURE.md` §5: *"a single adapter implements both"*. */
-export type Provider = MechanismExtractor & SparkAdjudicator;
+/**
+ * One cluster the normaliser may choose from (`ARCHITECTURE.md` §2.4). Structurally identical to
+ * `store/src/domain-map.ts`'s `ClusterOption` — deliberately not imported, so this boundary keeps no
+ * path to the store (`boundary.test.ts` claim 3).
+ */
+export interface ClusterOption {
+  id: string;
+  name: string;
+}
+
+/**
+ * §3.2 step 2 — normalise **one** unmapped tag to a cluster id from `clusters`. The offered set is the
+ * shipped taxonomy, so the answer's membership is the caller's to validate (`parseTagCluster`).
+ *
+ * Never asked to decline: a tag is always written back into `domain_map`, which is what makes it *paid
+ * once per distinct tag*. An id outside `clusters` is invalid output — a failed call, never stored.
+ */
+export interface TagNormalizer {
+  normalizeTag(tag: string, clusters: readonly ClusterOption[]): Promise<string>;
+}
+
+/** `ARCHITECTURE.md` §5: *"a single adapter implements both"* — the third operation (W4) joins them. */
+export type Provider = MechanismExtractor & SparkAdjudicator & TagNormalizer;
 
 /**
  * The provider failed — an error response, a transport rejection, or a timeout. §4's matrix maps this to

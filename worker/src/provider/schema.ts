@@ -49,6 +49,17 @@ export const ADJUDICATION_SCHEMA: JsonSchema = {
   },
 };
 
+/**
+ * §3.2 step 2 — the tag normalisation. One non-empty `cluster_id`; the offered set is known to the
+ * caller, so the *parser* (not the schema) holds the answer to membership.
+ */
+export const TAG_SCHEMA: JsonSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["cluster_id"],
+  properties: { cluster_id: { type: "string" } },
+};
+
 function fail(where: string, message: string): never {
   throw new InvalidOutputError(`provider output: ${where} ${message}`);
 }
@@ -116,4 +127,18 @@ export function parseAdjudication(raw: unknown): SparkDraft | null {
     string,
   ];
   return { mechanism, direction, claim, what_it_takes, first_step };
+}
+
+/**
+ * `§3.2` step 2 — the answer must be one of the offered clusters. An id outside the set is invalid
+ * output (a failed call, retried per §4, never stored), not a made-up cluster: `domain_map.cluster_id`
+ * is a foreign key, so a hallucinated id would otherwise surface as a database error rather than the
+ * provider error it is.
+ */
+export function parseTagCluster(raw: unknown, allowed: ReadonlySet<string>): string {
+  const record = asRecord(raw, "tag normalisation");
+  const clusterId = asText(record, "cluster_id");
+  if (!allowed.has(clusterId))
+    fail("cluster_id", `is not one of the offered clusters: ${clusterId}`);
+  return clusterId;
 }
