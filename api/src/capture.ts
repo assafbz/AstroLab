@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
-import { writeTransaction } from "@astrolab/store";
+import { isoTimestamp, writeTransaction } from "@astrolab/store";
+
+// The UTC shape lives in the store, because the run rows need the same one; re-exported here so
+// this module stays the API-side name for it.
+export { isoTimestamp };
 
 /**
  * Capture — `POST /v1/ideas` (docs/API.md §4.2). The one write path V1 (#12) implements: a **blank**
@@ -121,11 +125,6 @@ export function captureIdea(db: DatabaseSync, input: CaptureInput): Idea {
     bumpRevision(db);
     return idea;
   });
-}
-
-/** docs/API.md §1 — ISO-8601 UTC, e.g. `2026-10-13T05:14:05Z`. */
-export function isoTimestamp(date: Date = new Date()): string {
-  return date.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
 
 function requiredText(body: Record<string, unknown>, field: string): string {
