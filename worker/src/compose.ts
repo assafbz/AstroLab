@@ -63,8 +63,12 @@ function modelFromEnv(env: Record<string, string | undefined>): string {
   return env.AI_MODEL?.trim() || DEFAULT_MODEL;
 }
 
-/** The four stages, composed into the run surface. Nothing here is env-aware; the caller builds the adapter. */
-function engineFromProvider(db: DatabaseSync, provider: Provider, model: string): EngineRun {
+/**
+ * The four stages, composed into the run surface. Nothing here is env-aware; the caller builds the
+ * adapter. Exported so a test can drive the **real** wiring over a stub provider (EV4 `#46`'s timed
+ * run) rather than re-assembling the stages and proving a composition nothing ships.
+ */
+export function engineFromProvider(db: DatabaseSync, provider: Provider, model: string): EngineRun {
   const mechanisms = createMechanismCache(db, provider, { version: EXTRACTOR_VERSION, model });
   const distance = createDomainDistance(db, provider);
   return createEngineRun(db, {
