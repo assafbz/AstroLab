@@ -120,13 +120,23 @@ Pre-registered before any scoring (so the read cannot be re-cut to fit its resul
   precisely the axis the 2026-10-14 20↔11 flip did *not* vary. If within-model agreement is not
   near-total, that is a finding, not a premise.
 - **Decidability gate** — **every pair of model families agrees on ≥ 19 of the 21 rows**.
-- **Non-unanimous rows are classified, pre-declared** — `nuisance` (a split confined to the
-  presentations of one model) is reported and **non-gating**; `rubric-ambiguous` (a split **across
-  model families**) is the rubric failing to decide. Only a `rubric-ambiguous` row that **decides
-  whether the selected τ clears C3∧C4** makes τ\* **not settleable** and routes to the owner.
 - **Stability, reported and not gating** — τ\* is recomputed with each judge dropped in turn
   (leave-one-out); non-degenerate only at k = 5, since a 4–1 row cannot flip on a single drop.
 - **No majority ⇒ `unresolved`** — excluded from C3/C4 with its count stated, never silently rounded.
+
+**Non-unanimous rows are classified, pre-declared — three classes, because the repairs differ.**
+
+| class | shape | repair |
+| :-- | :-- | :-- |
+| **`nuisance`** | a split confined to the presentations of **one** model | none — reported, **non-gating** |
+| **`row-ambiguous`** | a cross-family split that is **sparse and two-directional** | **add worked examples** to §2 |
+| **`family-offset`** | a cross-family split that is **systematic and one-directional** — one family reads consistently stricter or looser across many rows | **normalise per family, or anchor to a human reader**; more examples will not fix it |
+
+Reporting a `family-offset` as *"the rubric is ambiguous"* would point the next phase at the wrong
+repair — §4 step 6.3's misattribution, one level down. The two are separable on the same data: the B2
+post carries **per-family verdicts and the direction of every disagreement**, so a one-way offset across
+many rows reads differently from sparse two-way splits. Only a cross-family split that **decides whether
+the selected τ clears C3∧C4** makes τ\* **not settleable** and routes to the owner.
 
 ## 3. Run-level pass conditions
 
