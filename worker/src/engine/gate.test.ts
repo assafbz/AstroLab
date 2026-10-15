@@ -12,6 +12,7 @@ import { describe, expect, test } from "vitest";
 
 import type { MechanismDescriptor } from "../provider/index.js";
 import type { VaultCut } from "../queue.js";
+import { descriptorSimilarity } from "./alignment.js";
 import { createDomainDistance, type DomainDistance } from "./domain.js";
 import { createGate, type Gate } from "./gate.js";
 import type { MechanismCache } from "./mechanism.js";
@@ -308,5 +309,74 @@ describe("the alignment axis is observably reachable — shape evidence for min_
     const pairs = await createGate(db, cache, distance).gatedPairs(cutOf(["meal", "variant"]));
 
     expect(pairs).toEqual([]); // distance 0 → the cliché quadrant, whatever the alignment
+  });
+});
+
+describe("the alignment floor is inclusive at the boundary — τ* = 0.02 (#110 follow-up)", () => {
+  // Why this exists. τ* = `0.02` is **exactly attainable**: four pairs in the calibration vault have an
+  // exact alignment of exactly `1/50`, and their stored floats are exactly `0.02` too
+  // (`W9_CALIBRATION.md` §6). The comparator reads `alignment < limits.minAlignment` (`gate.ts`), so a
+  // pair *at* the floor is gated — but nothing tested that, and a later change to the comparator's
+  // strictness or to the parser would drop those four **silently**. This block pins the shape the
+  // boundary is actually reached in: *inclusive, on the exact value*.
+  //
+  // The fixture is **constructed**, deliberately: four fields whose Jaccard terms are `0`, `0`, `1/25`
+  // and `1/25`, so the mean is exactly `1/50` in exact arithmetic — and, measured against the shipped
+  // `descriptorSimilarity`, exactly the double `0.02`. That second fact is what makes the assertion
+  // meaningful rather than approximate, so the first test below asserts the premise instead of
+  // assuming it.
+  //
+  // Every limit is passed **explicitly**: this is a claim about the comparator, not about the shipped
+  // default, so it must not move the next time τ* is re-based.
+  /** Two 13-token strings sharing exactly one token: a `1/25` Jaccard, with a 12-token tail. */
+  const jacOneOf25 = (prefix: string): { a: string; b: string } => {
+    const tail = (side: string) =>
+      Array.from({ length: 12 }, (_, i) => `${prefix}${side}${i + 1}`).join(" ");
+    return { a: `${prefix}shared ${tail("a")}`, b: `${prefix}shared ${tail("b")}` };
+  };
+  const constraint = jacOneOf25("c");
+  const structure = jacOneOf25("t");
+
+  const AT_FLOOR: MechanismDescriptor = {
+    verb: "alpha",
+    object_class: "gamma",
+    constraint: constraint.a,
+    transferable_structure: structure.a,
+  };
+  const AT_FLOOR_MATE: MechanismDescriptor = {
+    verb: "beta",
+    object_class: "delta",
+    constraint: constraint.b,
+    transferable_structure: structure.b,
+  };
+
+  /** The fixture pair gated at an explicit alignment floor — the distance axis scripted clear. */
+  const gateAt = (minAlignment: number) => {
+    const db = newDb();
+    seedIdea(db, "a", ["fintech"]);
+    seedIdea(db, "b", ["mobility"]);
+    const { cache } = countingCache({ a: AT_FLOOR, b: AT_FLOOR_MATE });
+    const { distance } = scriptedDistance([["fintech", "mobility", 1]]);
+
+    return createGate(db, cache, distance, { minDomainDistance: 1, minAlignment }).gatedPairs(
+      cutOf(["a", "b"]),
+    );
+  };
+
+  test("the fixture sits exactly on the boundary — the premise, asserted not assumed", () => {
+    expect(descriptorSimilarity(AT_FLOOR, AT_FLOOR_MATE)).toBe(0.02); // `1/50`, exactly
+  });
+
+  test("a pair whose alignment is exactly the floor IS gated — inclusive, on the exact value", async () => {
+    const pairs = await gateAt(0.02);
+
+    expect(pairs.map((pair) => pair.key)).toEqual(["a|b"]);
+    expect(pairs[0]?.alignment).toBe(0.02);
+  });
+
+  test("the companion: the same pair is dropped one step above the floor", async () => {
+    // Non-vacuity in the other direction: without this, the test above would also pass if the gate
+    // admitted every pair it saw.
+    expect(await gateAt(0.021)).toEqual([]);
   });
 });
