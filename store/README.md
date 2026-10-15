@@ -113,6 +113,7 @@ cp "$DB_PATH" "astrolab-$(date +%F).sqlite"             # now one self-contained
 - `TRUNCATE` leaves the WAL empty, so the copy needs no `-wal`/`-shm` companions and opens standalone.
 - A checkpoint is safe with writers running (it truncates only what it could fold in). For a guaranteed
   point-in-time copy, stop the API and the worker first.
-- JSON export is a separate path — V6 (#17) owns the runbook.
+- JSON export is a separate path — the vault's open export is `GET /v1/export` (`docs/API.md` §4.17), and
+  the operator procedures (Backup · Restore · Export) are `docs/RUNBOOK.md`.
 
 Restore is the reverse: stop both processes, replace the file, start.
