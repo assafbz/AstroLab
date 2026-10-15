@@ -7,6 +7,7 @@ import {
   SCHEMA_VERSION,
   migrate,
   openStore,
+  schemaVersion,
   seedDomainTaxonomy,
 } from "@astrolab/store";
 import { describe, expect, test } from "vitest";
@@ -116,9 +117,13 @@ describe("exportVault — docs/API.md §4.17", () => {
   });
 
   test('schema_version is the live constant, a number — §4.17\'s stale `"1"` is not shipped', () => {
-    const doc = exportVault(newDb());
+    const db = newDb();
+    const doc = exportVault(db);
     expect(doc.schema_version).toBe(SCHEMA_VERSION);
     expect(typeof doc.schema_version).toBe("number");
+    // The pin that keeps the constant honest: the store's own reading, so a future divergence
+    // (`SCHEMA_VERSION` vs `PRAGMA user_version`) reddens instead of shipping silently.
+    expect(doc.schema_version).toBe(schemaVersion(db));
     // The exact defect §4.17's example carries: a string placeholder that drifted from the store.
     expect(doc.schema_version).not.toBe("1");
   });
@@ -321,11 +326,12 @@ describe("the export is one snapshot, a read, and cannot reach a provider (NFR-D
   });
 
   test("the module reaches only SQLite, the store, and its own row type — no provider, no fs", () => {
-    // `@astrolab/store` is the vault's own package (and the export's `SCHEMA_VERSION` / `isoTimestamp`);
-    // `./idea.js` is a type-only import. Anything else — a provider, a transport, `../`-escapes into
-    // the worker — must arrive as a named exception with its reason, so this is equality, not a denylist.
+    // `@astrolab/store` is the vault's own package (the export's `SCHEMA_VERSION` / `isoTimestamp`);
+    // `./ideas.js` is §4.5's shared `readSnapshot`; `./idea.js` is a type-only import. Anything else —
+    // a provider, a transport, `../`-escapes into the worker — must arrive as a named exception with
+    // its reason, so this is equality, not a denylist.
     expect(specifiers(MODULE_TEXT).sort()).toEqual(
-      ["@astrolab/store", "./idea.js", "node:sqlite"].sort(),
+      ["@astrolab/store", "./idea.js", "./ideas.js", "node:sqlite"].sort(),
     );
   });
 });

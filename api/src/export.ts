@@ -1,7 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import { SCHEMA_VERSION, isoTimestamp } from "@astrolab/store";
+import { isoTimestamp, SCHEMA_VERSION } from "@astrolab/store";
 
+import { readSnapshot } from "./ideas.js";
 import type { Idea, IdeaRow } from "./idea.js";
 
 /**
@@ -10,8 +11,8 @@ import type { Idea, IdeaRow } from "./idea.js";
  * The whole vault in one self-describing JSON document: the contract's **eight** keys, in the order
  * §4.17 lists them. The read is **read-only** over F3's tables and takes **one deferred snapshot**
  * (`BEGIN`…`COMMIT`), so `exported_at` and the seven arrays are a single vault state — a writer
- * committing mid-read cannot make the document disagree with itself (§4.5's `readSnapshot`, the same
- * reason V2 needed it).
+ * committing mid-read cannot make the document disagree with itself (the shared `readSnapshot`,
+ * exported from `ideas.ts`, is the one snapshot idiom — §4.5 and §4.17 both read through it).
  *
  * `decisions[]` is empty until the decision writer lands (K4 `#38`): that is the correct export of a
  * vault with no decisions, not a stub. The round-trip test is **EV5 `#47`**, a different issue —
@@ -22,7 +23,9 @@ import type { Idea, IdeaRow } from "./idea.js";
  * - `ideas[]` is the **full row**, `mutation_delta` included (`null` for a ROOT, per the schema's
  *   column CHECK) — export is the backup path, so nothing the vault holds is dropped. The §3.1
  *   `Idea` resource deliberately omits it, so this module does not reuse `toIdea` to build the row.
- * - `lineage_edges[]` is one edge per idea that has a lineage parent (`idea.lineage_parent_id`).
+ * - `lineage_edges[]` is **derived, not a table**: `{idea_id, parent_idea_id}` read from
+ *   `idea WHERE lineage_parent_id IS NOT NULL`. The other three edge/row arrays are 1:1 with a table
+ *   (`idea_version`, `provenance_edge`, `decision`) — this one has no home of its own.
  * - `domain_tags[]` is the domain vocabulary of record: one `{tag, cluster_id}` per `domain_map` row
  *   (`domain_cluster`'s names and `adjacency` are not among the frozen eight).
  */
@@ -85,8 +88,9 @@ export interface ExportDocument {
 
 export function exportVault(db: DatabaseSync): ExportDocument {
   return readSnapshot(db, () => ({
-    // The **live** constant, never a literal (§4.17's example is stale — it shows `"1"` while the
-    // store is at `SCHEMA_VERSION`; the string/number mismatch is corrected in this PR).
+    // The build constant, as ruled — never a literal (§4.17's example is stale: `"1"` while the store
+    // is at `SCHEMA_VERSION`, and a *string* where the document wants a number). The test pins it to
+    // the store's own reading (`schemaVersion(db)`), so a future divergence is caught rather than read.
     schema_version: SCHEMA_VERSION,
     exported_at: isoTimestamp(),
     ideas: ideas(db),
@@ -96,23 +100,6 @@ export function exportVault(db: DatabaseSync): ExportDocument {
     decisions: decisions(db),
     domain_tags: domainTags(db),
   }));
-}
-
-/**
- * One read, one snapshot — the V2 precedent (`ideas.ts`). A deferred `BEGIN` holds no write lock, so
- * the export costs concurrent writers nothing; the alternative is that the seven `SELECT`s straddle a
- * commit and ship a document from two vault states.
- */
-function readSnapshot<T>(db: DatabaseSync, read: () => T): T {
-  db.exec("BEGIN");
-  try {
-    const result = read();
-    db.exec("COMMIT");
-    return result;
-  } catch (err) {
-    db.exec("ROLLBACK");
-    throw err;
-  }
 }
 
 /**
