@@ -165,8 +165,9 @@ function insertSpark(
   const [x, y] = [a, b].sort();
   target
     .prepare(
-      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, status, created_at)
-       VALUES (?, ?, ?, ?, 'a direction', 'a claim', ?, '2026-01-01T00:00:00Z')`,
+      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, first_step, status,
+                          created_at)
+       VALUES (?, ?, ?, ?, 'a direction', 'a claim', 'a first step', ?, '2026-01-01T00:00:00Z')`,
     )
     .run(id, a, b, `${x}|${y}`, status);
 }
@@ -204,6 +205,7 @@ describe("GET /v1/sparks/events — the run-progress stream (§4.11)", () => {
           id: "sp-1",
           direction: "a direction",
           claim: "a claim",
+          first_step: "a first step",
           domain_tags: ["fintech", "health"],
           created_at: "2026-01-01T00:00:00Z",
         },

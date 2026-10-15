@@ -302,8 +302,9 @@ test("GET /v1/sparks?state=offered returns the live deck and never a resolved sp
   const spark = (id: string, a: string, b: string, status: string): void => {
     const [x, y] = [a, b].sort();
     db.prepare(
-      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, status, created_at)
-       VALUES (?, ?, ?, ?, 'a direction', 'a claim', ?, '2026-01-01T00:00:00Z')`,
+      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, first_step, status,
+                          created_at)
+       VALUES (?, ?, ?, ?, 'a direction', 'a claim', 'a first step', ?, '2026-01-01T00:00:00Z')`,
     ).run(id, a, b, `${x}|${y}`, status);
   };
   spark("live", "a", "b", "OFFERED");
@@ -319,6 +320,7 @@ test("GET /v1/sparks?state=offered returns the live deck and never a resolved sp
         id: "live",
         direction: "a direction",
         claim: "a claim",
+        first_step: "a first step",
         domain_tags: ["fintech", "health"],
         created_at: "2026-01-01T00:00:00Z",
       },
