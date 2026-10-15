@@ -18,6 +18,8 @@ import { SWIPE_DISTANCE_PX, swipeKind } from "./deck-interaction.ts";
 
 const CARD_PATH = fileURLToPath(new URL("../components/SparkCard.tsx", import.meta.url));
 const CARD_SOURCE = readFileSync(CARD_PATH, "utf8");
+const DETAIL_PATH = fileURLToPath(new URL("../screens/SparkDetail.tsx", import.meta.url));
+const DETAIL_SOURCE = readFileSync(DETAIL_PATH, "utf8");
 
 test("the gesture's axis: right is ACCEPT, left is DISMISS (§2.2)", () => {
   expect(swipeKind(0, 200)).toBe("ACCEPT");
@@ -54,4 +56,27 @@ test("the card reaches no resolution API — the call is K4's, the card only hol
   for (const match of apiImports) {
     expect(match[1]).toBe("type ");
   }
+});
+
+test("S1b resolves through exactly one call site too — the same shape K7 plugs into per screen", () => {
+  // The seam is *wired* here as well: "exactly one" must not be satisfiable by zero.
+  expect(DETAIL_SOURCE).toMatch(/onResolve\s*\??\s*:/);
+
+  const sites = DETAIL_SOURCE.match(/(?<![.\w])resolve\s*\(/g) ?? [];
+  // Plant: give one button its own `resolve(...)` beside the shared `dispatch` → 2 → red.
+  expect(sites).toHaveLength(1);
+});
+
+test("S1b reaches no decision API — the call module is K7 #41's, the screen holds the seam", () => {
+  // The detail legitimately reads §4.12, so unlike the card it does import a §api/ value. The guard is
+  // therefore the allow-list: the read, the error type, and the shapes. A `decisions.ts` (K7's module)
+  // arriving here reddens this.
+  const apiImports = [
+    ...DETAIL_SOURCE.matchAll(/^import\s+(?:type\s+)?[^;]*from\s+"\.\.\/api\/([^"]+)";/gm),
+  ];
+  expect(apiImports.map((match) => match[1]).sort()).toEqual([
+    "client.ts",
+    "sparks.ts",
+    "types.ts",
+  ]);
 });

@@ -5,6 +5,7 @@ import { sparkDetail } from "../api/sparks.ts";
 import type { SparkDetail as SparkDetailData } from "../api/types.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { Shimmer } from "../components/Shimmer.tsx";
+import type { ResolutionKind, ResolveSeam } from "../domain/deck-interaction.ts";
 
 /**
  * S1b Spark Detail (`FLOW.md` §2.1; `docs/stitch-prompts.md` §2) — one spark, expanded: the idea as
@@ -23,6 +24,12 @@ import { Shimmer } from "../components/Shimmer.tsx";
  * **The decision seat is S3's**, and the call module behind it is K7 `#41`'s; `Make it mine` needs
  * §4.14 and the seeded Capture, which nothing has built yet (#119). What this screen composes is the
  * read; nothing here resolves anything.
+ * **The decision seat is here, wired inert, and the call module is K7 `#41`'s.** The detail's Good /
+ * Not for me consume the **deck's own** `ResolveSeam` (`domain/deck-interaction.ts`) rather than a
+ * second type of their own, so K7 has one shape to plug into per screen and the two screens cannot
+ * drift into two payloads. Until K7 lands, a press resolves nothing rather than inventing a request —
+ * the seat K2 shipped on the card. `Make it mine` needs §4.14 and the seeded Capture, which nothing has
+ * built yet (#119), so no lever is drawn for it.
  */
 
 type State =
@@ -32,7 +39,10 @@ type State =
   | { kind: "missing" }
   | { kind: "error"; message: string };
 
-export function SparkDetail(props: { id: string }) {
+/** The seat until K7's call module lands: a press reaches it, and it posts nothing. */
+const inertResolve: ResolveSeam = () => {};
+
+export function SparkDetail(props: { id: string; onResolve?: ResolveSeam }) {
   const { id } = props;
   const [state, setState] = useState<State>({ kind: "loading" });
 
@@ -86,7 +96,15 @@ export function SparkDetail(props: { id: string }) {
     );
   }
 
-  const { direction, claim, what_it_takes, first_step, domain_tags } = state.detail;
+  const { id: sparkId, direction, claim, what_it_takes, first_step, domain_tags } = state.detail;
+  const resolve = props.onResolve ?? inertResolve;
+
+  // The ONE resolution path out of this screen (§5.5's parity, one screen over): both buttons reach the
+  // seam through it, and a second, inline dispatch is the divergence the structural guard in
+  // `deck-interaction.test.ts` exists for.
+  function dispatch(kind: ResolutionKind): void {
+    resolve(sparkId, kind);
+  }
 
   return (
     <article className="detail">
@@ -122,6 +140,18 @@ export function SparkDetail(props: { id: string }) {
           <p className="detail__body">{first_step}</p>
         </section>
       )}
+
+      {/* §2's bottom paths, the two S1b draws: **Not for me** and **Good**, both through the one
+          `dispatch`. `Make it mine` is deliberately absent — it needs §4.14's seed and the seeded
+          Capture, and a lever that points at nothing is worse than no lever (#119). */}
+      <div className="actionbar">
+        <button type="button" className="button" onClick={() => dispatch("ACCEPT")}>
+          Good
+        </button>
+        <button type="button" className="button button--ghost" onClick={() => dispatch("DISMISS")}>
+          Not for me
+        </button>
+      </div>
     </article>
   );
 }

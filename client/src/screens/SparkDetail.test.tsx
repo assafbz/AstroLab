@@ -2,6 +2,7 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
+import { SparkCard } from "../components/SparkCard.tsx";
 import { SparkDetail } from "./SparkDetail.tsx";
 
 /**
@@ -133,4 +134,41 @@ test("a failed read offers T29's retry, and the retry recovers in place", async 
   // Non-destructive: the retry re-reads and the screen shows the spark, no reload of the shell.
   expect(await screen.findByRole("heading", { level: 1, name: DETAIL.direction })).toBeTruthy();
   expect(calls).toBe(2);
+});
+
+test("Good hands the seam the same command the card sends — one shape, per screen (§5.5)", async () => {
+  const cardSeam = vi.fn();
+  const card = render(<SparkCard spark={DETAIL} onResolve={cardSeam} />);
+  fireEvent.click(screen.getByRole("button", { name: "Good" }));
+  card.unmount();
+
+  const detailSeam = vi.fn();
+  stubFetch();
+  render(<SparkDetail id={DETAIL.id} onResolve={detailSeam} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Good" }));
+
+  expect(detailSeam.mock.calls[0]).toEqual([DETAIL.id, "ACCEPT"]);
+  // Byte-for-byte the card's command: the detail consumes the deck's own `ResolveSeam`, so K7 has one
+  // shape to plug into per screen rather than two that must be kept in agreement.
+  expect(detailSeam.mock.calls[0]).toEqual(cardSeam.mock.calls[0]);
+});
+
+test("Not for me is the second kind on the same path — and it is not the first", async () => {
+  const detailSeam = vi.fn();
+  stubFetch();
+  render(<SparkDetail id={DETAIL.id} onResolve={detailSeam} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Not for me" }));
+
+  expect(detailSeam.mock.calls).toEqual([[DETAIL.id, "DISMISS"]]);
+});
+
+test("the seat is inert with no seam supplied — the app path invents no request (K7 fills it)", async () => {
+  const mock = stubFetch();
+  render(<SparkDetail id={DETAIL.id} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Good" }));
+
+  // Nothing posts and nothing navigates: the press reaches the inert seam, and the only call the screen
+  // made is §4.12's read. A screen that resolved on its own would show up here as a second call.
+  expect(mock.mock.calls.map((call) => call[0])).toEqual(["/v1/sparks/1a2b"]);
 });
