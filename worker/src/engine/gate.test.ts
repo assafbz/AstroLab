@@ -256,12 +256,15 @@ describe("createGate — nothing is written", () => {
   });
 });
 
-describe("the shipped default is observably reachable — evidence for min_alignment (D5b)", () => {
-  // The alignment floor has no product rule behind it, so it is checked against descriptors in the
-  // shape the gate actually meets, not toy strings. The pair below is a genuinely shared mechanism
-  // across unrelated domains (batch-amortisation of a fixed setup cost); the variant pair is the
-  // same-domain near-duplicate the distance axis exists to remove. Alignment is 0.6488 and 0.9167
-  // respectively — so the *higher*-scoring pair is the one suppressed, which is the point.
+describe("the alignment axis is observably reachable — shape evidence for min_alignment (D5b)", () => {
+  // The alignment *value* is the W9 τ\* (`store/src/config.ts`; the calibration curve is its evidence,
+  // `W9_CALIBRATION.md` §6). What this block adds is **shape** evidence, which the curve cannot give:
+  // the axis is checked against descriptors in the shape the gate actually meets, not toy strings.
+  // The pair below is a genuinely shared mechanism across unrelated domains (batch-amortisation of a
+  // fixed setup cost); the variant pair is the same-domain near-duplicate the distance axis exists to
+  // remove. Alignment is 0.6488 and 0.9167 respectively — so the *higher*-scoring pair is the one
+  // suppressed, which is the point. (This block was written against the retired provisional default
+  // `0.5`; the assertions below are unchanged and hold on either value.)
   const MEAL_KIT: MechanismDescriptor = {
     verb: "amortise",
     object_class: "per meal preparation cost",
@@ -281,7 +284,7 @@ describe("the shipped default is observably reachable — evidence for min_align
     transferable_structure: "spread a fixed setup cost across batches",
   };
 
-  test("an aligned, far-apart pair clears the shipped default (min_alignment = 0.5) and is gated", async () => {
+  test("an aligned, far-apart pair clears the floor by a wide margin and is gated", async () => {
     const db = newDb();
     seedIdea(db, "meal", ["food"]);
     seedIdea(db, "grid", ["energy"]);

@@ -19,9 +19,11 @@ import type { MechanismDescriptor } from "../provider/index.js";
  *
  * A uniform mean is the simplest aggregate that is **symmetric**, **bounded**, and needs no weights
  * §3.3 never states; it also keeps the axes **orthogonal** — domain distance (W4) measures *domain*,
- * this measures *structure*. **Lexical only**: no stemming, no stopwords, no synonyms, no embeddings
- * (each non-deterministic or AI-shaped, and both belong to *tier-two* comparison `docs/VISION.md`
- * §4 rules out for the MVP).
+ * this measures *structure*. **Lexical and deterministic only**: no stemming, no stopwords, no
+ * synonyms, no embeddings — an embedding metric is rejected both as a *single combined score* and as
+ * an ANN/vector-store dependency (`docs/adr/0002-spark-engine.md`, *Alternatives considered*;
+ * `docs/PRD.md` §3.3 item 7 forbids a vector store as an MVP requirement), and §3.3 step 2 names this
+ * step a *deterministic* similarity.
  *
  * ## `both-empty ⇒ 0`, and why it is unreachable
  *

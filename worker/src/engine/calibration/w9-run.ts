@@ -95,11 +95,12 @@ export const W9_TAUS = [0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65] as const;
 
 /**
  * The **widened** sweep (bar §4 step 6.4 — the pre-authorized "extend below 0.35" phase). `W9_TAUS`
- * brackets the *provisional default* (`store/src/config.ts`, `min_alignment = 0.5`), not the metric:
- * `descriptorSimilarity` is a uniform mean of per-field Jaccard, and cross-domain ideas share a
- * mechanism *concept*, not lexemes, so alignment sits well below `0.35`. This list spans the metric's
- * range under the ratified floor and then carries `W9_TAUS` unchanged for continuity. It is passed at
- * **runtime** — `W9_TAUS` is not touched, so `selectTau`'s tests still assert `0.35`.
+ * was chosen to bracket the *then-provisional* default (`store/src/config.ts`, `min_alignment = 0.5`
+ * before 2026-10-15), not the metric: `descriptorSimilarity` is a uniform mean of per-field Jaccard,
+ * and cross-domain ideas share a mechanism *concept*, not lexemes, so alignment sits well below
+ * `0.35`. This list spans the metric's range and then carries `W9_TAUS` unchanged for continuity; its
+ * floor, `0.02`, **is** the value W9 now seeds as τ\* — below the ratified range, not at its edge. It
+ * is passed at **runtime** — `W9_TAUS` is not touched, so `selectTau`'s tests still assert `0.35`.
  */
 export const W9_WIDE_TAUS = [
   0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09, 0.1, 0.11, 0.12, 0.13, 0.15, 0.2, 0.25, 0.3, 0.35,

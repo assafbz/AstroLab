@@ -35,7 +35,7 @@ describe("bootWorker — same sequence as the API (#26 carry, O1 #21)", () => {
 
   test("seeds gate config, so a run can never read thresholds from an unseeded table (§3.4)", () => {
     const db = bootWorker(":memory:");
-    expect(readGateConfig(db)).toEqual({ minDomainDistance: 1, minAlignment: 0.5 });
+    expect(readGateConfig(db)).toEqual({ minDomainDistance: 1, minAlignment: 0.02 });
   });
 
   test("a tuned threshold survives a re-boot — seeding is insert-only, not a revert", () => {
