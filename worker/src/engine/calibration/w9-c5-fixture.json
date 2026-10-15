@@ -1,0 +1,1234 @@
+{
+  "provenance": {
+    "issue": "#34",
+    "artifact": {
+      "name": "p2-actuals.json",
+      "bytes": 71691,
+      "sha256": "b5e378758aa5d0106a426089db2cfe8f5c9e0c35ba7b78f0e00b27c4390e03c3",
+      "relay": [
+        {
+          "event": "ee4525983e1598edc858fb5039acfd3de9190cd7a771f59f389af5c37a7d0b7b",
+          "bytes": 65531
+        },
+        {
+          "event": "e1b2ca87ecc06caee95c5106fdc4de6760b7a9e9f87644171c823ee859877793",
+          "bytes": 6160
+        }
+      ]
+    },
+    "producer": {
+      "extractorVersion": "a68881b2ea90b315a7a42ad14fcc45cc367358910230791324adc98c3fcfde7e",
+      "model": "deepseek/deepseek-v4-flash"
+    },
+    "floor": 0.02
+  },
+  "descriptors": [
+    {
+      "ideaId": "w9-agriculture-food",
+      "descriptor": {
+        "verb": "amortises",
+        "object_class": "capital cost of lighting and automation",
+        "constraint": "few harvests a season",
+        "transferable_structure": "Increase the number of production cycles per unit of time and space by stacking operations and controlling the environment, so that fixed capital costs are spread across more output cycles; this pattern can transfer to any capital-intensive system where higher throughput per facility makes premium pricing and licensing viable."
+      }
+    },
+    {
+      "ideaId": "w9-ai-ml",
+      "descriptor": {
+        "verb": "cache",
+        "object_class": "embeddings",
+        "constraint": "keyed by a hash of the input text, so only exact unchanged documents hit",
+        "transferable_structure": "Compute a deterministic fingerprint of an input; before recomputing an expensive derived artifact, check whether an artifact for that fingerprint already exists and reuse it if so; otherwise compute and store it under that fingerprint."
+      }
+    },
+    {
+      "ideaId": "w9-arts-culture",
+      "descriptor": {
+        "verb": "record and verify",
+        "object_class": "provenance record",
+        "constraint": "per work",
+        "transferable_structure": "a verifiable ownership chain that can be applied to any asset with an ownership history"
+      }
+    },
+    {
+      "ideaId": "w9-biotech",
+      "descriptor": {
+        "verb": "trace",
+        "object_class": "lab result",
+        "constraint": "raw assay output stored with sample and protocol",
+        "transferable_structure": "Trace each output back to its input(s) and procedure(s) by co-locating them in storage."
+      }
+    },
+    {
+      "ideaId": "w9-climate-energy",
+      "descriptor": {
+        "verb": "shift",
+        "object_class": "flexible consumption",
+        "constraint": "to the cheapest hours (lowest cost and emissions)",
+        "transferable_structure": "Time-based demand response: shifting flexible load from peak to off-peak periods to reduce system cost and environmental impact, capturing value from avoided peaking generation."
+      }
+    },
+    {
+      "ideaId": "w9-consumer-social",
+      "descriptor": {
+        "verb": "matching",
+        "object_class": "people",
+        "constraint": "declared interests and past participation",
+        "transferable_structure": "Form groups based on self-reported preferences and historical engagement rather than popularity metrics"
+      }
+    },
+    {
+      "ideaId": "w9-cybersecurity",
+      "descriptor": {
+        "verb": "grant",
+        "object_class": "access",
+        "constraint": "just-in-time and scoped to a single task, never as a standing credential",
+        "transferable_structure": "time-limited, task-specific authorization without persistent credentials"
+      }
+    },
+    {
+      "ideaId": "w9-data-infra",
+      "descriptor": {
+        "verb": "refresh incrementally",
+        "object_class": "derived table",
+        "constraint": "changed since last build",
+        "transferable_structure": "Incremental update from a differential (changes-only) to a stale or fully recomputed aggregation"
+      }
+    },
+    {
+      "ideaId": "w9-devtools",
+      "descriptor": {
+        "verb": "reuse",
+        "object_class": "build outputs",
+        "constraint": "per seat",
+        "transferable_structure": "A content-addressed cache keyed by input hashes reuses unchanged step outputs across machines instead of recomputing them."
+      }
+    },
+    {
+      "ideaId": "w9-education",
+      "descriptor": {
+        "verb": "track",
+        "object_class": "cohort",
+        "constraint": "across milestones",
+        "transferable_structure": "monitoring progress over key checkpoints to identify at-risk individuals early"
+      }
+    },
+    {
+      "ideaId": "w9-enterprise-ops",
+      "descriptor": {
+        "verb": "escalating approval",
+        "object_class": "purchase",
+        "constraint": "by spend tier",
+        "transferable_structure": "escalating approval thresholds differentiate processing speed based on value"
+      }
+    },
+    {
+      "ideaId": "w9-fintech",
+      "descriptor": {
+        "verb": "release",
+        "object_class": "funds",
+        "constraint": "only upon verified milestone completion",
+        "transferable_structure": "Conditional transfer of an asset based on independent verification of a predetermined condition"
+      }
+    },
+    {
+      "ideaId": "w9-hardware-iot",
+      "descriptor": {
+        "verb": "Fuse",
+        "object_class": "sensors",
+        "constraint": "several cheap, noisy",
+        "transferable_structure": "Combine multiple low-fidelity inputs to achieve high-fidelity output."
+      }
+    },
+    {
+      "ideaId": "w9-health",
+      "descriptor": {
+        "verb": "append",
+        "object_class": "timeline",
+        "constraint": "patient-owned, any clinic can append",
+        "transferable_structure": "shared append-only log owned by data subject, with write access for multiple providers"
+      }
+    },
+    {
+      "ideaId": "w9-hr-work",
+      "descriptor": {
+        "verb": "shorten",
+        "object_class": "new hire",
+        "constraint": "scheduled first-ninety-days runway with clear milestones",
+        "transferable_structure": "A time-bounded structured plan with measurable milestones reduces ramp-up time for a person entering a new role."
+      }
+    },
+    {
+      "ideaId": "w9-legal-compliance",
+      "descriptor": {
+        "verb": "reuse with approval gates",
+        "object_class": "clause library",
+        "constraint": "per risk tier",
+        "transferable_structure": "An approval-gated selection process that accelerates low-risk items while maintaining high control over high-risk ones through tiered gates."
+      }
+    },
+    {
+      "ideaId": "w9-manufacturing",
+      "descriptor": {
+        "verb": "measure",
+        "object_class": "unit",
+        "constraint": "inline",
+        "transferable_structure": "continuous inline measurement with feedback to adjust process in real-time"
+      }
+    },
+    {
+      "ideaId": "w9-marketing-growth",
+      "descriptor": {
+        "verb": "credits",
+        "object_class": "referrer",
+        "constraint": "tracked referral link",
+        "transferable_structure": "Incentivize existing users to refer new users by automatically granting credit, turning them into an acquisition channel."
+      }
+    },
+    {
+      "ideaId": "w9-marketplaces",
+      "descriptor": {
+        "verb": "anchor",
+        "object_class": "reputation ledger",
+        "constraint": "to verified transactions",
+        "transferable_structure": "Using verified transaction data to automatically rank participants in a two-sided market without human moderators"
+      }
+    },
+    {
+      "ideaId": "w9-media-entertainment",
+      "descriptor": {
+        "verb": "escalating",
+        "object_class": "content",
+        "constraint": "only the borderline cases",
+        "transferable_structure": "Auto-classify majority, escalate minority to humans for bottleneck resolution"
+      }
+    },
+    {
+      "ideaId": "w9-mobility",
+      "descriptor": {
+        "verb": "dispatch",
+        "object_class": "vehicle",
+        "constraint": "nearest suitable vehicle instead of next available one",
+        "transferable_structure": "Fuse telemetry with live demand to match constrained supply to prioritized demand at point of dispatch"
+      }
+    },
+    {
+      "ideaId": "w9-personal-life",
+      "descriptor": {
+        "verb": "coordinate",
+        "object_class": "household errands",
+        "constraint": "shared timeline",
+        "transferable_structure": "A centralized, visible schedule with explicitly assigned responsibilities that replaces fragmented communication, thereby reducing the cognitive load of tracking and delegating tasks."
+      }
+    },
+    {
+      "ideaId": "w9-public-sector",
+      "descriptor": {
+        "verb": "triage",
+        "object_class": "cases",
+        "constraint": "by urgency",
+        "transferable_structure": "Sort incoming items by a critical attribute and assign each to a specialized resource based on that attribute"
+      }
+    },
+    {
+      "ideaId": "w9-real-estate",
+      "descriptor": {
+        "verb": "withhold",
+        "object_class": "payment",
+        "constraint": "until defect list is cleared",
+        "transferable_structure": "Conditional release of consideration subject to verified completion quality"
+      }
+    },
+    {
+      "ideaId": "w9-retail-commerce",
+      "descriptor": {
+        "verb": "predict and pre-ship",
+        "object_class": "staple consumable demand",
+        "constraint": "before they notice the gap",
+        "transferable_structure": "Predict behavior from past cadence, then preemptively fulfill before the need becomes conscious."
+      }
+    },
+    {
+      "ideaId": "w9-sales-support",
+      "descriptor": {
+        "verb": "automatically classify and answer",
+        "object_class": "inbound request",
+        "constraint": "only the head intents (most frequent)",
+        "transferable_structure": "Identify the most common types of inbound requests and automate their resolution to reduce the manual ticket queue."
+      }
+    },
+    {
+      "ideaId": "w9-space-defense",
+      "descriptor": {
+        "verb": "Fusing",
+        "object_class": "noisy observations",
+        "constraint": "from several platforms",
+        "transferable_structure": "combining imperfect data from multiple sources to track something that would be lost with only one source"
+      }
+    },
+    {
+      "ideaId": "w9-travel",
+      "descriptor": {
+        "verb": "hold",
+        "object_class": "reservation",
+        "constraint": "refundable deposit",
+        "transferable_structure": "Enable a provisional commitment by substituting a small refundable deposit for full payment, thereby lowering the user's hesitation and protecting the provider from overcommitment."
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "key": "w9-agriculture-food|w9-ai-ml",
+      "distance": null,
+      "alignment": 0.030090497737556562,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.058823529411764705,
+      "transferable_structure": 0.06153846153846154
+    },
+    {
+      "key": "w9-agriculture-food|w9-cybersecurity",
+      "distance": null,
+      "alignment": 0.020625,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.0625,
+      "transferable_structure": 0.02
+    },
+    {
+      "key": "w9-ai-ml|w9-arts-culture",
+      "distance": null,
+      "alignment": 0.02027027027027027,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08108108108108109
+    },
+    {
+      "key": "w9-ai-ml|w9-devtools",
+      "distance": 1,
+      "alignment": 0.025,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.1
+    },
+    {
+      "key": "w9-ai-ml|w9-fintech",
+      "distance": 2,
+      "alignment": 0.03531746031746032,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.05555555555555555,
+      "transferable_structure": 0.08571428571428572
+    },
+    {
+      "key": "w9-ai-ml|w9-media-entertainment",
+      "distance": 2,
+      "alignment": 0.038392857142857145,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.125,
+      "transferable_structure": 0.02857142857142857
+    },
+    {
+      "key": "w9-ai-ml|w9-personal-life",
+      "distance": null,
+      "alignment": 0.022727272727272728,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.09090909090909091
+    },
+    {
+      "key": "w9-ai-ml|w9-public-sector",
+      "distance": null,
+      "alignment": 0.035897435897435895,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.06666666666666667,
+      "transferable_structure": 0.07692307692307693
+    },
+    {
+      "key": "w9-ai-ml|w9-retail-commerce",
+      "distance": null,
+      "alignment": 0.02046783625730994,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.05555555555555555,
+      "transferable_structure": 0.02631578947368421
+    },
+    {
+      "key": "w9-ai-ml|w9-sales-support",
+      "distance": null,
+      "alignment": 0.039972899728997285,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.1111111111111111,
+      "transferable_structure": 0.04878048780487805
+    },
+    {
+      "key": "w9-arts-culture|w9-data-infra",
+      "distance": null,
+      "alignment": 0.02,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08
+    },
+    {
+      "key": "w9-arts-culture|w9-devtools",
+      "distance": null,
+      "alignment": 0.0913978494623656,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.3333333333333333,
+      "transferable_structure": 0.03225806451612903
+    },
+    {
+      "key": "w9-arts-culture|w9-fintech",
+      "distance": null,
+      "alignment": 0.03260869565217391,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.13043478260869565
+    },
+    {
+      "key": "w9-arts-culture|w9-legal-compliance",
+      "distance": null,
+      "alignment": 0.07862903225806452,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.25,
+      "transferable_structure": 0.06451612903225806
+    },
+    {
+      "key": "w9-arts-culture|w9-manufacturing",
+      "distance": null,
+      "alignment": 0.021739130434782608,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08695652173913043
+    },
+    {
+      "key": "w9-arts-culture|w9-personal-life",
+      "distance": null,
+      "alignment": 0.022727272727272728,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.09090909090909091
+    },
+    {
+      "key": "w9-arts-culture|w9-public-sector",
+      "distance": null,
+      "alignment": 0.027777777777777776,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.1111111111111111
+    },
+    {
+      "key": "w9-arts-culture|w9-retail-commerce",
+      "distance": 1,
+      "alignment": 0.041666666666666664,
+      "gated": true,
+      "verb": 0.16666666666666666,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0
+    },
+    {
+      "key": "w9-arts-culture|w9-sales-support",
+      "distance": null,
+      "alignment": 0.049999999999999996,
+      "gated": true,
+      "verb": 0.16666666666666666,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.03333333333333333
+    },
+    {
+      "key": "w9-arts-culture|w9-space-defense",
+      "distance": null,
+      "alignment": 0.037037037037037035,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.14814814814814814
+    },
+    {
+      "key": "w9-biotech|w9-climate-energy",
+      "distance": null,
+      "alignment": 0.03018018018018018,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.06666666666666667,
+      "transferable_structure": 0.05405405405405406
+    },
+    {
+      "key": "w9-biotech|w9-consumer-social",
+      "distance": null,
+      "alignment": 0.029454022988505746,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.08333333333333333,
+      "transferable_structure": 0.034482758620689655
+    },
+    {
+      "key": "w9-biotech|w9-devtools",
+      "distance": null,
+      "alignment": 0.024193548387096774,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.0967741935483871
+    },
+    {
+      "key": "w9-biotech|w9-hardware-iot",
+      "distance": null,
+      "alignment": 0.021739130434782608,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08695652173913043
+    },
+    {
+      "key": "w9-biotech|w9-manufacturing",
+      "distance": null,
+      "alignment": 0.02,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08
+    },
+    {
+      "key": "w9-biotech|w9-marketing-growth",
+      "distance": null,
+      "alignment": 0.02586206896551724,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.10344827586206896
+    },
+    {
+      "key": "w9-biotech|w9-public-sector",
+      "distance": null,
+      "alignment": 0.03571428571428571,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.14285714285714285
+    },
+    {
+      "key": "w9-biotech|w9-travel",
+      "distance": null,
+      "alignment": 0.020833333333333332,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08333333333333333
+    },
+    {
+      "key": "w9-climate-energy|w9-consumer-social",
+      "distance": null,
+      "alignment": 0.03511904761904762,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.08333333333333333,
+      "transferable_structure": 0.05714285714285714
+    },
+    {
+      "key": "w9-climate-energy|w9-cybersecurity",
+      "distance": null,
+      "alignment": 0.03464912280701754,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.10526315789473684,
+      "transferable_structure": 0.03333333333333333
+    },
+    {
+      "key": "w9-climate-energy|w9-marketplaces",
+      "distance": null,
+      "alignment": 0.031578947368421054,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.1,
+      "transferable_structure": 0.02631578947368421
+    },
+    {
+      "key": "w9-climate-energy|w9-media-entertainment",
+      "distance": null,
+      "alignment": 0.030539772727272728,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.09090909090909091,
+      "transferable_structure": 0.03125
+    },
+    {
+      "key": "w9-climate-energy|w9-public-sector",
+      "distance": 2,
+      "alignment": 0.020833333333333332,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08333333333333333
+    },
+    {
+      "key": "w9-climate-energy|w9-retail-commerce",
+      "distance": null,
+      "alignment": 0.027976190476190474,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.08333333333333333,
+      "transferable_structure": 0.02857142857142857
+    },
+    {
+      "key": "w9-climate-energy|w9-sales-support",
+      "distance": null,
+      "alignment": 0.0395010395010395,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.07692307692307693,
+      "transferable_structure": 0.08108108108108109
+    },
+    {
+      "key": "w9-consumer-social|w9-enterprise-ops",
+      "distance": null,
+      "alignment": 0.023809523809523808,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.09523809523809523
+    },
+    {
+      "key": "w9-consumer-social|w9-fintech",
+      "distance": null,
+      "alignment": 0.020833333333333332,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08333333333333333
+    },
+    {
+      "key": "w9-consumer-social|w9-public-sector",
+      "distance": null,
+      "alignment": 0.027777777777777776,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.1111111111111111
+    },
+    {
+      "key": "w9-cybersecurity|w9-marketplaces",
+      "distance": null,
+      "alignment": 0.02753623188405797,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.06666666666666667,
+      "transferable_structure": 0.043478260869565216
+    },
+    {
+      "key": "w9-data-infra|w9-space-defense",
+      "distance": null,
+      "alignment": 0.027777777777777776,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.1111111111111111
+    },
+    {
+      "key": "w9-devtools|w9-legal-compliance",
+      "distance": null,
+      "alignment": 0.125,
+      "gated": true,
+      "verb": 0.25,
+      "object_class": 0,
+      "constraint": 0.25,
+      "transferable_structure": 0
+    },
+    {
+      "key": "w9-education|w9-hr-work",
+      "distance": 1,
+      "alignment": 0.027777777777777776,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.1111111111111111,
+      "transferable_structure": 0
+    },
+    {
+      "key": "w9-education|w9-mobility",
+      "distance": null,
+      "alignment": 0.021739130434782608,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08695652173913043
+    },
+    {
+      "key": "w9-enterprise-ops|w9-fintech",
+      "distance": null,
+      "alignment": 0.02631578947368421,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.10526315789473684
+    },
+    {
+      "key": "w9-enterprise-ops|w9-legal-compliance",
+      "distance": 1,
+      "alignment": 0.10925925925925926,
+      "gated": true,
+      "verb": 0.2,
+      "object_class": 0,
+      "constraint": 0.2,
+      "transferable_structure": 0.037037037037037035
+    },
+    {
+      "key": "w9-enterprise-ops|w9-media-entertainment",
+      "distance": null,
+      "alignment": 0.125,
+      "gated": true,
+      "verb": 0.5,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0
+    },
+    {
+      "key": "w9-enterprise-ops|w9-public-sector",
+      "distance": null,
+      "alignment": 0.08423913043478261,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.25,
+      "transferable_structure": 0.08695652173913043
+    },
+    {
+      "key": "w9-fintech|w9-marketplaces",
+      "distance": 1,
+      "alignment": 0.04497354497354497,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.14285714285714285,
+      "transferable_structure": 0.037037037037037035
+    },
+    {
+      "key": "w9-fintech|w9-media-entertainment",
+      "distance": null,
+      "alignment": 0.03125,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.125,
+      "transferable_structure": 0
+    },
+    {
+      "key": "w9-fintech|w9-public-sector",
+      "distance": null,
+      "alignment": 0.03,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.12
+    },
+    {
+      "key": "w9-fintech|w9-real-estate",
+      "distance": 1,
+      "alignment": 0.02631578947368421,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.10526315789473684
+    },
+    {
+      "key": "w9-fintech|w9-sales-support",
+      "distance": null,
+      "alignment": 0.03392857142857143,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.1,
+      "transferable_structure": 0.03571428571428571
+    },
+    {
+      "key": "w9-hardware-iot|w9-space-defense",
+      "distance": 1,
+      "alignment": 0.07083333333333333,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.2,
+      "transferable_structure": 0.08333333333333333
+    },
+    {
+      "key": "w9-health|w9-space-defense",
+      "distance": null,
+      "alignment": 0.037037037037037035,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.14814814814814814
+    },
+    {
+      "key": "w9-hr-work|w9-manufacturing",
+      "distance": null,
+      "alignment": 0.02,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08
+    },
+    {
+      "key": "w9-manufacturing|w9-marketplaces",
+      "distance": null,
+      "alignment": 0.02,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08
+    },
+    {
+      "key": "w9-manufacturing|w9-mobility",
+      "distance": 1,
+      "alignment": 0.021739130434782608,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08695652173913043
+    },
+    {
+      "key": "w9-marketplaces|w9-real-estate",
+      "distance": null,
+      "alignment": 0.021739130434782608,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08695652173913043
+    },
+    {
+      "key": "w9-media-entertainment|w9-retail-commerce",
+      "distance": null,
+      "alignment": 0.03125,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.125,
+      "transferable_structure": 0
+    },
+    {
+      "key": "w9-media-entertainment|w9-sales-support",
+      "distance": null,
+      "alignment": 0.0825,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0.25,
+      "transferable_structure": 0.08
+    },
+    {
+      "key": "w9-mobility|w9-real-estate",
+      "distance": null,
+      "alignment": 0.023809523809523808,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.09523809523809523
+    },
+    {
+      "key": "w9-personal-life|w9-public-sector",
+      "distance": null,
+      "alignment": 0.02142857142857143,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08571428571428572
+    },
+    {
+      "key": "w9-personal-life|w9-sales-support",
+      "distance": null,
+      "alignment": 0.020833333333333332,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08333333333333333
+    },
+    {
+      "key": "w9-personal-life|w9-travel",
+      "distance": 1,
+      "alignment": 0.024390243902439025,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.0975609756097561
+    },
+    {
+      "key": "w9-public-sector|w9-travel",
+      "distance": null,
+      "alignment": 0.020833333333333332,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08333333333333333
+    },
+    {
+      "key": "w9-real-estate|w9-sales-support",
+      "distance": null,
+      "alignment": 0.020833333333333332,
+      "gated": true,
+      "verb": 0,
+      "object_class": 0,
+      "constraint": 0,
+      "transferable_structure": 0.08333333333333333
+    },
+    {
+      "key": "w9-retail-commerce|w9-sales-support",
+      "distance": null,
+      "alignment": 0.06933497536945812,
+      "gated": true,
+      "verb": 0.14285714285714285,
+      "object_class": 0,
+      "constraint": 0.1,
+      "transferable_structure": 0.034482758620689655
+    }
+  ],
+  "confirmed": [
+    "w9-ai-ml|w9-devtools",
+    "w9-ai-ml|w9-sales-support",
+    "w9-arts-culture|w9-fintech",
+    "w9-biotech|w9-consumer-social",
+    "w9-biotech|w9-devtools",
+    "w9-climate-energy|w9-media-entertainment",
+    "w9-climate-energy|w9-sales-support",
+    "w9-consumer-social|w9-public-sector",
+    "w9-data-infra|w9-space-defense",
+    "w9-education|w9-hr-work",
+    "w9-education|w9-mobility",
+    "w9-enterprise-ops|w9-legal-compliance",
+    "w9-enterprise-ops|w9-media-entertainment",
+    "w9-enterprise-ops|w9-public-sector",
+    "w9-fintech|w9-marketplaces",
+    "w9-fintech|w9-public-sector",
+    "w9-fintech|w9-real-estate",
+    "w9-hardware-iot|w9-space-defense",
+    "w9-manufacturing|w9-mobility",
+    "w9-marketplaces|w9-real-estate",
+    "w9-retail-commerce|w9-sales-support"
+  ],
+  "rejected": [
+    "w9-agriculture-food|w9-ai-ml",
+    "w9-agriculture-food|w9-cybersecurity",
+    "w9-ai-ml|w9-arts-culture",
+    "w9-ai-ml|w9-fintech",
+    "w9-ai-ml|w9-media-entertainment",
+    "w9-ai-ml|w9-personal-life",
+    "w9-ai-ml|w9-public-sector",
+    "w9-ai-ml|w9-retail-commerce",
+    "w9-arts-culture|w9-data-infra",
+    "w9-arts-culture|w9-devtools",
+    "w9-arts-culture|w9-legal-compliance",
+    "w9-arts-culture|w9-manufacturing",
+    "w9-arts-culture|w9-personal-life",
+    "w9-arts-culture|w9-public-sector",
+    "w9-arts-culture|w9-retail-commerce",
+    "w9-arts-culture|w9-sales-support",
+    "w9-arts-culture|w9-space-defense",
+    "w9-biotech|w9-climate-energy",
+    "w9-biotech|w9-hardware-iot",
+    "w9-biotech|w9-manufacturing",
+    "w9-biotech|w9-marketing-growth",
+    "w9-biotech|w9-public-sector",
+    "w9-biotech|w9-travel",
+    "w9-climate-energy|w9-consumer-social",
+    "w9-climate-energy|w9-cybersecurity",
+    "w9-climate-energy|w9-marketplaces",
+    "w9-climate-energy|w9-public-sector",
+    "w9-climate-energy|w9-retail-commerce",
+    "w9-consumer-social|w9-enterprise-ops",
+    "w9-consumer-social|w9-fintech",
+    "w9-cybersecurity|w9-marketplaces",
+    "w9-devtools|w9-legal-compliance",
+    "w9-enterprise-ops|w9-fintech",
+    "w9-fintech|w9-media-entertainment",
+    "w9-fintech|w9-sales-support",
+    "w9-health|w9-space-defense",
+    "w9-hr-work|w9-manufacturing",
+    "w9-manufacturing|w9-marketplaces",
+    "w9-media-entertainment|w9-retail-commerce",
+    "w9-media-entertainment|w9-sales-support",
+    "w9-mobility|w9-real-estate",
+    "w9-personal-life|w9-public-sector",
+    "w9-personal-life|w9-sales-support",
+    "w9-personal-life|w9-travel",
+    "w9-public-sector|w9-travel",
+    "w9-real-estate|w9-sales-support"
+  ],
+  "snapshot": [
+    {
+      "key": "w9-ai-ml|w9-devtools",
+      "draft": {
+        "mechanism": "Deterministic fingerprint of an input is computed; before recomputing an expensive derived artifact, check whether an artifact for that fingerprint already exists and reuse it if so; otherwise compute and store it under that fingerprint.",
+        "direction": "Content-addressed caching for repeated computations on unchanged inputs",
+        "claim": "Both ideas avoid recomputing unchanged work by keying a cache to a deterministic hash of the input, reducing cost and latency in systems that repeatedly process the same data.",
+        "what_it_takes": "A deterministic hashing function for all inputs; a cache store (local or remote) with concurrent-safe check-and-set; invalidation policy to handle cache size limits; and integration points in the build/embedding pipeline to call the cache instead of unconditionally recomputing.",
+        "first_step": "Define the artifact to cache, compute its input hash deterministically, and implement a get-or-compute routine that stores and retrieves by that hash."
+      }
+    },
+    {
+      "key": "w9-ai-ml|w9-sales-support",
+      "draft": {
+        "mechanism": "Both mechanisms reduce repeated work by recognizing a recurring input and reusing a precomputed or automated response. Exact duplicates are matched via hashing; frequent types are matched via classification.",
+        "direction": "Reuse-by-pattern: Cache exact hits and autocomplete frequent categories.",
+        "claim": "Eliminates unnecessary recomputation or manual effort for repeated patterns, saving time and cost.",
+        "what_it_takes": "A pipeline that fingerprints inputs (hash for exact, classifier for categorical), stores or automates responses per pattern, and serves them on repeat hits.",
+        "first_step": "Audit your workload to identify the most frequent exact duplicates (e.g., repeated documents) and categorical patterns (e.g., top 10 support tickets)."
+      }
+    },
+    {
+      "key": "w9-arts-culture|w9-fintech",
+      "draft": {
+        "mechanism": "conditional action based on independent verification of a predetermined state",
+        "direction": "Verified Conditional Release: marrying provenance records with escrowed payments so that any asset transfer happens only after both ownership and condition are confirmed",
+        "claim": "Eliminates counterparty risk and forgery by making every exchange depend on an independently verified truth, unlocking trust in markets where neither party wants to move first.",
+        "what_it_takes": "A decentralized verification layer that attests to ownership chain states and milestone completions, plus smart contracts that enforce conditional release only when both verifications pass.",
+        "first_step": "Design a unified verification oracle for one asset class (e.g., digital art) that handles both provenance checks and milestone proofs, then prototype a smart contract that escrows payment until the oracle confirms both conditions."
+      }
+    },
+    {
+      "key": "w9-biotech|w9-consumer-social",
+      "draft": {
+        "mechanism": "Replace coarse or popularity-based metrics with richer, attribute-level data (co-located raw inputs, declared interests, past behavior) to improve traceability or grouping relevance.",
+        "direction": "Attribute-based alignment over popularity proxies",
+        "claim": "Decisions based on granular, self-reported or co-located data yield more reproducible science and more cohesive groups than those using surface-level popularity or aggregate summaries.",
+        "what_it_takes": "Collect and store detailed metadata alongside primary data; design algorithms that weigh declared interests and historical engagement; foster user trust to encourage honest self-reporting.",
+        "first_step": "Identify a domain where a superficial metric (e.g., follower count, sample ID alone) currently drives outcomes and replace it with a richer set of attributes tied to the task."
+      }
+    },
+    {
+      "key": "w9-biotech|w9-devtools",
+      "draft": {
+        "mechanism": "Store outputs in a structure keyed by their input specifications so that the output can be retrieved (for reuse) or traced back to its origin (for audit).",
+        "direction": "Input-Keyed Output Storage for Reproducibility and Reuse",
+        "claim": "By storing every result or build artifact with the exact inputs and procedures that produced it, labs and CI systems gain both traceability and the ability to skip recomputation when inputs haven't changed.",
+        "what_it_takes": "A standardized way to represent inputs, procedures, and outputs (e.g., hashing conventions, metadata schemas); a storage system that is content-addressed or supports query-by-input; buy-in from teams to adopt the storage conventions; and optional integration with existing lab information systems or CI pipelines.",
+        "first_step": "Identify one common type of output (e.g., assay result or build artifact) and implement a minimal proof-of-concept that stores the output keyed by a hash of its inputs and procedure, then demonstrate either tracing or reuse in a single-team pilot."
+      }
+    },
+    {
+      "key": "w9-climate-energy|w9-media-entertainment",
+      "draft": {
+        "mechanism": "Both mechanisms implement a triage strategy: handle the majority of cases with a low-cost automated process, and reserve high-cost manual or intensive intervention only for the minority (the edge or borderline cases) where it provides the most value.",
+        "direction": "Triage-Based Optimization Across Domains: Automate the Routine, Escalate the Edge",
+        "claim": "Applying the same triage logic – automate the bulk, manually handle the tricky few – can reduce cost and resource bottlenecks in any system where a simple rule covers most cases but a subset requires deeper judgment.",
+        "what_it_takes": "A reliable classifier (algorithmic or rule-based) that correctly identifies the majority of easy cases and flags only the ambiguous or high-value minority for human review; plus a feedback loop to improve the classifier over time.",
+        "first_step": "Identify the natural distribution of cases in your domain (e.g., flexible load patterns or content uploads) and measure the cost difference between automated and manual handling for each segment."
+      }
+    },
+    {
+      "key": "w9-climate-energy|w9-sales-support",
+      "draft": {
+        "mechanism": "Both mechanisms identify a peak or high-cost class of demand (flexible consumption during peak hours; frequent inbound tickets) and shift or automate that demand to a cheaper, lower-effort alternative (off-peak hours; automated responses). This reduces reliance on expensive capacity (peaking plants; human agents) by handling the bulk of demand with low-cost resources.",
+        "direction": "Offload the most common or costly demand to the cheapest or most automated channel",
+        "claim": "By preferentially rerouting the high-frequency or high-cost portion of demand to a low-cost solution, organizations can slash marginal expenses and resource strain—whether energy bills and emissions or support team workload—while maintaining quality of service.",
+        "what_it_takes": "Ability to segment demand into two classes (peak vs. base, frequent vs. rare), a low-cost alternative delivery mechanism (time-shifted consumption, automated answers), and a feedback loop to ensure the shifted/automated demand is actually fulfilled correctly.",
+        "first_step": "Analyze historical data to identify the Pareto distribution: for energy, measure hourly consumption and price/emission curves; for support, classify ticket categories and count frequencies. Determine the threshold beyond which shifting or automation delivers net savings."
+      }
+    },
+    {
+      "key": "w9-consumer-social|w9-public-sector",
+      "draft": {
+        "mechanism": "Prioritize allocation based on a relevant attribute instead of a default metric.",
+        "direction": "Relevance-Based Allocation: Group or route people by what matters, not by popularity or a flat queue.",
+        "claim": "Moves scarce attention and resources to the highest-fit recipients, improving outcomes and reducing waste.",
+        "what_it_takes": "A system to capture the relevant attribute (e.g., interest, urgency), a rule engine to sort or match, and a commitment to override default metrics.",
+        "first_step": "Identify the single most predictive attribute for your domain and design a lightweight way to collect it from each incoming item or person."
+      }
+    },
+    {
+      "key": "w9-data-infra|w9-space-defense",
+      "draft": {
+        "mechanism": "Incremental integration of new data with an existing state to produce an updated state without full recomputation.",
+        "direction": "Incremental fusion of new data with existing state",
+        "claim": "By combining a maintained state with only new incremental data, you avoid expensive full recomputation while keeping results current and accurate.",
+        "what_it_takes": "A system that maintains a current state (e.g., aggregate table or object track) and processes only new data to update it, along with a way to apply the update (e.g., differential algorithm or Kalman filter).",
+        "first_step": "Identify the persistent state that is expensive to recompute and decide on a representation that supports incremental updates (e.g., a materialized view with change tracking or a state vector with covariance)."
+      }
+    },
+    {
+      "key": "w9-education|w9-hr-work",
+      "draft": {
+        "mechanism": "Monitoring progress over key checkpoints to identify and support individuals who fall behind within a defined time-boxed journey.",
+        "direction": "Milestone-driven early-warning system for learner and employee success",
+        "claim": "Both ideas use milestone-based tracking to support an individual's progress in a defined period — for learners and new hires — making the mechanism transferable.",
+        "what_it_takes": "Build a single SaaS platform that ingests milestone data from both educational cohorts and onboarding schedules, with configurable alert thresholds and intervention workflows for each domain.",
+        "first_step": "Map the learner milestones from Idea A onto the first-90-days milestones from Idea B to create a combined checklist and alert trigger."
+      }
+    },
+    {
+      "key": "w9-education|w9-mobility",
+      "draft": {
+        "mechanism": "Using real-time tracking data (milestones for learners, telemetry for vehicles) to match constrained resources (attention, vehicles) to the most urgent or suitable case, overriding a sequential default (next available).",
+        "direction": "Proactive Resource Matching: Prioritize based on real-time state rather than order.",
+        "claim": "By tracking individual state against key checkpoints or demand, you can intervene early or dispatch optimally, reducing waste and improving outcomes across domains where resources are scarce and needs vary.",
+        "what_it_takes": "A system that continuously collects individual progress or positional data, defines relevant milestones or demand zones, and applies a decision rule that selects the most suitable case rather than the next in queue.",
+        "first_step": "Identify the key milestones or demand events in your domain, then instrument data collection to track each entity's status relative to them in real time."
+      }
+    },
+    {
+      "key": "w9-enterprise-ops|w9-legal-compliance",
+      "draft": {
+        "mechanism": "A tiered approval system where items are processed faster if they belong to a low-value or low-risk category, and high-value/high-risk items still require full manual approval.",
+        "direction": "Tiered-approval buy-and-contract engine",
+        "claim": "Accelerating low-value/low-risk items while preserving control over high-value/high-risk ones eliminates blanket bottlenecks and scales operational speed without sacrificing governance.",
+        "what_it_takes": "A unified rule engine that uses spend tier for purchases and risk tier for legal clauses; integration with procurement and contract-management systems; a single approval matrix that maps both purchase amounts and clause risk levels to escalation paths.",
+        "first_step": "Map existing purchase thresholds to risk-tiered clause gates in a single governance matrix."
+      }
+    },
+    {
+      "key": "w9-enterprise-ops|w9-media-entertainment",
+      "draft": {
+        "mechanism": "Both ideas use an escalating threshold mechanism: automatic fast handling for the majority of cases (low-value purchases or clear content) and escalation to a slower, more thorough process (approval or human review) for a minority (high-value purchases or borderline content). This transfers as a triage system that reduces bottlenecks by reserving expensive resources for exceptions.",
+        "direction": "Tiered Triage: Automate the routine, escalate the exceptional",
+        "claim": "By applying automated fast-lane handling to the majority of cases and escalating only exceptions to costly human review, organizations can scale operations without proportional cost increase, resolving the bottleneck problem.",
+        "what_it_takes": "Clear threshold criteria defining routine vs. exceptional cases; automated system for first-pass handling; trained humans with efficient workflows for escalated items; monitoring to adjust thresholds over time.",
+        "first_step": "Analyze historical data to identify the spend or content characteristics that separate the routine 80% from the exceptional 20%, then define the escalation rules."
+      }
+    },
+    {
+      "key": "w9-enterprise-ops|w9-public-sector",
+      "draft": {
+        "mechanism": "Priority-based differentiation and assignment: incoming items are sorted by a critical attribute (e.g., spend tier or urgency) and routed to different processing paths with varying speed or specialization.",
+        "direction": "Tiered Triage for Approval and Casework",
+        "claim": "Eliminates bottlenecks by matching processing speed to item importance, improving efficiency, reducing wait times for high-priority items, and ensuring low-priority items move quickly without overburdening resources.",
+        "what_it_takes": "Define clear attribute thresholds (e.g., spend bands or urgency levels), establish separate workflows or queues for each tier, and allocate specialized resources (e.g., fast-track approvals or dedicated caseworkers) to each path.",
+        "first_step": "Analyze historical data to set appropriate threshold values for spend tiers or urgency levels that reflect the desired balance between speed and control."
+      }
+    },
+    {
+      "key": "w9-fintech|w9-marketplaces",
+      "draft": {
+        "mechanism": "Both rely on independent verification of a predetermined condition (e.g., milestone completion or transaction) to trigger a trustless outcome—either releasing funds or updating a reputation score.",
+        "direction": "Verified-escrow reputation market: a platform that holds payments in escrow, releases them upon verified milestones, and automatically scores providers based on those same verified completions.",
+        "claim": "Combines counterparty-risk-free payments with self-governing reputation, removing the need for both upfront trust and human moderation in one-off or two-sided markets.",
+        "what_it_takes": "A decentralized or trusted verification oracle (or multisig of verifiers) that can confirm milestone completion; a smart contract that both releases escrow and writes the outcome to a reputation ledger; and a ranking algorithm that updates supply-side scores based on the verified transaction history.",
+        "first_step": "Build a minimal escrow smart contract connected to a verification oracle (e.g., using Chainlink or a DAO of verifiers) that releases funds upon a verified milestone, then add a read/write reputation ledger that increments the provider's score each time a milestone is successfully verified and funds are released."
+      }
+    },
+    {
+      "key": "w9-fintech|w9-public-sector",
+      "draft": {
+        "mechanism": "Conditional allocation of a resource based on the verification of a predetermined attribute of the item being processed.",
+        "direction": "Conditional allocation reduces risk and improves efficiency by ensuring resources go only where conditions are met.",
+        "claim": "In one-off jobs, releasing funds only upon verified milestones removes counterparty risk; in case backlogs, routing by urgency ensures the most vulnerable are served first.",
+        "what_it_takes": "Clear definition of verifiable conditions, independent verification mechanism, and a system that automatically executes allocation upon verification.",
+        "first_step": "Identify the critical attribute (e.g., milestone completion or case urgency) and design a reliable verification process for that attribute."
+      }
+    },
+    {
+      "key": "w9-fintech|w9-real-estate",
+      "draft": {
+        "mechanism": "Conditional release of funds subject to independent verification of predefined completion or quality criteria.",
+        "direction": "Conditional Payment Release Based on Verified Completion",
+        "claim": "This mechanism eliminates counterparty risk and aligns contractor incentives with quality, ensuring both parties trust the process.",
+        "what_it_takes": "A trusted third-party or verifiable condition (e.g., automated checks, inspections, or certifications), clear definitions of milestones or defect lists, and a contract structure that holds funds in escrow or withholds payment until verification.",
+        "first_step": "Define objective, verifiable criteria for completion or quality (e.g., milestone deliverables or defect-clearing standards) and establish a reliable verification process."
+      }
+    },
+    {
+      "key": "w9-hardware-iot|w9-space-defense",
+      "draft": {
+        "mechanism": "Combining multiple noisy or low-fidelity inputs from different sources to produce a higher-quality, more reliable output that no single source could achieve alone.",
+        "direction": "Multi-sensor fusion for robust tracking and signal enhancement",
+        "claim": "By fusing cheap or noisy data streams, we can achieve precision and reliability comparable to expensive hardware, enabling cost-effective solutions in domains like space situational awareness and IoT sensing.",
+        "what_it_takes": "Robust data fusion algorithms (e.g., Kalman filters, Bayesian inference, or deep learning), synchronized data collection from multiple sources, calibration to handle sensor biases, and real-time processing infrastructure.",
+        "first_step": "Select a specific use case (e.g., tracking debris with multiple ground telescopes) and implement a proof-of-concept fusion algorithm on simulated or real noisy data from several low-cost sensors."
+      }
+    },
+    {
+      "key": "w9-manufacturing|w9-mobility",
+      "draft": {
+        "mechanism": "Continuous inline measurement with feedback to adjust process in real-time",
+        "direction": "Real-time telemetry feedback for constrained, prioritized dispatch",
+        "claim": "Continuous measurement and feedback can be applied to vehicle dispatch: fusing real-time vehicle telemetry with live demand data allows dispatching the nearest suitable vehicle, cutting idle time and empty return trips.",
+        "what_it_takes": "Requires real-time sensor telemetry, a centralized demand data feed, and a feedback loop that selects the best vehicle instead of the next in queue; fleet must be instrumented for data capture and decision execution.",
+        "first_step": "Instrument a pilot fleet with live telemetry and demand feed, then implement a simple nearest-vehicle matching algorithm that compares vehicle status against current demand."
+      }
+    },
+    {
+      "key": "w9-marketplaces|w9-real-estate",
+      "draft": {
+        "mechanism": "Using a verifiable record of actions to automatically trigger a conditional outcome, eliminating reliance on human moderators or manual enforcement.",
+        "direction": "Automated quality enforcement through verifiable data records",
+        "claim": "By anchoring outcomes to verified data, markets can self-regulate quality without human oversight, reducing fraud and disputes.",
+        "what_it_takes": "A decentralized ledger that records verified transactions or completion events, smart contracts that automatically execute conditional rewards or rankings, and integration with the relevant transaction platforms.",
+        "first_step": "Develop a prototype smart contract that releases payment upon submission of a verified completion certificate, while simultaneously updating a reputation score for the provider."
+      }
+    },
+    {
+      "key": "w9-retail-commerce|w9-sales-support",
+      "draft": {
+        "mechanism": "Predict the most frequent recurring demand from historical patterns, then automate its fulfillment before the customer actively requests it.",
+        "direction": "auto-detect-and-fulfill recurring demand",
+        "claim": "Both ideas use historical patterns (reorder cadence / frequent ticket intents) to preemptively fulfill a repeatable need, reducing manual effort and customer dropout.",
+        "what_it_takes": "A data pipeline that ingests event logs, identifies the head of the distribution (top repeat patterns), and triggers a fulfillment action (ship order / answer ticket) without human intervention.",
+        "first_step": "Analyze past behavioral logs to identify the top 20% of repeat patterns (who reorders what, or which ticket types), then set up automated fulfillment for those cases only."
+      }
+    }
+  ]
+}
