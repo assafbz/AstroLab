@@ -515,8 +515,8 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
    default; the next phase is an open owner call recorded in #34's thread.
    **Metric ceiling — M1 negative, 0 calls (2026-10-15, #106).** The aggregate the gate compares on,
    `alignment` (§3.3 · `worker/src/engine/alignment.ts`), is the *uniform mean* of four per-field Jaccard
-   scores; on this vault that mean **cannot reach the ratified floor under any weighting of the four
-   fields** — its attainable maximum is **0.125**, and its head is a **two-way tie** —
+   scores; on this vault that **equal-weight** mean cannot reach the ratified floor — its attainable
+   maximum is **0.125** — and its head is a **two-way tie** —
    `w9-enterprise-ops|w9-media-entertainment` (**confirmed**)
    and `w9-devtools|w9-legal-compliance` (**rejected**), each a **0.50** field-sum. The metric therefore
    fails to *separate* at the very top, not at some tuning boundary. The ceiling is a property of the
@@ -524,9 +524,14 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
    candidate pairs, not only the gated 67 (a maximum and an identity, so selection-immune): the 0.125 ceiling,
    and `object_class` **dead** — 0.0 on every pair, all 28 descriptors — because it holds idiosyncratic noun
    phrases that are categorical, not lexical. `transferable_structure` (mean **16.0 unique** tokens · 17.4
-   total) carries structure in domain-specific words that Jaccard's length bias penalises. No lexical
-   composite clears **precision ≥ 0.8 @ yield ≥ 5** on the labelled population (best 0.667, containment);
-   monotone rescaling (`√mean`, rank-preserving) lifts the ceiling into range but cannot move rank quality.
+   total) carries structure in domain-specific words that Jaccard's length bias penalises. The ceiling itself
+   is **rescalable** — non-uniform weightings lift it above the floor (a strictly-positive `w = (0.70, 0.05,
+   0.05, 0.20)` scores **0.350** on `w9-enterprise-ops|w9-media-entertainment`, and 84 of the 1,771 step-0.05
+   grid weightings reach ≥ 0.35) — **but reweighting does not buy the bar's precision**. On the labelled
+   population the best composite **tested** is containment at **0.667**; among **weightings**, the best mean
+   reaching precision **0.800** does so at only **4/5** good (fails C4's **≥ 5**), and the best with **≥ 5**
+   good is **0.714** (5/7) — so no composite tested and no grid weighting clears **C3 ∧ C4**. Monotone
+   rescaling (`√mean`, rank-preserving) likewise lifts the ceiling into range but cannot move rank quality.
    The **signal** is therefore an open owner call — **F** (rebuild the lexical fields; in-lane, 28 calls,
    predicted-fail), **E** (a semantic signal on `transferable_structure`; architecture + spend + scope),
    **B** (move the floor to the metric) — recorded in #106's thread. No schema change; the field set stays
