@@ -813,6 +813,22 @@ a {
   margin-top: 1rem;
 }
 
+/* The list toggle ends the head's row. It keeps §4's 44px target — §7 bans tiny tap targets — so it is
+   centred against the title's baseline rather than aligned to it. */
+.deck__toggle {
+  align-self: center;
+  flex: 0 0 auto;
+}
+
+/* The composed empty's levers, side by side: the primary CTA and the quiet one beside it (§9 E3). */
+.empty__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
 /* The card is the unit of E2: the idea, the claim, the chips, the two actions (§4). */
 .sparkcard__idea {
   margin: 0 0 1rem;
