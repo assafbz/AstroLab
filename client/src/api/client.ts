@@ -53,14 +53,27 @@ function envelopeCode(body: unknown): ApiErrorCode {
   return ENVELOPE_CODES.find((known) => known === code) ?? "internal_error";
 }
 
-export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+/**
+ * The headers every `/v1` call carries — built here, once, for the same reason `apiRequest` exists:
+ * a second place to state the bearer rule is a second place for it to drift. §1's gate is on the
+ * stream too (`docs/API.md` §4.11), and `EventSource` cannot set `Authorization` — so §4.11's caller
+ * reaches the route with a `fetch` stream and **these** headers.
+ */
+export function apiHeaders(
+  init: { headers?: HeadersInit; body?: unknown; accept?: string } = {},
+): Headers {
   const headers = new Headers(init.headers);
-  headers.set("accept", "application/json");
+  headers.set("accept", init.accept ?? "application/json");
   const token = apiToken();
   // Omitted when empty, not sent blank: a blank bearer is a `401` either way, and omitting keeps
   // the header's absence the honest signal.
   if (token) headers.set("authorization", `Bearer ${token}`);
   if (init.body !== undefined) headers.set("content-type", "application/json");
+  return headers;
+}
+
+export async function apiRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const headers = apiHeaders({ headers: init.headers, body: init.body });
 
   let res: Response;
   try {

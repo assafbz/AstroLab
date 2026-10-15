@@ -82,6 +82,56 @@ export interface VaultSummary {
 }
 
 /**
+ * `docs/API.md` §3.3 — one deck card, the `Spark` projection (K1 `#35`, `first_step` #115). The six
+ * fields the card draws, and nothing else: no score, no distance, no similarity, and no source idea ids
+ * — selection internals never surface (`ARCHITECTURE.md` §2.3). `domain_tags` is the derived, deduped
+ * union, first appearance winning; a tag may be **provisional**, so the card must not read a chip as a
+ * resolved cluster (§3.3).
+ */
+export interface Spark {
+  id: string;
+  /** The proposed idea — the card's headline. */
+  direction: string;
+  /** One–two lines, why it matters. */
+  claim: string;
+  /**
+   * The smallest next move — the card's third element (`docs/stitch-prompts.md` §1; `DESIGN.md` §4/§9).
+   * `null` only on a **legacy row**: `parseAdjudication` accepts an all-non-empty draft or an all-null
+   * refusal, so an offered spark carries real content and a `null` is rendered as simply absent (§3.3).
+   */
+  first_step: string | null;
+  domain_tags: string[];
+  created_at: string;
+}
+
+/** `docs/API.md` §3.6 / `FLOW.md` §4.1 — the five engine states, verbatim. */
+export type EngineStateName = "E0" | "E1" | "E2" | "E3" | "E4";
+
+/** `spark_run.status` (`docs/SCHEMA.md`) — `PENDING` / `RUNNING` are "in flight" (§4.10). */
+export type RunStatus = "PENDING" | "RUNNING" | "DONE" | "FAILED";
+
+/** §3.6's `run` — the newest in-flight row, or `null` when nothing is in flight. */
+export interface EngineRun {
+  id: string;
+  status: RunStatus;
+  vault_revision: number;
+}
+
+/**
+ * `docs/API.md` §3.6 / §4.10 — `GET /v1/sparks/state`. **The deck's only state input.**
+ *
+ * `state` is the precedence-resolved ladder (`E0 → E4 → E1 → E2 → E3`, computed once in
+ * `api/src/engine-state.ts`) and `unreviewed` is the count of `OFFERED` sparks **in every state** —
+ * so `E1` coexists with a renderable deck without the count going missing. The client composes around
+ * this; it never re-derives it (§4.9: *"the deck read does not re-derive it"*).
+ */
+export interface EngineState {
+  state: EngineStateName;
+  unreviewed: number;
+  run: EngineRun | null;
+}
+
+/**
  * `docs/API.md` §4.16 — the `202` from `POST /v1/sparks/run`, the cold-start run trigger (O5 `#25`).
  *
  * `run_id` is the enqueued row and `vault_revision` the revision it runs at. Both are the server's; the
