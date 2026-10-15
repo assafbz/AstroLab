@@ -119,24 +119,83 @@ Pre-registered before any scoring (so the read cannot be re-cut to fit its resul
   at temp 0, so within-model agreement buys *n*, not independence — and independence across models is
   precisely the axis the 2026-10-14 20↔11 flip did *not* vary. If within-model agreement is not
   near-total, that is a finding, not a premise.
+- **Agreement is reported chance-corrected, not raw.** Raw agreement is inflated by skew: for two
+  independent repeats of a cell with good-rate *r*, chance agreement is `r² + (1 − r)²` — ≈ 17/21 at
+  *r* ≈ 0.1 — so a near-constant cell reads "reliable" while carrying nothing, and in the 2026-10-15
+  read the two highest raw agreements were exactly the uninformative pairs. Every agreement figure is
+  therefore reported as **κ = `(obs − E) / (N − E)`**, `E = N·(p_a·p_b + (1 − p_a)(1 − p_b))`, alongside
+  its raw count, and a cell whose verdict is (near-)constant is marked **uninformative** rather than
+  high-agreement: a κ computed against a constant column is an **identity** (`E` collapses onto `obs`),
+  not a measurement of agreement.
+- **The reproducibility floor — measured before any agreement statistic is read.** Agreement evidences
+  *decidability* only if the instrument reproduces itself, and that is a property to measure, not to
+  assume: **one cell is repeat-sampled — n ≥ 5 identical dispatches of identical prompt bytes (the
+  harness's output-path line excepted: it is non-semantic and is recorded as such), decode parameters
+  verified in the session record rather than intended — and its within-cell agreement is reported as the
+  noise floor.** Like every other phase, the probe's call count and cost are posted
+  before it fires (§5). Its prompts and outputs land **where a second agent can read them**, with a
+  hash manifest — an artifact only its author can open is not checkable, and the check is the point.
+  Agreement between *different* cells that does not clear the floor is not
+  evidence about the rubric; it is the class `instrument` below.
 - **Decidability gate** — **every pair of model families agrees on ≥ 19 of the 21 rows**.
 - **Stability, reported and not gating** — τ\* is recomputed with each judge dropped in turn
   (leave-one-out); non-degenerate only at k = 5, since a 4–1 row cannot flip on a single drop.
 - **No majority ⇒ `unresolved`** — excluded from C3/C4 with its count stated, never silently rounded.
 
-**Non-unanimous rows are classified, pre-declared — three classes, because the repairs differ.**
+**Non-unanimous rows are classified, pre-declared — four classes, and the order is load-bearing:**
+**each class below `instrument` presupposes that the cells reproduce**, so `instrument` is the *prior*
+question and is asked first.
 
 | class | shape | repair |
 | :-- | :-- | :-- |
+| **`instrument`** *(prior)* | two dispatches of the **same** cell — identical prompt bytes, pinned decode — disagree with each other | **pin the decode, verify the prompt bytes, repeat-sample a cell to a self-agreement floor**; more examples and a new vault fix nothing |
 | **`nuisance`** | a split confined to the presentations of **one** model | none — reported, **non-gating** |
 | **`row-ambiguous`** | a cross-family split that is **sparse and two-directional** | **add worked examples** to §2 |
 | **`family-offset`** | a cross-family split that is **systematic and one-directional** — one family reads consistently stricter or looser across many rows | **normalise per family, or anchor to a human reader**; more examples will not fix it |
 
 Reporting a `family-offset` as *"the rubric is ambiguous"* would point the next phase at the wrong
-repair — §4 step 6.3's misattribution, one level down. The two are separable on the same data: the B2
-post carries **per-family verdicts and the direction of every disagreement**, so a one-way offset across
-many rows reads differently from sparse two-way splits. Only a cross-family split that **decides whether
-the selected τ clears C3∧C4** makes τ\* **not settleable** and routes to the owner.
+repair — §4 step 6.3's misattribution, one level down. Reporting an `instrument` split as rubric
+ambiguity aims at the wrong object **twice**: a scorer that does not reproduce itself cannot measure any
+rubric, so "more worked examples", "a stronger operationalisation" and "a human anchor" are all repairs
+to the wrong thing. The classes are separable on the same data — `instrument` by a repeat of one cell,
+`nuisance` by a split inside one model's presentations, `row-ambiguous` / `family-offset` by
+**per-family verdicts and the direction of every disagreement** — so a one-way offset across many rows
+reads differently from sparse two-way splits. Only a cross-family split that **decides whether the
+selected τ clears C3∧C4**, on an instrument that has cleared the reproducibility floor, makes τ\*
+**not settleable** and routes to the owner.
+
+### Why the fourth class — the 2026-10-15 read
+
+Lands inside the owner's 2026-10-15 **(B)** ruling (*make the G4/G5 rubric decidable*) as that repair
+extended past the rubric to the instrument; it is flagged to the owner and is **vetoable** under §6.
+
+The 2026-10-15 reliability read (issue #34's thread) produced a cross-family gate FAIL and **τ\* =
+`null`**; the disagreement was then traced past presentation and past the rubric to the instrument,
+which is what makes the class above a standing requirement rather than a one-off. Three independent
+lines, all from stored or re-dispatched outputs:
+
+- **the verdict column does not reproduce.** Identical-spec dispatches of one judge — same model, same
+  presentation, same bytes — returned **10 · 11 · 0** good of 21 (**0 · 1** on the other family), and the
+  identical-spec pair agreed on **11/21**, *below* a pair that differed in presentation (16/21). That
+  spread is the measurement. **The κ of those pairs is not:** a pair holding a constant column forces
+  κ = 0 by construction — P3 returned 0/21 and F1 0/21, so four of the six cross-family pairs carry a
+  constant cell, three forcing κ = 0 and one leaving `N − E = 0` — and the two that do not are pinned
+  inside a band by the 1/21 family's near-constancy (feasible κ ∈ [−0.095, +0.104] and [−0.096, +0.087],
+  observed at each band's top). κ therefore cannot separate nondeterminism from constancy on this deck,
+  and is reported here as **uninformative**, not as agreement;
+- a **repeat-probe of one cell at pinned `temperature: 0.0`** returned **18 · 14 · 2 · 7** good of 21
+  from byte-identical prompts **but for the output-path line** — a 16-row spread, mean **κ ≈ 0.16** — so a
+  decode pin does **not** buy reproducibility (reasoning models may not honour `temperature`; either way
+  the repeats diverge);
+- the preceding judge pools, already pinned at `0.0`, spread **9** and **10** rows.
+
+**A protocol regression is part of the record, not a footnote:** the cells in that read ran with
+`temperature` **unset**, while every earlier cell in the same workspace carried `0.0`. The repair is
+procedural and is now a standing rule: **before trusting any multi-cell agreement figure, confirm (a)
+identical prompt bytes and (b) the decode parameters *in the session record*** — recorded, not intended.
+The label for the read is **`instrument`**; its consequence is that **τ\* is not seeded** (§6) and the
+next phase is an owner call between the **metric** (issue #106), a **decidable scoring protocol**, and
+the **vault**.
 
 ## 3. Run-level pass conditions
 
@@ -246,3 +305,11 @@ the §4 step 6 re-score **upward** at τ > 0.65, and any re-scoring inside the u
 The relay thread (issue #34's canonical thread) is the artifact of record for the run; this document is
 the bar it is scored against. Results land in `ARCHITECTURE.md` §3.4 (τ\*) and §12 item 2 (the field-set
 verdict), the C5 fixture lands as a test; the bar itself changes only on the owner's word.
+
+**Outcome on record (2026-10-15).** The W9 reliability read **failed its decidability gate**, and the
+failure is recorded as a **measurement failure** — class `instrument` (§2) — **not** a verdict on the
+vault and **not** on the field set. Per this document that means **τ\* is `null`: no seed is written, and
+`min_alignment` stays at its provisional default** pending the owner's call on the next phase (metric
+issue #106 · a decidable scoring protocol · the vault). The field-set verdict — **CONFIRMED**,
+`AUC 0.6548` — is recorded in `ARCHITECTURE.md` §12 item 2; the run's actuals, the protocol regression
+and the label live in issue #34's thread.
