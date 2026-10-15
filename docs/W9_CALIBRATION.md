@@ -125,7 +125,8 @@ Pre-registered before any scoring (so the read cannot be re-cut to fit its resul
   read the two highest raw agreements were exactly the uninformative pairs. Every agreement figure is
   therefore reported as **κ = `(obs − E) / (N − E)`**, `E = N·(p_a·p_b + (1 − p_a)(1 − p_b))`, alongside
   its raw count, and a cell whose verdict is (near-)constant is marked **uninformative** rather than
-  high-agreement.
+  high-agreement: a κ computed against a constant column is an **identity** (`E` collapses onto `obs`),
+  not a measurement of agreement.
 - **The reproducibility floor — measured before any agreement statistic is read.** Agreement evidences
   *decidability* only if the instrument reproduces itself, and that is a property to measure, not to
   assume: **one cell is repeat-sampled — n ≥ 5 identical dispatches of identical prompt bytes (the
@@ -173,9 +174,15 @@ The 2026-10-15 reliability read (issue #34's thread) produced a cross-family gat
 which is what makes the class above a standing requirement rather than a one-off. Three independent
 lines, all from stored or re-dispatched outputs:
 
-- the read's **identical-spec** cell pair — same model, same presentation — agreed on **11/21**, *below*
-  a pair that differed in presentation (16/21): exactly its chance expectation (**κ = 0.00**), while
-  every cross-family pair sat at **κ ≈ 0**;
+- **the verdict column does not reproduce.** Identical-spec dispatches of one judge — same model, same
+  presentation, same bytes — returned **10 · 11 · 0** good of 21 (**0 · 1** on the other family), and the
+  identical-spec pair agreed on **11/21**, *below* a pair that differed in presentation (16/21). That
+  spread is the measurement. **The κ of those pairs is not:** a pair holding a constant column forces
+  κ = 0 by construction — P3 returned 0/21 and F1 0/21, so four of the six cross-family pairs carry a
+  constant cell, three forcing κ = 0 and one leaving `N − E = 0` — and the two that do not are pinned
+  inside a band by the 1/21 family's near-constancy (feasible κ ∈ [−0.095, +0.104] and [−0.096, +0.087],
+  observed at each band's top). κ therefore cannot separate nondeterminism from constancy on this deck,
+  and is reported here as **uninformative**, not as agreement;
 - a **repeat-probe of one cell at pinned `temperature: 0.0`** returned **18 · 14 · 2 · 7** good of 21
   from byte-identical prompts **but for the output-path line** — a 16-row spread, mean **κ ≈ 0.16** — so a
   decode pin does **not** buy reproducibility (reasoning models may not honour `temperature`; either way
