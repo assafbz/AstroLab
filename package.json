@@ -22,6 +22,7 @@
     "test": "npm run test --workspaces --if-present",
     "lint": "eslint .",
     "lint:citations": "node scripts/lint-citations.mjs",
+    "audit:zdr": "tsx scripts/audit-zdr.ts",
     "format": "prettier --check .",
     "format:write": "prettier --write ."
   },
