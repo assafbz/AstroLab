@@ -19,6 +19,16 @@ const IDEA = {
   updated_at: "2026-10-13T05:14:05Z",
 };
 
+const SPARK_DETAIL = {
+  id: "abc",
+  direction: "Pair the transit lattice with audio",
+  claim: "Scheduling and DSP share a shape.",
+  first_step: "Instrument the ingest path before the model runs.",
+  what_it_takes: "Two weekends on the ingest path.",
+  domain_tags: ["transit"],
+  created_at: "2026-10-13T05:14:05Z",
+};
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -29,6 +39,7 @@ function json(body: unknown, status = 200): Response {
 /** The Vault list and the idea detail read differently; stub by path. */
 function stubFetch() {
   const mock = vi.fn((url: string) => {
+    if (url.startsWith("/v1/sparks/")) return Promise.resolve(json(SPARK_DETAIL));
     if (url.startsWith("/v1/ideas/")) {
       return Promise.resolve(
         json({
@@ -125,6 +136,25 @@ test("#/ renders S1, and a vault below the floor lands E0 Cold — not a placeho
   expect(screen.queryByText(/not built yet/i)).toBeNull();
   // The Sparks tab is the active one: S1 is home, not a screen reached from elsewhere.
   expect(screen.getByRole("link", { name: "Sparks" }).getAttribute("aria-current")).toBe("page");
+});
+
+test("#/sparks/<id> renders S1b Spark Detail, with the Sparks tab active (D8)", async () => {
+  renderAt("#/sparks/abc");
+
+  expect(
+    await screen.findByRole("heading", { level: 1, name: SPARK_DETAIL.direction }),
+  ).toBeTruthy();
+  // D8 — S1b has no tab of its own and is reached from the deck, so the Sparks tab stays lit: a screen
+  // the user can be on must not read as "nowhere".
+  expect(screen.getByRole("link", { name: "Sparks" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByText(/not built yet/i)).toBeNull();
+});
+
+test("a bare #/sparks is still the not-found fallback — the deck is home, at #/", () => {
+  renderAt("#/sparks");
+
+  expect(screen.getByRole("heading", { level: 1, name: "Not found" })).toBeTruthy();
+  expect(screen.getByText("No screen at /sparks.")).toBeTruthy();
 });
 
 test("a screen V8 does not build still renders its placeholder", () => {

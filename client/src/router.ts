@@ -79,3 +79,22 @@ export function ideaIdFromPath(path: string): string | null {
   const match = /^\/ideas\/([^/]+)$/.exec(path.replace(/\/+$/, ""));
   return match ? match[1]! : null;
 }
+
+/** The S1b detail route's hash for one spark (`#/sparks/<id>`). Ids are opaque — never encoded here. */
+export function sparkHref(id: string): string {
+  return `#/sparks/${id}`;
+}
+
+/**
+ * The id in an `#/sparks/<id>` path, or `null` when the path is not a per-id route — the same
+ * contract as `ideaIdFromPath`, for the same reason: S1b is not an entry in `SCREENS` (S1 lives at
+ * `/`), so `matchScreen` alone would call it a not-found, and the shell must resolve the id *before*
+ * it matches. A trailing slash still resolves.
+ *
+ * **A bare `/sparks` is not a route.** `/sparks` is unclaimed by `SCREENS` and stays a not-found
+ * rather than quietly aliasing the deck, so a path outside the route table keeps meaning exactly that.
+ */
+export function sparkIdFromPath(path: string): string | null {
+  const match = /^\/sparks\/([^/]+)$/.exec(path.replace(/\/+$/, ""));
+  return match ? match[1]! : null;
+}

@@ -1,6 +1,14 @@
 import { describe, expect, test } from "vitest";
 
-import { SCREENS, ideaHref, ideaIdFromPath, matchScreen, routeHref } from "./router.ts";
+import {
+  SCREENS,
+  ideaHref,
+  ideaIdFromPath,
+  matchScreen,
+  routeHref,
+  sparkHref,
+  sparkIdFromPath,
+} from "./router.ts";
 
 const HOME = SCREENS.find((s) => s.id === "S1")!;
 
@@ -70,4 +78,36 @@ describe("ideaIdFromPath", () => {
 test("ideaHref is the hash form of a per-id path, and round-trips through ideaIdFromPath", () => {
   expect(ideaHref("x")).toBe("#/ideas/x");
   expect(ideaIdFromPath(ideaHref("x").slice(1))).toBe("x");
+});
+
+describe("sparkIdFromPath", () => {
+  test("resolves the id in a per-id path", () => {
+    expect(sparkIdFromPath("/sparks/abc")).toBe("abc");
+  });
+
+  test("a trailing slash resolves, so a pasted `#/sparks/abc/` is not a not-found", () => {
+    expect(sparkIdFromPath("/sparks/abc/")).toBe("abc");
+  });
+
+  test("a bare `/sparks` is not a route — S1 is the home, at `/`", () => {
+    // Not an alias for the deck: `#/sparks` is unclaimed by `SCREENS`, and a path that is not in the
+    // route table stays a not-found rather than quietly meaning S1 after all.
+    expect(sparkIdFromPath("/sparks")).toBeNull();
+    expect(sparkIdFromPath("/sparks/")).toBeNull();
+  });
+
+  test("a further segment is not a route — the server answers a not-found envelope too (§2)", () => {
+    expect(sparkIdFromPath("/sparks/a/b")).toBeNull();
+  });
+
+  test("any other path is not a per-id route", () => {
+    expect(sparkIdFromPath("/vault")).toBeNull();
+    expect(sparkIdFromPath("/")).toBeNull();
+    expect(sparkIdFromPath("")).toBeNull();
+  });
+});
+
+test("sparkHref is the hash form of a per-id path, and round-trips through sparkIdFromPath", () => {
+  expect(sparkHref("x")).toBe("#/sparks/x");
+  expect(sparkIdFromPath(sparkHref("x").slice(1))).toBe("x");
 });
