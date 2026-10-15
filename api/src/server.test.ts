@@ -179,10 +179,10 @@ test("an authorized but unimplemented /v1 route is the not_found envelope — ne
   // W8 (#33) implemented `GET /v1/sparks/state` and `POST /v1/sparks/run`, and K1 (#35) makes bare
   // `/v1/sparks` a route; each entry that pinned their *absence* is removed here as it lands (each has
   // its own coverage below). The bare `/v1/sparks` entry is replaced by a **deeper** unknown spark path,
-  // so the not_found envelope is still pinned for the `{id}` shape K3 will claim (§4.12).
+  // so the not_found envelope is still pinned for the `{id}` shape K3 will claim (§4.12). The
+  // `/v1/export` entry is removed by V6 (#17), which makes it a route; its own coverage is below.
   for (const [method, path] of [
     ["GET", "/v1/sparks/9f1c"],
-    ["GET", "/v1/export"],
     ["GET", "/v1"],
   ] as const) {
     expectEnvelope(
@@ -526,6 +526,44 @@ test("the summary route reads no query parameter, and only GET is a route", asyn
   });
   expectEnvelope(await call("POST", "/v1/vault/summary", auth), 404, "not_found");
   expectEnvelope(await call("GET", "/v1/vault/summary/", auth), 404, "not_found");
+});
+
+test("GET /v1/export answers §4.17 — the eight contract keys, top-level and in order", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const result = await call("GET", "/v1/export", auth);
+  expect(result.status).toBe(200);
+  expect(result.contentType).toBe(JSON_UTF8);
+  // The body **is** the document: the eight keys are top-level (no wrapper), in §4.17's order. A
+  // `domain_tags[]` that shipped misplaced or dropped is the defect §4.17 calls out, so the key set
+  // and its order are asserted here rather than left to the unit read in `export.test.ts`.
+  expect(Object.keys(result.body as object)).toEqual([
+    "schema_version",
+    "exported_at",
+    "ideas",
+    "idea_versions",
+    "lineage_edges",
+    "provenance_edges",
+    "decisions",
+    "domain_tags",
+  ]);
+  expect((result.body as { ideas: unknown[] }).ideas).toEqual([]);
+});
+
+test("GET /v1/export reads the live vault, not a static — a captured idea is present (§4.17)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  await call("POST", "/v1/ideas", { ...auth, json: VALID });
+  const doc = (await call("GET", "/v1/export", auth)).body as {
+    ideas: Array<{ hypothesis: string }>;
+  };
+  expect(doc.ideas.map((row) => row.hypothesis)).toEqual([VALID.hypothesis]);
+});
+
+test("the export route dispatches by method — only GET is a route (§2)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  expectEnvelope(await call("POST", "/v1/export", auth), 404, "not_found");
+  expectEnvelope(await call("PUT", "/v1/export", auth), 404, "not_found");
+  // The trailing-slash spelling is not the route — there is no third case (§2, §6).
+  expectEnvelope(await call("GET", "/v1/export/", auth), 404, "not_found");
 });
 
 test("DELETE /v1/ideas/{id} answers 200, and the idea is gone from every read", async () => {

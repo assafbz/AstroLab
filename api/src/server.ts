@@ -14,6 +14,7 @@ import {
 } from "./capture.js";
 import { deleteIdea } from "./delete.js";
 import { engineState } from "./engine-state.js";
+import { exportVault } from "./export.js";
 import { forkIdea, parseForkInput } from "./fork.js";
 import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
 import { iterateIdea } from "./iterate.js";
@@ -217,6 +218,15 @@ async function handleRequest(
     if (method === "POST" && path === "/v1/sparks/run") {
       const run = enqueueRun(db, currentVaultRevision(db));
       return sendJson(res, 202, { run_id: run.id, vault_revision: run.vault_revision });
+    }
+
+    // §4.17 — the open, complete export (V6 `#17`; NFR-D1, ARCH §8). A `GET` only: the document is the
+    // whole vault in one read, so there is nothing to validate and no body is read. The read is the
+    // export's own — one `BEGIN`…`COMMIT` snapshot inside `exportVault` (§4.5's shared `readSnapshot`),
+    // read-only and provider-free — so the handler does no more than hand the document back. §4.17's
+    // body *is* the eight-key document, not a wrapper: the keys are top-level, as the contract shows.
+    if (method === "GET" && path === "/v1/export") {
+      return sendJson(res, 200, exportVault(db));
     }
 
     // §4.6 — the same `{id}` path with an action segment. The dispatch is by method *and* action, so
