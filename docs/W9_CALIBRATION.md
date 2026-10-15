@@ -18,8 +18,10 @@ the expected pairs captured.
 **Where that stands (2026-10-15).** The field set is **CONFIRMED**; the threshold is seeded (§3.4 · §6).
 The threshold was **not** won by a run that cleared this bar — the run failed its decidability gate (§2) —
 so τ\* = `0.02` is an **owner ruling** on the widened sweep's floor, seeded for coverage with precision
-**uncertified** (§6). And the **regression fixture** (§3 **C5**) is a separate posted phase — it needs the
-run's expected pairs, so it is not captured yet.
+**uncertified** (§6). And the **regression fixture** (§3 **C5**) is **captured** as a committed test
+artifact — `worker/src/engine/calibration/w9-c5-fixture.json`, asserted by `w9-c5-fixture.test.ts`. It is
+a **0-call** test (§4 step 7), **not** a posted spend phase: it needs the vault's descriptors and the
+run's P2 actuals *carried into a committed fixture*, which the run's artifact already holds.
 
 `min_domain_distance` is **not** tuned here: it is spec-pinned at `1` (`store/src/config.ts`), and
 raising it is an edit to the spec, not a calibration value.
