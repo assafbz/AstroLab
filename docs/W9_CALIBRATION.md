@@ -52,6 +52,59 @@ The five rows stay the bar's *definition* — G3's guarantee is the parser's arm
 vault's distance axis is not fixture-bound — but three of the five are not what the reviewer decides
 here, and the report must say which two they are.
 
+### G4 and G5 operationalized — the decisive tests (owner-ruled **(B)**, 2026-10-15)
+
+Added under the owner's ruling of 2026-10-15 (*a+b*, issue #34's thread) — §6's rule that the bar
+changes **only on the owner's word** is satisfied by that ruling.
+
+The 2026-10-14 run scored the **same 21 stored sparks** twice and got two answers: a neutral read
+**20/21 good → τ\* = 0.02**, a strict read **11/21 good → no τ\***. τ\* was therefore being set by how
+strictly G4/G5 were read, not by the data. The repair is not a stricter or looser mood — it is to say
+what the two conditions **decide**, so two reviewers reading the same spark land on the same binary.
+Everything below is answerable from the spark and its two sources alone.
+
+**G4 (grounded)** fails unless **all three** hold.
+
+| test | question | fails when |
+| :-- | :-- | :-- |
+| **G4.1 — both-source grounding** | is the stated `mechanism` present in **both** sources? | it is recoverable from one source only — that is groundedness in one, not in two |
+| **G4.2 — transfer residue** *(the discriminator)* | does the `mechanism` introduce **a term or relation neither source states** — an abstraction over the two, not a paraphrase of one? | the mechanism sentence can be replaced by source A's (or source B's) own hypothesis sentence with **no loss of meaning**; then the "shared structure" is the sources' own words, and the spark restates an idea instead of transferring one |
+| **G4.3 — one structure, not a disjunction** | is it **one** structure that both sources realize? | it is true of both only by splitting — *"…for A, **or** …for B"* — two different claims joined, each true of one source |
+
+**G5 (actionable)** fails unless **both** hold.
+
+| test | question | fails when |
+| :-- | :-- | :-- |
+| **G5.1 — a concrete move** | does `first_step` name a **constructible** next move — an artifact, an instrument, a decision, with its object? | it names a disposition rather than a move (*realize / align / explore / consider / invest in*) or carries no object |
+| **G5.2 — not the claim** | is it distinct from `claim`? | it is `claim` in the imperative — the same proposition, restated as a task |
+
+**Worked examples — constructed for the bar, deliberately *not* drawn from the measured vault.** They
+pin the boundary without labelling any scored spark; the replay scores the stored artifact against the
+tests, never against these sentences.
+
+| # | spark (abridged) | verdict | why |
+| :-- | :-- | :-- | :-- |
+| **W1** | sources: *a resort discounts unsold lift capacity after 18:00* · *a bakery discounts unsold bread an hour before close*. `mechanism`: "Sell unsold perishable inventory at a discount before it expires." | **G4 FAIL** | **G4.2** — the sentence *is* either source's own sentence; *unsold · perishable · discount · before expiry* are all already in both. No residue. |
+| **W2** | same pair. `mechanism`: "**Horizon-indexed salvage pricing** — a capacity unit's price decays monotonically toward its marginal cost as its expiry horizon shortens, so the tail clears without discounting the whole book." | **G4 PASS** | **G4.2** — *monotone decay against a horizon* and *the tail only* are stated by neither source, and both sources are instances of it. **G4.3** — one structure. |
+| **W3** | sources: *a warehouse scans barcodes to record stock moves* · *a clinic scans wristbands to record patient moves*. `mechanism`: "Both use automated identification to capture events." | **G4 FAIL** | **G4.2** — an abstraction that adds no relation; satisfied by either source alone. **G4.3** — "both … to …" is the disjunction in disguise. |
+| **W4** | sources: *a lone astronomer annotates images* · *a list moderator tags posts*. `first_step`: "Realize the value of consistent annotation." | **G5 FAIL** | **G5.1** (a disposition, no object) **and** **G5.2** (the `claim` in the imperative). |
+
+**A second binary the judge returns — *mechanism-identical source pairs*.** C1 pins **cluster**-uniqueness
+and says nothing about mechanism-uniqueness, so a C1-compliant vault can contain pairs that are the same
+mechanism in two domains — and those are exactly where G4.2 bites hardest. Each judged spark therefore
+also carries the easier binary *"are these two source ideas the same mechanism in two domains?"* (G4.2's
+residue test, applied source against source). The count is reported with the curve: it explains a
+divergent read instead of hiding inside it, and it is the vault-side input to **#106** (the metric-side
+half of the same ceiling).
+
+**The judge protocol — k ≥ 3, majority, disagreement recorded.** A single reviewer's strictness is the
+thing being removed, so the read is taken from **≥ 3 independent judges** (independent contexts; each
+sees the spark and both sources and **never** the `alignment` value or the τ it cleared — §2's blind
+rule, unchanged). Per spark each judge returns **good / not-good** plus the failing condition. The
+**recorded verdict is the majority**. The report carries the **per-spark disagreement count** and the
+**agreement rate** as the read's stability, and a spark with **no majority** (an even split) is recorded
+**unresolved** and excluded from C3/C4 with its count stated — never silently rounded.
+
 ## 3. Run-level pass conditions
 
 The run **passes** iff all of:
@@ -109,7 +162,7 @@ by design: every tag is a shipped cluster key).
    over-read: the field set can at best be checked against confirmed/rejected; the good/not-good split
    inside the surfaced set still bottoms out in G4/G5.)
 5. **Score and choose τ\*** — score every τ against §3 and report the **precision/yield curve per τ**.
-   Pick **τ\*** = the **lowest** τ with precision ≥ 80% **and** yield ≥ 5: the owner-approved shape, which
+   Pick **τ\*** = the **lowest** τ with precision ≥ 80% **and** yield ≥ 5 (the read comes from §2's judge protocol — k ≥ 3, majority, disagreement recorded): the owner-approved shape, which
    maximises yield (what the deck is for). A change to the selection rule is an **owner call** — this
    curve is the evidence that would justify one.
 6. **Terminal branch — if no τ *in the swept range* {0.35…0.65} clears both conditions, that range
