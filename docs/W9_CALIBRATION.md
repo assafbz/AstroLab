@@ -335,10 +335,10 @@ label). Three consequences, stated so the seed is not misread:
   output**. The selector was deliberately left strict (`W9_PRECISION_FLOOR` untouched): relaxing it until
   this vault passes would fit the rule to the result.
 - **The floor sits exactly on attainable values.** Four pairs' exact `alignment` is exactly `0.02`
-  (= `1/20`), and their stored floats are exactly `0.02` as well, so all four gate under `≥`. The boundary
-  is therefore **ulp-decided**, and a later change to the comparator's strictness (or to the parser) would
-  drop those four silently. Verified against the artifact: exact-rational and float counting agree at
-  `0.02` — 67 pairs either way.
+  (= `1/50`; note `1/20` is the *other* boundary below, at τ = 0.05), and their stored floats are exactly
+  `0.02` as well, so all four gate under `≥`. The boundary is therefore **ulp-decided**, and a later change
+  to the comparator's strictness (or to the parser) would drop those four silently. Verified against the
+  artifact: exact-rational and float counting agree at `0.02` — 67 pairs either way.
 - **Insert-only, so the default reaches new stores only.** A store seeded under the former provisional
   `0.5` keeps it until an operator calls `setConfig`; re-basing existing stores is a data change on user
   stores, and is not part of this record.
