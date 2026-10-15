@@ -15,6 +15,12 @@ representative vault, the descriptor field set **confirmed**, the results writte
 `ARCHITECTURE.md` (§3.4 for the threshold, §12 item 2 for the field set), and a **regression fixture** of
 the expected pairs captured.
 
+**Where that stands (2026-10-15).** The field set is **CONFIRMED**; the threshold is seeded (§3.4 · §6).
+The threshold was **not** won by a run that cleared this bar — the run failed its decidability gate (§2) —
+so τ\* = `0.02` is an **owner ruling** on the widened sweep's floor, seeded for coverage with precision
+**uncertified** (§6). And the **regression fixture** (§3 **C5**) is a separate posted phase — it needs the
+run's expected pairs, so it is not captured yet.
+
 `min_domain_distance` is **not** tuned here: it is spec-pinned at `1` (`store/src/config.ts`), and
 raising it is an edit to the spec, not a calibration value.
 
@@ -308,11 +314,37 @@ verdict), the C5 fixture lands as a test; the bar itself changes only on the own
 
 **Outcome on record (2026-10-15).** The W9 reliability read **failed its decidability gate**, and the
 failure is recorded as a **measurement failure** — class `instrument` (§2) — **not** a verdict on the
-vault and **not** on the field set. Per this document that means **τ\* is `null`: no seed is written, and
-`min_alignment` stays at its provisional default** pending the owner's call on the next phase (metric
-issue #106 · a decidable scoring protocol · the vault). The field-set verdict — **CONFIRMED**,
-`AUC 0.6548` — is recorded in `ARCHITECTURE.md` §12 item 2; the run's actuals, the protocol regression
-and the label live in issue #34's thread.
+vault and **not** on the field set. Per this document that means the read wrote **no τ\* of its own**, and
+`min_alignment` stayed at its provisional default. The field-set verdict — **CONFIRMED**, `AUC 0.6548` —
+is recorded in `ARCHITECTURE.md` §12 item 2; the run's actuals, the protocol regression and the label live
+in issue #34's thread. **Superseded for the shipped threshold (2026-10-15, #106):** the owner ruled
+*"B alone"* on the deferred re-base, and **`min_alignment` is seeded to τ\* = `0.02`** — the amendment
+immediately below.
+
+**The threshold seeded — `min_alignment` = τ\* = `0.02`** (owner, 2026-10-15; issue #106, *"B alone"*).
+τ\* is the **widened** sweep's floor (`W9_WIDE_TAUS`, §4 step 6.4 — the pre-authorized *"extend below
+0.35"* phase), i.e. **below** the ratified range (`W9_TAUS` = 0.35–0.65, §4 step 3), **not** at its edge;
+it is the lowest τ on which **C4** holds (67 surfaced · 21 good · precision **0.31**). The choice is a
+deliberate **C3 amendment**: the precision condition is **not met and not claimed** — τ\* is seeded for
+**coverage**, and precision is **uncertified** until a scorer reproduces itself (§2, the `instrument`
+label). Three consequences, stated so the seed is not misread:
+
+- **The rule and the seed disagree, by design.** `selectTau` still enforces **C3 ∧ C4**, so on this vault
+  it returns **`null`** — over `W9_TAUS` nothing surfaces at all (the metric's maximum is 0.125), and over
+  the widened list the best precision is 0.6 < 0.8. The seed is the **owner's pinned value, not the rule's
+  output**. The selector was deliberately left strict (`W9_PRECISION_FLOOR` untouched): relaxing it until
+  this vault passes would fit the rule to the result.
+- **The floor sits exactly on attainable values.** Four pairs' exact `alignment` is exactly `0.02`
+  (= `1/50`; note `1/20` is the *other* boundary below, at τ = 0.05), and their stored floats are exactly
+  `0.02` as well, so all four gate under `≥`. The boundary is therefore **ulp-decided**, and a later change
+  to the comparator's strictness (or to the parser) would drop those four silently. Verified against the
+  artifact: exact-rational and float counting agree at `0.02` — 67 pairs either way.
+- **Insert-only, so the default reaches new stores only.** A store seeded under the former provisional
+  `0.5` keeps it until an operator calls `setConfig`; re-basing existing stores is a data change on user
+  stores, and is not part of this record.
+
+Convention, with the number: **`alignment ≥ τ`, inclusive, on the exact value** (τ = 0.05 → 10 surfaced /
+5 good / 0.50; that pair's stored float is sub-ulp below its exact `1/20`).
 
 **Metric ceiling — M1 (issue #106), 2026-10-15, 0 provider calls.** Reproduced from the run artifact's own
 bytes (max deviation **0.0** across 67 pairs × 4 fields + the uniform mean). The gate's `alignment` is the
@@ -329,6 +361,8 @@ fails to *separate* at the very top, not at a tuning boundary. Two findings are 
 `transferable_structure`'s quoted length is its **unique**-token mean (16.0; total-token mean 17.4). No
 composite **tested** and no weighting on a 1,771-point step-0.05 grid clears **C3 ∧ C4** (precision ≥ 0.8
 **and** ≥ 5 good): the best tested composite is containment at **0.667**, the best weighted mean reaching
-precision 0.800 has only **4/5** good, and the best with **≥ 5** good is **0.714** (5/7). The **signal** is an open
-owner call between **F / E / B** (recorded in #106's thread); no schema change, and the field set stays
-**CONFIRMED** (`ARCHITECTURE.md` §12 item 2).
+precision 0.800 has only **4/5** good, and the best with **≥ 5** good is **0.714** (5/7). The **signal** was an open
+owner call between **F / E / B** (recorded in #106's thread); **the owner answered `B alone` on
+2026-10-15** — the floor is re-based to **τ\* = `0.02`** (the amendment above; a C3 amendment, seeded for
+coverage, precision uncertified), **E is held**, **F is not executed**, and **M2 never fired**. No schema
+change, and the field set stays **CONFIRMED** (`ARCHITECTURE.md` §12 item 2).
