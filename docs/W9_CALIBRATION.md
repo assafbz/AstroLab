@@ -88,6 +88,8 @@ tests, never against these sentences.
 | **W2** | same pair. `mechanism`: "**Horizon-indexed salvage pricing** — a capacity unit's price decays monotonically toward its marginal cost as its expiry horizon shortens, so the tail clears without discounting the whole book." | **G4 PASS** | **G4.2** — *monotone decay against a horizon* and *the tail only* are stated by neither source, and both sources are instances of it. **G4.3** — one structure. |
 | **W3** | sources: *a warehouse scans barcodes to record stock moves* · *a clinic scans wristbands to record patient moves*. `mechanism`: "Both use automated identification to capture events." | **G4 FAIL** | **G4.2** — an abstraction that adds no relation; satisfied by either source alone. **G4.3** — "both … to …" is the disjunction in disguise. |
 | **W4** | sources: *a lone astronomer annotates images* · *a list moderator tags posts*. `first_step`: "Realize the value of consistent annotation." | **G5 FAIL** | **G5.1** (a disposition, no object) **and** **G5.2** (the `claim` in the imperative). |
+| **W5** | same pair as **W4**. `claim`: "Consistent annotation makes a collection legible." `first_step`: "Ship a per-post provenance ledger recording the deciding editor and the reason for each change." | **G5 PASS** | **G5.1** — a constructible artifact (a ledger) with an object (per-post provenance). **G5.2** — distinct from the `claim`: that asserts annotation pays, this says what to build. |
+| **W6** | same pair as **W4**. `claim`: "Consistent annotation makes a collection legible." `first_step`: "Make the collection legible by annotating consistently." | **G5 FAIL** | **G5.2** only — it has an object and reads as a move, so **G5.1 passes**; it is the `claim` restated as a task, so **G5.2 fails**. |
 
 **A second binary the judge returns — *mechanism-identical source pairs*.** C1 pins **cluster**-uniqueness
 and says nothing about mechanism-uniqueness, so a C1-compliant vault can contain pairs that are the same
@@ -97,13 +99,34 @@ residue test, applied source against source). The count is reported with the cur
 divergent read instead of hiding inside it, and it is the vault-side input to **#106** (the metric-side
 half of the same ceiling).
 
-**The judge protocol — k ≥ 3, majority, disagreement recorded.** A single reviewer's strictness is the
-thing being removed, so the read is taken from **≥ 3 independent judges** (independent contexts; each
-sees the spark and both sources and **never** the `alignment` value or the τ it cleared — §2's blind
-rule, unchanged). Per spark each judge returns **good / not-good** plus the failing condition. The
-**recorded verdict is the majority**. The report carries the **per-spark disagreement count** and the
-**agreement rate** as the read's stability, and a spark with **no majority** (an even split) is recorded
-**unresolved** and excluded from C3/C4 with its count stated — never silently rounded.
+**The judge protocol — k = 5, heterogeneous, majority, disagreement recorded.** A single reviewer's
+strictness is the thing being removed, so the read is taken from **five independent judges** (independent
+contexts; each sees the spark and both sources and **never** the `alignment` value or the τ it cleared —
+§2's blind rule, unchanged). The pool is **heterogeneous but severity-neutral**: judges differ in model
+family, context, presentation order and surface format, and **never** in pass/fail pressure — no
+instruction may say how strictly to judge. A severity dial would re-run the 2026-10-14 20↔11 flip and
+attribute a disagreement to the dial rather than to the rubric, which is the only thing this read exists
+to measure. Per spark each judge returns **good / not-good** plus the failing condition. The **recorded
+verdict is the majority**.
+
+Pre-registered before any scoring (so the read cannot be re-cut to fit its result):
+
+- **Pool** — **k = 5** cells spanning **≥ 2 model families × ≥ 2 severity-neutral presentations**. The
+  exact composition (model × presentation) is recorded with the read and is the denominator of every
+  agreement figure below.
+- **Agreement, reported in three lines** — **within-model · cross-model · pooled** (the pooled number
+  labelled as such). **The gate reads the cross-model rate.** Presentations of one model are correlated
+  at temp 0, so within-model agreement buys *n*, not independence — and independence across models is
+  precisely the axis the 2026-10-14 20↔11 flip did *not* vary. If within-model agreement is not
+  near-total, that is a finding, not a premise.
+- **Decidability gate** — **every pair of model families agrees on ≥ 19 of the 21 rows**.
+- **Non-unanimous rows are classified, pre-declared** — `nuisance` (a split confined to the
+  presentations of one model) is reported and **non-gating**; `rubric-ambiguous` (a split **across
+  model families**) is the rubric failing to decide. Only a `rubric-ambiguous` row that **decides
+  whether the selected τ clears C3∧C4** makes τ\* **not settleable** and routes to the owner.
+- **Stability, reported and not gating** — τ\* is recomputed with each judge dropped in turn
+  (leave-one-out); non-degenerate only at k = 5, since a 4–1 row cannot flip on a single drop.
+- **No majority ⇒ `unresolved`** — excluded from C3/C4 with its count stated, never silently rounded.
 
 ## 3. Run-level pass conditions
 
@@ -162,7 +185,7 @@ by design: every tag is a shipped cluster key).
    over-read: the field set can at best be checked against confirmed/rejected; the good/not-good split
    inside the surfaced set still bottoms out in G4/G5.)
 5. **Score and choose τ\*** — score every τ against §3 and report the **precision/yield curve per τ**.
-   Pick **τ\*** = the **lowest** τ with precision ≥ 80% **and** yield ≥ 5 (the read comes from §2's judge protocol — k ≥ 3, majority, disagreement recorded): the owner-approved shape, which
+   Pick **τ\*** = the **lowest** τ with precision ≥ 80% **and** yield ≥ 5 (the read comes from §2's judge protocol — k = 5, heterogeneous, majority, disagreement recorded): the owner-approved shape, which
    maximises yield (what the deck is for). A change to the selection rule is an **owner call** — this
    curve is the evidence that would justify one.
 6. **Terminal branch — if no τ *in the swept range* {0.35…0.65} clears both conditions, that range
