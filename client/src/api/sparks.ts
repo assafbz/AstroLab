@@ -1,5 +1,5 @@
 import { apiHeaders, apiRequest } from "./client.ts";
-import type { EngineState, RunAccepted, Spark } from "./types.ts";
+import type { EngineState, RunAccepted, Spark, SparkDetail } from "./types.ts";
 
 /**
  * The sparks surface the deck (S1) reads: the deck itself (§4.9), the engine state (§4.10), and the
@@ -51,6 +51,24 @@ export const OFFERED_QUERY = "?state=offered";
 export async function offeredSparks(): Promise<Spark[]> {
   const body = await apiRequest<{ sparks: Spark[] }>(`/v1/sparks${OFFERED_QUERY}`);
   return body.sparks;
+}
+
+/**
+ * `GET /v1/sparks/{id}` (`docs/API.md` §4.12) — one spark, for the expanded view (S1b).
+ *
+ * The detail reads **its own** endpoint: it does not re-read §4.9 and it does not take the card's
+ * payload on the way in, so a reload of `#/sparks/<id>` renders from §4.12 alone and a stale
+ * in-memory card cannot shadow the server. What the read adds to the card is `what_it_takes` and
+ * nothing else (§3.4); no score, no similarity readout.
+ *
+ * **By id, whatever the status.** §4.12 carries no filter — not §4.9's required `state=offered` — so a
+ * spark the user resolved mid-session still answers when they tap back, rather than 404ing as if it had
+ * never existed. `SparkDetail` carries no `status`, so the resolution does not surface; only an unknown
+ * id is the §2 `not_found` envelope. That reading is a decision, recorded in #118, not an omission.
+ */
+export function sparkDetail(id: string): Promise<SparkDetail> {
+  // Encoded, so an opaque id addresses exactly one route — the same rule `getIdeaDetail` states.
+  return apiRequest<SparkDetail>(`/v1/sparks/${encodeURIComponent(id)}`);
 }
 
 /** §4.11's route, under the frozen `/v1` prefix (`ARCHITECTURE.md` §6). */

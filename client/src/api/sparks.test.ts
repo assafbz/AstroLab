@@ -6,11 +6,12 @@ import {
   engineState,
   enqueueRun,
   offeredSparks,
+  sparkDetail,
   subscribeEngineEvents,
   type EngineEventHandlers,
   type EngineStreamEnd,
 } from "./sparks.ts";
-import type { EngineState, RunAccepted, Spark } from "./types.ts";
+import type { EngineState, RunAccepted, Spark, SparkDetail } from "./types.ts";
 
 /** A stubbed `fetch` whose calls the test can inspect. */
 function stubFetch(
@@ -98,6 +99,12 @@ const SPARK: Spark = {
   created_at: "2026-10-13T05:14:05Z",
 };
 
+/** `Spark` plus §3.4's one detail-only field — the whole of what §4.12 adds to §4.9's card. */
+const DETAIL: SparkDetail = {
+  ...SPARK,
+  what_it_takes: "Two weekends on the ingest path, then a week of labelling.",
+};
+
 test("enqueueRun POSTs /v1/sparks/run with no body and returns the 202 unreshaped", async () => {
   const mock = stubFetch(() => Promise.resolve(json(ACCEPTED, 202)));
 
@@ -168,6 +175,63 @@ test("offeredSparks answers an empty deck with an empty array, not a failure (§
   stubFetch(() => Promise.resolve(json({ sparks: [] })));
 
   expect(await offeredSparks()).toEqual([]);
+});
+
+test("sparkDetail reads §4.12's by-id route and returns SparkDetail unreshaped", async () => {
+  const mock = stubFetch(() => Promise.resolve(json(DETAIL)));
+
+  const detail = await sparkDetail("1a2b");
+
+  expect(detail).toEqual(DETAIL);
+  // The whole path, with nothing appended: §4.12 carries no filter of its own — not §4.9's required
+  // `state=offered` — so the read is status-blind, which is what lets a spark resolved mid-session
+  // answer on tap-back instead of 404ing. That is the client's share of the rule; the other half
+  // (what any status means for the read) is the server's (#118).
+  expect(mock.mock.calls[0]![0]).toBe("/v1/sparks/1a2b");
+  expect(mock.mock.calls[0]![0]).not.toContain("?");
+  // §3.4 is `Spark` **plus** one field, so the card's own projection must survive the second read too:
+  // a detail read that quietly narrowed would still typecheck (SparkDetail extends Spark) and still
+  // render a headline — just not the one the deck offered.
+  expect(detail.id).toBe(SPARK.id);
+  expect(detail.direction).toBe(SPARK.direction);
+  expect(detail.claim).toBe(SPARK.claim);
+  expect(detail.first_step).toBe(SPARK.first_step);
+  expect(detail.domain_tags).toEqual(SPARK.domain_tags);
+  expect(detail.created_at).toBe(SPARK.created_at);
+});
+
+test("sparkDetail encodes the id, so an opaque id cannot address another route", async () => {
+  const mock = stubFetch(() => Promise.resolve(json(DETAIL)));
+
+  await expect(sparkDetail("a b")).resolves.toEqual(DETAIL);
+  expect(mock.mock.calls[0]![0]).toBe("/v1/sparks/a%20b");
+});
+
+test("a null what_it_takes is a legacy row and travels as null, never defaulted (§3.4)", async () => {
+  // The screen renders it **absent** rather than a label over nothing, which it can only do if the
+  // transport does not helpfully turn the null into "" on the way through.
+  stubFetch(() => Promise.resolve(json({ ...SPARK, what_it_takes: null })));
+
+  const legacy = await sparkDetail("legacy");
+
+  expect(legacy.what_it_takes).toBeNull();
+  expect(legacy.first_step).toBe(SPARK.first_step);
+});
+
+test("sparkDetail surfaces §2's envelope — an unknown id is `not_found`, not an empty detail", async () => {
+  stubFetch(() =>
+    Promise.resolve(json({ error: { code: "not_found", message: "no such spark" } }, 404)),
+  );
+
+  await expect(sparkDetail("0bad")).rejects.toMatchObject({ code: "not_found", status: 404 });
+});
+
+test("a §4.12 refusal that is not a 404 keeps its own code — one envelope path", async () => {
+  stubFetch(() =>
+    Promise.resolve(json({ error: { code: "unauthorized", message: "no token" } }, 401)),
+  );
+
+  await expect(sparkDetail("1a2b")).rejects.toMatchObject({ code: "unauthorized", status: 401 });
 });
 
 test("the decoder completes a frame split across chunks, and drops an unterminated tail", () => {
