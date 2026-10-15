@@ -291,6 +291,20 @@ No embeddings, no ANN — a small curated table. Domain is "the axis along which
 (`PRD.md` §3.3 item 3: *"tuning parameters, not fixed requirements"*). Changing a threshold never changes the
 schema or the API.
 
+**`min_alignment` — W9 τ\* = `0.02` (2026-10-15).** `min_domain_distance` is spec-pinned at `1` (§3.5); the
+alignment axis is the calibrated one, and W9 (#34, issue #106) closes with **τ\* = `0.02`** — the
+**widened** sweep's floor (`W9_WIDE_TAUS`, bar §4 step 6.4, the pre-authorized *"extend below 0.35"* phase),
+i.e. **below** the bar's ratified range (`W9_TAUS` = 0.35–0.65, bar §4 step 3), not at its edge — and the
+lowest τ on which the bar's yield condition (**C4**: ≥ 5 good) holds: 67 surfaced · 21 good · precision
+**0.31**. That is a deliberate **C3 amendment** (≥ 80% precision), **not** a C3 pass: precision is
+**uncertified** until a scorer reproduces itself (`W9_CALIBRATION.md` §2, the `instrument` label), so these
+thresholds must never be read as *"clears C3 ∧ C4"*. The bar's own selector still enforces C3, so `selectTau`
+returns `null` on this vault while `config` seeds `0.02` — the seed is the owner's pinned value (2026-10-15,
+"B alone"), **not** the rule's output. Convention: **`alignment ≥ τ`, inclusive, on the exact value**
+(τ = 0.05 → 10 surfaced / 5 good / 0.50). Seeding is **insert-only**, so the new default reaches **new** stores
+only — a store already seeded under the former provisional `0.5` keeps that value until an operator tunes it.
+Basis on record: `W9_CALIBRATION.md` §6; the field set stays **CONFIRMED** (§12 item 2).
+
 ### 3.5 Cliché / noise suppression and re-offer rules
 
 - **Cliché** (high alignment, low distance) and **noise** (high distance, low alignment) are dropped by the
@@ -506,7 +520,39 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
    ADR-0003 state the one rule; the control is **provider-attested, not independently audited** (§5).
 2. **Mechanism descriptor schema.** The exact fields of the descriptor (§3.3) are a tuning artifact; the
    contract (structured, cached, locally comparable) is the decision. Confirm the field set with the first
-   calibration run.
+   calibration run. **Field set CONFIRMED — 2026-10-15 (#34).** Evidence: on the stored P2 outcomes
+   (union 67 · confirmed 21 · rejected 46), the descriptor-derived `alignment` separates confirmed from
+   rejected at **AUC 0.6548** (confirmed mean 0.0443 · rejected 0.0333), reproducing the step-4 read — so
+   the field set stands and no re-extraction is required. The **threshold** half of #34 did **not** close by
+   that read: the 2026-10-15 reliability pass failed its decidability gate under the label `instrument`
+   (`W9_CALIBRATION.md` §2), so no τ\* came out of *it*. **The owner has since ruled (2026-10-15, #106):
+   τ\* = `0.02` is seeded** — a deliberate **C3 amendment**, seeded for coverage, precision **uncertified**
+   (§3.4), on the widened sweep's floor. The metric half that ruling rested on is recorded below.
+   **Metric ceiling — M1 negative, 0 calls (2026-10-15, #106).** The aggregate the gate compares on,
+   `alignment` (§3.3 · `worker/src/engine/alignment.ts`), is the *uniform mean* of four per-field Jaccard
+   scores; on this vault that **equal-weight** mean cannot reach the ratified floor — its attainable
+   maximum is **0.125** — and its head is a **two-way tie** —
+   `w9-enterprise-ops|w9-media-entertainment` (**confirmed**)
+   and `w9-devtools|w9-legal-compliance` (**rejected**), each a **0.50** field-sum. The metric therefore
+   fails to *separate* at the very top, not at some tuning boundary. The ceiling is a property of the
+   **signal**, joint over (aggregation) × (per-field construction); two of the findings hold over **all 378**
+   candidate pairs, not only the gated 67 (a maximum and an identity, so selection-immune): the 0.125 ceiling,
+   and `object_class` **dead** — 0.0 on every pair, all 28 descriptors — because it holds idiosyncratic noun
+   phrases that are categorical, not lexical. `transferable_structure` (mean **16.0 unique** tokens · 17.4
+   total) carries structure in domain-specific words that Jaccard's length bias penalises. The ceiling itself
+   is **rescalable** — non-uniform weightings lift it above the floor (a strictly-positive `w = (0.70, 0.05,
+   0.05, 0.20)` scores **0.350** on `w9-enterprise-ops|w9-media-entertainment`, and 84 of the 1,771 step-0.05
+   grid weightings reach ≥ 0.35) — **but reweighting does not buy the bar's precision**. On the labelled
+   population the best composite **tested** is containment at **0.667**; among **weightings**, the best mean
+   reaching precision **0.800** does so at only **4/5** good (fails C4's **≥ 5**), and the best with **≥ 5**
+   good is **0.714** (5/7) — so no composite tested and no grid weighting clears **C3 ∧ C4**. Monotone
+   rescaling (`√mean`, rank-preserving) likewise lifts the ceiling into range but cannot move rank quality.
+   The **signal** was therefore an open owner call — **F** (rebuild the lexical fields; in-lane, 28 calls,
+   predicted-fail), **E** (a semantic signal on `transferable_structure`; architecture + spend + scope),
+   **B** (move the floor to the metric) — recorded in #106's thread. **The owner answered `B alone`
+   (2026-10-15):** the floor is re-based to **τ\* = `0.02`** (§3.4 — a C3 amendment, seeded for coverage,
+   precision uncertified); **E is held**; **F is not executed**; **M2 never fired**. No schema change; the
+   field set stays **CONFIRMED**.
 3. ~~**Cold-start ordering.**~~ **Resolved — closed by O5 (`#25`), 2026-10-14.** The run fires on the exit
    the user chose: *See your sparks* presses `POST /v1/sparks/run` (`docs/API.md` §4.16), *Skip* carries no
    side effect, and the S0→S1 exit never auto-runs. `FLOW.md` T04 carries the rule; the client holds only a

@@ -36,8 +36,8 @@ describe("readGateConfig — ARCHITECTURE.md §3.4", () => {
     const db = migrated();
     // Pinned: dropping `min_domain_distance` to 0 is the cliché-guard footgun (D4b), so this assert
     // is the regression guard, not a restatement of `GATE_CONFIG_DEFAULTS`.
-    expect(readGateConfig(db)).toEqual({ minDomainDistance: 1, minAlignment: 0.5 });
-    expect(GATE_CONFIG_DEFAULTS).toEqual({ minDomainDistance: 1, minAlignment: 0.5 });
+    expect(readGateConfig(db)).toEqual({ minDomainDistance: 1, minAlignment: 0.02 });
+    expect(GATE_CONFIG_DEFAULTS).toEqual({ minDomainDistance: 1, minAlignment: 0.02 });
   });
 
   test("an absent key falls back to its default while the other key still reads", () => {
@@ -72,7 +72,7 @@ describe("seedGateConfig / setConfig — insert-only seeding, explicit tuning", 
   test("seeding writes the defaults; a second seed is a no-op", () => {
     const db = migrated();
     seedGateConfig(db);
-    expect(readGateConfig(db)).toEqual({ minDomainDistance: 1, minAlignment: 0.5 });
+    expect(readGateConfig(db)).toEqual({ minDomainDistance: 1, minAlignment: 0.02 });
     seedGateConfig(db);
     expect(db.prepare("SELECT COUNT(*) AS n FROM config").get()).toEqual({ n: 2 });
   });

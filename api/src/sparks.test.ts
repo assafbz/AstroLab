@@ -80,27 +80,46 @@ describe("listOfferedSparks — §4.9's body", () => {
     expect(listOfferedSparks(newDb())).toEqual([]);
   });
 
-  test("a live offer is exactly §3.3's five fields — no mechanism, no scores, no source ids", () => {
+  test("a live offer is exactly §3.3's fields — first_step present, no mechanism, scores or source ids", () => {
     const db = newDb();
     idea(db, "a", ["fintech"]);
     idea(db, "b", ["health"]);
     db.prepare(
-      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, status, created_at,
-                          mechanism, domain_distance, structural_alignment)
-       VALUES ('s1', 'a', 'b', 'a|b', 'the direction', 'the claim', 'OFFERED', 't',
+      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, first_step, status,
+                          created_at, mechanism, domain_distance, structural_alignment)
+       VALUES ('s1', 'a', 'b', 'a|b', 'the direction', 'the claim', 'the first step', 'OFFERED', 't',
                '{"verb":"fuse"}', 2, 0.71)`,
     ).run();
 
-    // `toEqual` is exact: the row's internals are present in the table and absent from the body.
+    // `toEqual` is exact: the row's internals are present in the table and absent from the body, and
+    // the card's third element (#115) is present with its value — not dropped, not nulled.
     expect(listOfferedSparks(db)).toEqual([
       {
         id: "s1",
         direction: "the direction",
         claim: "the claim",
+        first_step: "the first step",
         domain_tags: ["fintech", "health"],
         created_at: "t",
       },
     ]);
+  });
+
+  test("a legacy row with a NULL first_step still reads the key as `null` (§3.3's `string | null`)", () => {
+    const db = newDb();
+    idea(db, "a", ["fintech"]);
+    idea(db, "b", ["health"]);
+    // The column is nullable; an old row predates the engine's all-non-empty draft rule.
+    spark(db, "s1", "a", "b");
+
+    expect(listOfferedSparks(db)[0]).toEqual({
+      id: "s1",
+      direction: "a direction",
+      claim: "a claim",
+      first_step: null,
+      domain_tags: ["fintech", "health"],
+      created_at: "t",
+    });
   });
 
   test("server order is deck order — insertion, oldest first, ahead of any created_at tie", () => {

@@ -146,6 +146,12 @@ export interface LiveSpark {
   id: string;
   direction: string;
   claim: string;
+  /**
+   * The card's third element (`DESIGN.md` §4/§9, `PRD.md` §3.3 item 4; #115). A real value by
+   * construction — `parseAdjudication` accepts only an all-non-empty draft or an all-null refusal
+   * (`worker/src/provider/schema.ts`) — so a `null` here is a legacy row, rendered as simply absent.
+   */
+  first_step: string | null;
   /** The two source ideas' tags, pair order, deduped — `spark` stores no tags of its own (see below). */
   domain_tags: string[];
   created_at: string;
@@ -179,7 +185,7 @@ export interface LiveSpark {
 export function liveOffers(db: DatabaseSync): LiveSpark[] {
   const rows = db
     .prepare(
-      `SELECT s.id, s.direction, s.claim, s.created_at,
+      `SELECT s.id, s.direction, s.claim, s.first_step, s.created_at,
               a.domain_tags AS a_tags, b.domain_tags AS b_tags
          FROM spark s
          LEFT JOIN idea a ON a.id = s.idea_a_id
@@ -191,6 +197,7 @@ export function liveOffers(db: DatabaseSync): LiveSpark[] {
     id: string;
     direction: string;
     claim: string;
+    first_step: string | null;
     created_at: string;
     a_tags: string | null;
     b_tags: string | null;
@@ -199,6 +206,7 @@ export function liveOffers(db: DatabaseSync): LiveSpark[] {
     id: row.id,
     direction: row.direction,
     claim: row.claim,
+    first_step: row.first_step,
     domain_tags: pairTags(row.a_tags, row.b_tags),
     created_at: row.created_at,
   }));

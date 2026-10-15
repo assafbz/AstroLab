@@ -47,27 +47,43 @@ import { withRetry } from "./retry.js";
  *   to §4.1, not a tuning value). **`0` stays valid but is a *spec override*, not tuning**: it
  *   disables the §3.5 cliché guard, so read it as *"cliché guard disabled (§3.5 override) —
  *   same-cluster pairs are eligible"*. It is **not** the default.
- * - **`min_alignment = 0.5` — provisional, pending W9.** No frozen doc grounds this number (§3.4
- *   names none), so read it as a starting value, **not** a spec value. Unlike the distance axis, the
- *   alignment axis has a downstream backstop: an over-*low* floor only spends W6 adjudication calls,
- *   and W6 rejects noise anyway. An over-*high* floor is the dangerous direction — the gate offers
- *   nothing, indistinguishable from *"no aligned pairs exist"* — so this value is checked against
- *   realistic descriptors, not picked by arithmetic (`gate.test.ts`, and the PR's reported pair).
+ * - **`min_alignment = 0.02` — the W9 τ\*, seeded for coverage (a deliberate C3 amendment).** W9
+ *   (#34) measured the metric on the calibration vault and found `alignment`'s attainable maximum is
+ *   `0.125` (`ARCHITECTURE.md` §12 item 2 · issue #106) — so the former provisional `0.5` could never
+ *   gate anything, and the gate was **dark**. `0.02` is the **widened** sweep's floor
+ *   (`W9_WIDE_TAUS`, `worker/src/engine/calibration/w9-run.ts` — below the ratified `W9_TAUS` range)
+ *   and the lowest τ on which the bar's yield condition (C4: ≥ 5 good) holds: 67 surfaced · 21 good ·
+ *   precision **0.31**. The owner chose it on 2026-10-15 ("B alone"). It **amends** the precision
+ *   condition (C3: ≥ 80%) rather than passing it — precision is **uncertified** until a scorer
+ *   reproduces itself (`W9_CALIBRATION.md` §2, the `instrument` label) — so never read it as
+ *   *"clears C3 ∧ C4"*. The bar's own selector still enforces C3, so `selectTau` returns `null` on
+ *   this vault while this constant is `0.02`: the seed is the owner's pinned value, **not** the rule's
+ *   output. The axis keeps its downstream backstop (an over-*low* floor only spends W6 calls, and W6
+ *   rejects noise anyway); the over-*high* direction — the gate offering nothing, indistinguishable
+ *   from *"no aligned pairs exist"* — is exactly what the old provisional `0.5` produced.
+ *   **Insert-only, like the distance axis:** a store already seeded under `0.5` keeps it until an
+ *   operator calls `setConfig`, so this default reaches **new** stores only.
  */
 
 /** The two thresholds the gate compares against, parsed and validated. */
 export interface GateConfig {
   /** `≥ 0` integer, spec-bounded to `1`. `0` = cliché guard disabled (§3.5 override, see the module note). */
   minDomainDistance: number;
-  /** A real in `[0,1]`. The shipped default is `0.5`, **provisional pending W9**. */
+  /**
+   * A real in `[0,1]`. The shipped default is the W9 τ\* (`0.02`) — a C3 amendment seeded for
+   * coverage, not a provisional value (see the module note).
+   */
   minAlignment: number;
 }
 
 export const MIN_DOMAIN_DISTANCE_KEY = "min_domain_distance";
 export const MIN_ALIGNMENT_KEY = "min_alignment";
 
-/** The code-held defaults (§3.4), seeded insert-only. `min_domain_distance` is spec-derived; `min_alignment` is provisional. */
-export const GATE_CONFIG_DEFAULTS: GateConfig = { minDomainDistance: 1, minAlignment: 0.5 };
+/**
+ * The code-held defaults (§3.4), seeded insert-only. `min_domain_distance` is spec-derived;
+ * `min_alignment` is the W9 τ\*.
+ */
+export const GATE_CONFIG_DEFAULTS: GateConfig = { minDomainDistance: 1, minAlignment: 0.02 };
 
 /** A stored threshold that does not parse. Loud by design — never a silent fallback to the default. */
 export class InvalidConfigError extends Error {

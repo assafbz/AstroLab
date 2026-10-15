@@ -195,8 +195,8 @@ describe("the engine's spark writes touch no vault state (C7)", () => {
 /**
  * The deck read (K1 `#35`, `docs/API.md` §4.9). Three properties are a *check* rather than a
  * reading — the resolved spark that must not surface, the derived `domain_tags`, and the projection's
- * five fields — and each one is mutable: dropping the `status` filter, sorting the union, or
- * returning the row instead of the projection reddens exactly one of them.
+ * six fields (K1's five + `first_step`, #115) — and each one is mutable: dropping the `status` filter,
+ * sorting the union, or returning the row instead of the projection reddens exactly one of them.
  */
 describe("liveOffers — the deck read (K1 #35, §4.9)", () => {
   /** An idea with explicit tags: `seed.ts`'s `insertIdea` hard-codes `["x"]`, which cannot discriminate. */
@@ -237,9 +237,27 @@ describe("liveOffers — the deck read (K1 #35, §4.9)", () => {
         id: expect.any(String),
         direction: "A direction",
         claim: "A claim",
+        first_step: "a first step",
         domain_tags: ["x"],
         created_at: "t",
       },
+    ]);
+  });
+
+  test("first_step is the row's own value; a null (legacy) row reads `null`, not a dropped key", () => {
+    const db = newDb();
+    insertOfferedSparks(db, [offer({ pair_key: "a|b", first_step: "the real step" })], "t");
+    insertOfferedSparks(
+      db,
+      [offer({ idea_b_id: "c", pair_key: "a|c", first_step: null, direction: "legacy" })],
+      "t",
+    );
+
+    // The value is carried, not hard-coded or defaulted; the null row keeps the key (an absent key
+    // would fail `toEqual` and would also diverge from §3.3's `string | null`).
+    expect(liveOffers(db).map((row) => [row.direction, row.first_step])).toEqual([
+      ["A direction", "the real step"],
+      ["legacy", null],
     ]);
   });
 

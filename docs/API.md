@@ -125,10 +125,17 @@ Readings this doc had not pinned (settled in O2 `#22`):
 ### 3.3 `Spark` (deck card — `ARCHITECTURE.md` §6, S1)
 ```json
 { "id": "1a2b…", "direction": "the proposed idea (headline)", "claim": "one–two lines, why it matters",
-  "domain_tags": ["audio-dsp"], "created_at": "2026-10-13T05:14:05Z" }
+  "first_step": "the one concrete move to start", "domain_tags": ["audio-dsp"],
+  "created_at": "2026-10-13T05:14:05Z" }
 ```
 No `mechanism`, no `domain_distance`, no `structural_alignment`, no source idea ids — selection
-internals never surface (`PRD.md` §3.3 items 2–4; `ARCHITECTURE.md` §2.3).
+internals never surface (`PRD.md` §3.3 items 2–4; `ARCHITECTURE.md` §2.3). `first_step` **is** on the
+card (`PRD.md` §3.3 item 4; `DESIGN.md` §4 and §9; `docs/stitch-prompts.md` §1 — the card is
+IDEA · CLAIM · **FIRST STEP** · chips); it reaches §3.3 here so the deck read carries it, and §3.4
+`SparkDetail` is `Spark` plus only `what_it_takes`. The column exists (`ARCHITECTURE.md` §2.3) and the
+worker writes a non-empty value (`worker/src/provider/schema.ts`'s `parseAdjudication` accepts only an
+all-non-empty draft or an all-null refusal), so an offered spark's `first_step` is real content; a
+`null` (a legacy row) is simply absent.
 
 `domain_tags` is **derived, not stored**: `spark` has no tags column (`ARCHITECTURE.md` §2.3), so
 §4.9's read joins the two source ideas and returns the **deduped union in the writer's stored
@@ -142,8 +149,10 @@ client must not read chips as resolved clusters.
 ### 3.4 `SparkDetail` (S1b — `ARCHITECTURE.md` §6)
 `Spark` plus:
 ```json
-{ "what_it_takes": "…", "first_step": "…" }
+{ "what_it_takes": "…" }
 ```
+`first_step` moved to `Spark` (§3.3, #115): the card carries it, so it is no longer a detail-only
+delta. The detail adds **only** `what_it_takes` — the expanded view's extra.
 
 ### 3.5 `Decision`
 ```json
