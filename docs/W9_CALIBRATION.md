@@ -132,7 +132,9 @@ Pre-registered before any scoring (so the read cannot be re-cut to fit its resul
   harness's output-path line excepted: it is non-semantic and is recorded as such), decode parameters
   verified in the session record rather than intended — and its within-cell agreement is reported as the
   noise floor.** Like every other phase, the probe's call count and cost are posted
-  before it fires (§5). Agreement between *different* cells that does not clear the floor is not
+  before it fires (§5). Its prompts and outputs land **where a second agent can read them**, with a
+  hash manifest — an artifact only its author can open is not checkable, and the check is the point.
+  Agreement between *different* cells that does not clear the floor is not
   evidence about the rubric; it is the class `instrument` below.
 - **Decidability gate** — **every pair of model families agrees on ≥ 19 of the 21 rows**.
 - **Stability, reported and not gating** — τ\* is recomputed with each judge dropped in turn
