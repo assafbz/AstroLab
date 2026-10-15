@@ -24,6 +24,8 @@ export interface Spark {
   id: string;
   direction: string;
   claim: string;
+  /** The card's third element (`DESIGN.md` §4/§9; #115) — `null` on a legacy row, rendered absent. */
+  first_step: string | null;
   domain_tags: string[];
   created_at: string;
 }
