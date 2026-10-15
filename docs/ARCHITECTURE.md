@@ -381,7 +381,11 @@ invalid output = a failed call, retried per §4, never stored.
   classification is **provider-attested, not independently audited**; request **metadata** (tokens, latency —
   not content) is always stored; OpenRouter is itself an intermediary that transiently sees the prompt.
   Verified by asserting `provider.zdr=true` on every call and capturing `GET /api/v1/endpoints/zdr` at build
-  time.
+  time. The capture (`scripts/capture-zdr.mjs`) has a **consumer** (`scripts/audit-zdr.ts`, the
+  `zdr-evidence` job): it asserts the model the adapter will call appears in that list, because the pin is
+  only a routing control if the model is classified ZDR — otherwise it is a call that can never be served.
+  The data-flow half is the other way round: `provider/boundary.test.ts` names every call site per
+  operation, so "only the operation's payload is sent" is checkable where a call is made.
 - **No third-party transmission beyond a requested operation:** the engine runs only when a vault mutation
   requests it; there is no background telemetry or periodic upload.
 

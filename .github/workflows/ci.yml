@@ -65,14 +65,26 @@ jobs:
       - run: npm run lint:citations -- --self-check
 
   zdr-evidence:
-    name: PRIV1 — capture OpenRouter's ZDR endpoint list (non-required)
+    name: PRIV1 — capture + audit OpenRouter's ZDR endpoint list (non-required)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+      # The audit imports `DEFAULT_MODEL` from the boundary, so it needs the workspace installed —
+      # `capture-zdr.mjs` needs nothing, but `audit-zdr.ts` reads the code it is auditing.
+      - run: npm ci
+      # The audit's own non-vacuity, on every PR: each check is driven with a synthetic artifact that
+      # must make it bite, so a rule that quietly stopped biting is a red job — the way `citations` runs
+      # its sibling's self-check. Offline, so it runs before the capture.
+      - run: npm run audit:zdr -- --self-check
       - run: node scripts/capture-zdr.mjs
+      # EV6 (#48): the artifact's consumer. Fails closed — no artifact, or a model the provider does
+      # not classify ZDR, is a red job, not an unread upload. Still non-required, so provider downtime
+      # cannot redden a merge (F1's note).
+      - run: npm run audit:zdr
       - uses: actions/upload-artifact@v4
         with:
           name: zdr-endpoints
