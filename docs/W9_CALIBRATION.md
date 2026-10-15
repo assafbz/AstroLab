@@ -128,9 +128,10 @@ Pre-registered before any scoring (so the read cannot be re-cut to fit its resul
   high-agreement.
 - **The reproducibility floor — measured before any agreement statistic is read.** Agreement evidences
   *decidability* only if the instrument reproduces itself, and that is a property to measure, not to
-  assume: **one cell is repeat-sampled — n ≥ 5 identical dispatches of identical prompt bytes, decode
-  parameters verified in the session record rather than intended — and its within-cell agreement is
-  reported as the noise floor.** Like every other phase, the probe's call count and cost are posted
+  assume: **one cell is repeat-sampled — n ≥ 5 identical dispatches of identical prompt bytes (the
+  harness's output-path line excepted: it is non-semantic and is recorded as such), decode parameters
+  verified in the session record rather than intended — and its within-cell agreement is reported as the
+  noise floor.** Like every other phase, the probe's call count and cost are posted
   before it fires (§5). Agreement between *different* cells that does not clear the floor is not
   evidence about the rubric; it is the class `instrument` below.
 - **Decidability gate** — **every pair of model families agrees on ≥ 19 of the 21 rows**.
@@ -174,8 +175,9 @@ lines, all from stored or re-dispatched outputs:
   a pair that differed in presentation (16/21): exactly its chance expectation (**κ = 0.00**), while
   every cross-family pair sat at **κ ≈ 0**;
 - a **repeat-probe of one cell at pinned `temperature: 0.0`** returned **18 · 14 · 2 · 7** good of 21
-  from byte-identical prompts — a 16-row spread, mean **κ ≈ 0.16** — so a decode pin does **not** buy
-  reproducibility (reasoning models may not honour `temperature`; either way the repeats diverge);
+  from byte-identical prompts **but for the output-path line** — a 16-row spread, mean **κ ≈ 0.16** — so a
+  decode pin does **not** buy reproducibility (reasoning models may not honour `temperature`; either way
+  the repeats diverge);
 - the preceding judge pools, already pinned at `0.0`, spread **9** and **10** rows.
 
 **A protocol regression is part of the record, not a footnote:** the cells in that read ran with
