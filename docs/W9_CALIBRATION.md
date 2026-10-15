@@ -313,3 +313,22 @@ vault and **not** on the field set. Per this document that means **τ\* is `null
 issue #106 · a decidable scoring protocol · the vault). The field-set verdict — **CONFIRMED**,
 `AUC 0.6548` — is recorded in `ARCHITECTURE.md` §12 item 2; the run's actuals, the protocol regression
 and the label live in issue #34's thread.
+
+**Metric ceiling — M1 (issue #106), 2026-10-15, 0 provider calls.** Reproduced from the run artifact's own
+bytes (max deviation **0.0** across 67 pairs × 4 fields + the uniform mean). The gate's `alignment` is the
+uniform mean of four per-field Jaccard scores; on this vault its **attainable maximum is 0.125**, below the
+ratified floor. Non-uniform weightings **do** lift the ceiling above it (a strictly-positive `w = (0.70, 0.05,
+0.05, 0.20)` scores **0.350**), but they do not buy the bar's precision — see below. The head is a **two-way
+tie** — `w9-enterprise-ops|w9-media-entertainment`
+(**confirmed**) and `w9-devtools|w9-legal-compliance` (**rejected**), each a 0.50 field-sum — so the metric
+fails to *separate* at the very top, not at a tuning boundary. Two findings are properties of the whole
+**378-pair** population rather than the gated 67 (a maximum and an identity): the 0.125 ceiling, and
+`object_class` **dead** at 0.0 on every pair. That scope matters — the selection caveat this read carries
+(the labelled 21/46 *is* the metric's own candidate set, so **no new metric can be validated against it
+0-call**) binds the **AUC and precision** figures only, **not** the ceiling or the dead field.
+`transferable_structure`'s quoted length is its **unique**-token mean (16.0; total-token mean 17.4). No
+composite **tested** and no weighting on a 1,771-point step-0.05 grid clears **C3 ∧ C4** (precision ≥ 0.8
+**and** ≥ 5 good): the best tested composite is containment at **0.667**, the best weighted mean reaching
+precision 0.800 has only **4/5** good, and the best with **≥ 5** good is **0.714** (5/7). The **signal** is an open
+owner call between **F / E / B** (recorded in #106's thread); no schema change, and the field set stays
+**CONFIRMED** (`ARCHITECTURE.md` §12 item 2).
