@@ -204,15 +204,23 @@ test("claim 3 discriminates: the vault holds only the ideas the user captured (A
  * The two write statements are `api/src/capture.ts:215` (`insertIdea`, both §4.2 capture and §4.6
  * inspire) and `api/src/fork.ts:80`.
  *
- * Scope is shipped runtime — `api/src` · `worker/src` · `store/src`. `scripts/` is out (it holds
- * calibration fixtures), and `store/src/migrations.ts`'s table-rebuild targets `idea_new`, which the
- * matcher's boundary excludes on the table name rather than by skipping the file.
+ * Scope is shipped runtime — `api/src` · `worker/src` · `store/src`, over the **same source-extension
+ * union** `worker/src/provider/boundary.test.ts` already scans (`.ts` · `.tsx` · `.js` · `.jsx` ·
+ * `.mjs` · `.cjs`, tests excluded). `scripts/` is out (it holds calibration fixtures), and
+ * `store/src/migrations.ts`'s table-rebuild targets `idea_new`, which the matcher's boundary excludes on
+ * the table name rather than by skipping the file.
  *
  * Non-vacuity is asserted too: the walk must reach both expected files, and the matcher must separate
  * `idea` from `idea_version` (written beside every capture) and `idea_new` (the migration rebuild).
+ * #123 closed two holes this canary had: SQLite's other spellings of the same table (`INSERT OR
+ * REPLACE`/`OR IGNORE`, a quoted `"idea"`, any casing) and the `.tsx` extension a `.ts`-only walk
+ * cannot see — the same omission `boundary.test.ts`'s walk was fixed for.
  */
 test("only the capture and fork routes insert an idea — the engine never does (ARCH §7)", () => {
-  const INSERT_IDEA = /INSERT\s+INTO\s+idea\b/;
+  // `INSERT OR REPLACE`/`OR IGNORE`, a quoted identifier and any casing all write the **same** table.
+  // The trailing lookahead is a statement about the *table name*'s last character, so it separates
+  // `idea` from `idea_version` / `idea_new` even when a closing quote intervenes.
+  const INSERT_IDEA = /INSERT\s+(?:OR\s+\w+\s+)?INTO\s+"?idea"?(?![\w])/i;
 
   // The matcher's own boundary, asserted both ways: `idea_version` (written beside every capture) and
   // `idea_new` (the `store/src/migrations.ts` table-rebuild) are **different tables** — a bare
@@ -220,6 +228,21 @@ test("only the capture and fork routes insert an idea — the engine never does 
   expect(INSERT_IDEA.test("INSERT INTO idea (id) VALUES (1)")).toBe(true);
   expect(INSERT_IDEA.test("INSERT INTO idea_version (idea_id) VALUES (1)")).toBe(false);
   expect(INSERT_IDEA.test("INSERT INTO idea_new (id) VALUES (1)")).toBe(false);
+  expect(INSERT_IDEA.test('INSERT INTO "idea_version" (idea_id) VALUES (1)')).toBe(false);
+
+  // The shapes #123 reproduced as slipping past a `INSERT\s+INTO\s+idea` canary.
+  expect(INSERT_IDEA.test("INSERT OR REPLACE INTO idea (id) VALUES (1)")).toBe(true);
+  expect(INSERT_IDEA.test("INSERT OR IGNORE INTO idea (id) VALUES (1)")).toBe(true);
+  expect(INSERT_IDEA.test('INSERT INTO "idea" (id) VALUES (1)')).toBe(true);
+  expect(INSERT_IDEA.test("insert into idea (id) values (1)")).toBe(true);
+
+  // The walk's extension union, pinned as a unit: no `.tsx` ships under a scanned package today, so
+  // the real tree cannot exercise that half — this predicate is what keeps it from being a claim
+  // about nothing.
+  expect(isShippedSource("zz.ts")).toBe(true);
+  expect(isShippedSource("zz.tsx")).toBe(true);
+  expect(isShippedSource("zz.test.ts")).toBe(false);
+  expect(isShippedSource("zz.test.tsx")).toBe(false);
 
   const root = fileURLToPath(new URL("../../", import.meta.url));
   const packages = ["api/src", "worker/src", "store/src"];
@@ -238,14 +261,23 @@ test("only the capture and fork routes insert an idea — the engine never does 
   expect(inserting).toEqual(["api/src/capture.ts", "api/src/fork.ts"]);
 });
 
-/** Every `.ts` under `dir` that ships — tests are excluded, since they insert fixtures directly. */
+/** The shipped-source extension union, mirroring `worker/src/provider/boundary.test.ts`. */
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+const TEST_FILE = /\.test\.[cm]?[jt]sx?$/;
+
+/** Whether `name` is a shipped source file — tests are out, since they insert fixtures directly. */
+function isShippedSource(name: string): boolean {
+  return SOURCE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !TEST_FILE.test(name);
+}
+
+/** Every shipped source file under `dir`, recursively, in stable order. */
 function sourcesUnder(dir: string): string[] {
   const found: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     if (entry.isDirectory()) {
       for (const nested of sourcesUnder(join(dir, entry.name)))
         found.push(join(entry.name, nested));
-    } else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
+    } else if (isShippedSource(entry.name)) {
       found.push(entry.name);
     }
   }
