@@ -496,19 +496,45 @@ Readings this doc had not pinned (settled in W8 `#33`):
   successor, forever (`ARCHITECTURE.md` §4 / I).
 - **Idempotent per revision:** a repeat while a `PENDING` run exists at that stamp returns **the same**
   `run_id` rather than adding a second row.
-- **Under the prefix, exactly two routes exist.** `/v1/sparks/state` (§4.10) and this one are the
-  implemented paths; bare `/v1/sparks` (§4.9) and the unwritten §4.17 remain the `not_found` envelope.
+- **The prefix's `{id}` paths are not routes — they are the `not_found` envelope.** The implemented
+  paths are bare `/v1/sparks` (§4.9), `/v1/sparks/state` (§4.10), `/v1/sparks/events` (§4.11) and this
+  one. `/v1/sparks/{id}` (§4.12) is defined in this contract but **not served** — K3's S1b transport is
+  client-side — so `/v1/sparks/9f1c` answers the envelope, not a partial read. (This bullet once read
+  *"exactly two routes exist … the unwritten §4.17"*; both clauses went stale as §4.9 and §4.17
+  landed.)
 
 ### 4.17 `GET /v1/export` — open, complete export (NFR-D1)
 `200` → a single self-describing JSON document (`ARCHITECTURE.md` §8):
 ```json
-{ "schema_version": "1",
+{ "schema_version": 5,
   "exported_at": "2026-10-13T05:14:05Z",
   "ideas": [ … ], "idea_versions": [ … ], "lineage_edges": [ … ],
   "provenance_edges": [ … ], "decisions": [ … ], "domain_tags": [ … ] }
 ```
 `domain_tags[]` is part of the contract and is the field most easily dropped — it is required. Every
 committed idea is present; no vendor format, no proprietary ids needed to read it.
+
+Readings this doc had not pinned (settled in V6 `#17`):
+
+- **`schema_version` is a number — the store's own reading.** The live `SCHEMA_VERSION` (`5`), equal to
+  `PRAGMA user_version` on any store the API serves. The example above once showed the string `"1"`; that
+  placeholder is corrected here, not carried.
+- **The document is the whole vault in one snapshot.** One `BEGIN`…`COMMIT` over the F3 tables, read-only:
+  `exported_at` and the seven arrays are a single vault state, and the read writes nothing (no revision
+  bump, no run). No provider is reachable from the export path.
+- **The eight keys are top-level, in this order** — the response body *is* the document, not a wrapper.
+- **`ideas[]` is the full `idea` row, `mutation_delta` included** (`null` on a ROOT). Export is the
+  backup path, so nothing the vault holds is dropped; §3.1's `Idea`, which omits it, is unchanged.
+- **`lineage_edges[]` is derived, keys `{idea_id, parent_idea_id}`** — one per FORK, from
+  `idea WHERE lineage_parent_id IS NOT NULL`; it has no table of its own. The other edge/row arrays are
+  1:1 with a table (`idea_version`, `provenance_edge`, `decision`).
+- **`domain_tags[]` is the vocabulary of record** — one `{tag, cluster_id}` per `domain_map` row. The
+  `domain_cluster` names and `adjacency` are **not** among the frozen eight (see `RUNBOOK.md`,
+  *Not in this document*).
+- **`decisions[]` is empty until the decision writer lands** (K4 `#38`) — the correct export of a vault
+  with no decisions, not a stub to fill.
+- **No round-trip is claimed.** Export→re-import is **EV5 `#47`**, a different issue; V6 ships the
+  document and the runbook, nothing more.
 
 ---
 

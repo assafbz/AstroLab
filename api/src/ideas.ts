@@ -114,7 +114,7 @@ export function getIdeaDetail(db: DatabaseSync, id: string): IdeaDetail | null {
  * straddle a commit and ship a `versions` list that `idea.current_version` disagrees with (V2 ruling).
  * A deferred read holds no write lock, so this costs writers nothing.
  */
-function readSnapshot<T>(db: DatabaseSync, read: () => T): T {
+export function readSnapshot<T>(db: DatabaseSync, read: () => T): T {
   db.exec("BEGIN");
   try {
     const result = read();

@@ -450,7 +450,8 @@ read it. Every committed idea is present (`NFR-D1`).
 replace the file and run migrations forward. **No committed idea is lost** on either path.
 
 **Verification.** A backup→wipe→restore test and an export→re-import round-trip test, both asserting idea
-counts and lineage/provenance edges survive.
+counts and lineage/provenance edges survive. Both are **EV5 `#47`**: V6 `#17` builds the endpoint and the
+operator runbook (`docs/RUNBOOK.md`), EV5 proves them (build ≠ prove).
 
 ---
 
