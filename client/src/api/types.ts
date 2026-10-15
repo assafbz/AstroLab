@@ -104,6 +104,22 @@ export interface Spark {
   created_at: string;
 }
 
+/**
+ * `docs/API.md` §3.4 — the S1b expanded view: `Spark` plus **only** `what_it_takes`.
+ *
+ * `first_step` sits on `Spark` itself (§3.3, #115), so the detail's whole delta is the one field that
+ * stays off the card by design — `what_it_takes` belongs to the expanded view (`PRD.md` §3.3 item 4),
+ * and it is in neither §4.9's read nor §4.11's `offer` frame, which is why S1b reads its **own**
+ * endpoint rather than composing itself from the card it was reached through.
+ */
+export interface SparkDetail extends Spark {
+  /**
+   * What the idea would take to build. `null` only on a **legacy row** — the same rule `first_step`
+   * carries (§3.3): rendered as simply absent, never a label over nothing.
+   */
+  what_it_takes: string | null;
+}
+
 /** `docs/API.md` §3.6 / `FLOW.md` §4.1 — the five engine states, verbatim. */
 export type EngineStateName = "E0" | "E1" | "E2" | "E3" | "E4";
 
