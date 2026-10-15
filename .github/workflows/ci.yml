@@ -76,6 +76,10 @@ jobs:
       # The audit imports `DEFAULT_MODEL` from the boundary, so it needs the workspace installed —
       # `capture-zdr.mjs` needs nothing, but `audit-zdr.ts` reads the code it is auditing.
       - run: npm ci
+      # The audit's own non-vacuity, on every PR: each check is driven with a synthetic artifact that
+      # must make it bite, so a rule that quietly stopped biting is a red job — the way `citations` runs
+      # its sibling's self-check. Offline, so it runs before the capture.
+      - run: npm run audit:zdr -- --self-check
       - run: node scripts/capture-zdr.mjs
       # EV6 (#48): the artifact's consumer. Fails closed — no artifact, or a model the provider does
       # not classify ZDR, is a red job, not an unread upload. Still non-required, so provider downtime

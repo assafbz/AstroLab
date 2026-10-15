@@ -448,6 +448,14 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
   // `adjudicator.adjudicate(eligible)`, but `adjudicator` is typed `Adjudicator` — the engine's own
   // stage, whose single provider call lives in `engine/adjudicate.ts` — so a bare `\.adjudicate\(`
   // would count two and this one counts one. Without the anchor the guard would be about spelling.
+  //
+  // **Two arms, two jobs.** The *anchored* arm below states the precise claim — one counted call site
+  // per operation, in its own module — and it fails on a second call in the *same* file. The
+  // *tripwire* arm is the file set: a product file that **names** an operation at all is enumerated,
+  // call or citation, so a new route goes red even when the anchored arm cannot see it. The first
+  // version matched only the call *shape* (`receiver.op(`) in both arms, and a value reference —
+  // `const { extract } = provider; extract(text)` — has neither a receiver nor a `.op(`, so it walked
+  // past both (EV6 review, Eli).
   const IFACES: Record<string, string> = {
     extract: "MechanismExtractor",
     adjudicate: "SparkAdjudicator",
@@ -473,7 +481,34 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
   // boot path, asserted below — rather than a directory quietly filtered out of the scan.
   const CALIBRATION = "worker/src/engine/calibration/";
   const productFiles = FILES.filter((file) => !file.rel.startsWith(CALIBRATION));
-  const shaped = (file: { text: string }): boolean => opCalls(file.text).length > 0;
+
+  /**
+   * The operation **names**, as whole words — the data-flow vocabulary. A product source file that
+   * names one is the event this arm exists for, *whatever the naming is*: a call with a receiver
+   * (`extractor.extract(`), a call with **none** (the value-reference hole above), an import path
+   * (`./adjudicate.js`), a type, or a doc citation. So this is deliberately over-inclusive, and the
+   * file set below is the assertion — a code-position matcher (a call, or a member access) was
+   * considered and rejected: it is two files narrower and blind to a destructure in property position
+   * (`const { extract: e } = provider`), which is the same hole in a different spelling.
+   *
+   * `\b` on both sides so `extraction` / `extractionUser` / `EXTRACTOR_VERSION` are not the vocabulary:
+   * only the exact operation name is.
+   */
+  const OP_NAME = /\b(?:extract|adjudicate|normalizeTag)\b/;
+  const namesOperation = (file: { text: string }): boolean => OP_NAME.test(file.text);
+
+  test("the tripwire sees a call with, and without, a receiver — the hole it was widened for", () => {
+    // Both halves on the *real* ambiguity. The anchored arm's matcher (`opCalls`) sees the receiver
+    // form and is **blind** to the value reference — which is why the tripwire does not use it.
+    const anchored = { text: "const d = await extractor.extract(text);" };
+    const valueRef = { text: "const { extract } = provider;\nreturn extract(text as never);" };
+    expect(namesOperation(anchored)).toBe(true);
+    expect(namesOperation(valueRef)).toBe(true);
+    expect(opCalls(anchored.text)).toHaveLength(1);
+    expect(opCalls(valueRef.text)).toEqual([]);
+    // A near-miss the rule must not swallow: the *word* `extraction` is not the operation `extract`.
+    expect(namesOperation({ text: "import { extractionUser } from './prompts.js';" })).toBe(false);
+  });
 
   test("the anchor is the receiver's declaration, not the method name", () => {
     // Both controls on the *real* ambiguity: `provider.adjudicate(` anchored by `provider:
@@ -502,27 +537,49 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
     }
   });
 
-  test("no product file calls an operation the anchor did not account for", () => {
-    // The exact set, not a filter: a *new* `.extract(` anywhere under `src/` is a privacy-relevant
-    // event — §5's payload rule has to be re-checked at the new site — so the guard names the five
-    // files that carry one today. Four are the engine's (`run.ts` calling the stage, above); the fifth
-    // is the named calibration exception.
+  test("no product file names an operation the anchor did not account for", () => {
+    // The exact set, not a filter: a *new* naming of an operation anywhere under a package's `src/` is
+    // a privacy-relevant event — §5's payload rule has to be re-checked at the new site — so the guard
+    // **names every file that mentions one today**, call or citation. Over-inclusive on purpose: three
+    // of these nine name an operation only in an import path or a doc citation (`compose.ts`,
+    // `suppression.ts`, `prompts.ts`), and they are here precisely so that a *documentation* mention in
+    // a new file is also a stop-and-look rather than a silent addition to the vocabulary.
     expect(
       productFiles
-        .filter(shaped)
+        .filter(namesOperation)
         .map((file) => file.rel)
         .sort(),
     ).toEqual([
+      "worker/src/compose.ts",
       "worker/src/engine/adjudicate.ts",
       "worker/src/engine/domain.ts",
       "worker/src/engine/mechanism.ts",
       "worker/src/engine/run.ts",
+      "worker/src/engine/suppression.ts",
+      "worker/src/provider/openrouter.ts",
+      "worker/src/provider/prompts.ts",
+      "worker/src/provider/types.ts",
     ]);
+    // Non-vacuity, the way the walk's are: the tripwire must reach the three modules whose *call* the
+    // arm above counts, or a typo'd pattern would pass by matching nothing.
+    for (const module of OPERATIONS.map(({ module }) => module)) {
+      expect(
+        productFiles.filter(namesOperation).map((file) => file.rel),
+        module,
+      ).toContain(module);
+    }
+    // Named, not filtered: the calibration harness names all three ops on purpose (it fires the same
+    // prompts), and it is the one file the walk reaches outside `productFiles`.
     expect(
-      FILES.filter((file) => file.rel.startsWith(CALIBRATION) && shaped(file)).map(
+      FILES.filter((file) => file.rel.startsWith(CALIBRATION) && namesOperation(file)).map(
         (file) => file.rel,
       ),
     ).toEqual(["worker/src/engine/calibration/w9-run.ts"]);
+    // The residual, stated rather than hidden: the event this arm names is a new **file** in the
+    // vocabulary, so a second naming *inside* a file already listed (`mechanism.ts` gaining a value
+    // reference beside its anchored call) does not move the set. What covers that is the anchored arm
+    // above, and only for a second *anchored* call; nothing here counts unanchored mentions per file,
+    // because that would be an assertion about prose.
   });
 
   test("the calibration exception is script-only — no src module outside it imports the harness", () => {

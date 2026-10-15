@@ -120,9 +120,12 @@ function describe(cause: unknown): string {
 
 function run(argv: readonly string[]): number {
   const artifactPath = flag(argv, "--artifact") ?? process.env.ZDR_ARTIFACT ?? DEFAULT_ARTIFACT;
-  // The same rule `createAdapterFromEnv` and `compose.ts`'s `modelFromEnv` apply — `AI_MODEL` wins,
-  // `DEFAULT_MODEL` is the fallback — read from the boundary's own constant rather than restated.
-  const model = flag(argv, "--model") ?? process.env.AI_MODEL?.trim() ?? DEFAULT_MODEL;
+  // `--model` overrides, then the env rule `createAdapterFromEnv` (`provider/openrouter.ts`) and
+  // `compose.ts`'s `modelFromEnv` both apply — `env.AI_MODEL?.trim() || DEFAULT_MODEL` — read from the
+  // boundary's own constant rather than restated. `||` and not `??`: an empty or whitespace `AI_MODEL`
+  // then falls back to the default the way it does at the call site, instead of naming the empty model
+  // and failing here for the wrong reason (EV6 review).
+  const model = flag(argv, "--model") || process.env.AI_MODEL?.trim() || DEFAULT_MODEL;
 
   let raw: string;
   try {
