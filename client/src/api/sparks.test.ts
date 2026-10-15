@@ -93,6 +93,7 @@ const SPARK: Spark = {
   id: "1a2b",
   direction: "Route the overflow by relevance",
   claim: "The default metric is not the relevant one.",
+  first_step: "Instrument the ingest path before the model runs.",
   domain_tags: ["audio-dsp"],
   created_at: "2026-10-13T05:14:05Z",
 };
@@ -149,6 +150,18 @@ test("offeredSparks keeps server order — deck order is the server's, never re-
   stubFetch(() => Promise.resolve(json({ sparks: [SPARK, second, third] })));
 
   expect((await offeredSparks()).map((spark) => spark.id)).toEqual(["1a2b", "zz", "9f"]);
+});
+
+test("offeredSparks carries §3.3's whole projection through, `first_step` included (#115)", async () => {
+  // The card's third element is the read's, not a literal: the field survives the transport unreshaped,
+  // and a `null` (a legacy row) travels as `null` rather than being dropped or defaulted here.
+  stubFetch(() =>
+    Promise.resolve(json({ sparks: [SPARK, { ...SPARK, id: "legacy", first_step: null }] })),
+  );
+
+  const [offered, legacy] = await offeredSparks();
+  expect(offered!.first_step).toBe(SPARK.first_step);
+  expect(legacy!.first_step).toBeNull();
 });
 
 test("offeredSparks answers an empty deck with an empty array, not a failure (§4.9)", async () => {

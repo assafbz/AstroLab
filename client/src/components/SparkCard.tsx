@@ -8,11 +8,13 @@ import type { ResolveSeam } from "../domain/deck-interaction.ts";
  * S3 — the **Spark Card** (`DESIGN.md` §4, §9; `FLOW.md` §2.2, §5.5): one proposed spark, presented
  * as an idea, judged by a swipe or a button.
  *
- * **What it renders is the `Spark` projection and nothing else** (`docs/API.md` §3.3, K1 `#35`): the
- * idea (`direction`), the claim, and the raw `domain_tags` chips. There is no score, no
+ * **What it renders is the `Spark` projection and nothing else** (`docs/API.md` §3.3, K1 `#35`; the
+ * `first_step` row is #115): the idea (`direction`), the claim, the **first step**, and the raw
+ * `domain_tags` chips — in `docs/stitch-prompts.md` §1's order. There is no score, no
  * distance/alignment readout, no origin line and no source ids — that is the governance rule, not a
  * shortfall, and a chip may be **provisional** (the card shows the raw tag and never reads it as a
- * resolved cluster, §3.3).
+ * resolved cluster, §3.3). A `null` `first_step` is a legacy row, and the row is omitted rather than
+ * drawn empty.
  *
  * **Parity is structural here** (§5.5): the swipe and both buttons resolve through the single
  * `dispatch` below and construct no payload of their own — `deck-interaction.test.ts` fails on a
@@ -59,6 +61,15 @@ export function SparkCard(props: {
       <h2 className="sparkcard__idea">{spark.direction}</h2>
       <p className="section__label">THE CLAIM</p>
       <p className="sparkcard__claim">{spark.claim}</p>
+      {/* The card's third element, in §1's order — between THE CLAIM and the chips. A `null` is a
+          legacy row (§3.3), and it renders as *absent*: no label over nothing, and no filler the
+          payload did not carry. */}
+      {spark.first_step === null ? null : (
+        <>
+          <p className="section__label">FIRST STEP</p>
+          <p className="sparkcard__firststep">{spark.first_step}</p>
+        </>
+      )}
       <ul className="chips chips--tight sparkcard__domains">
         {spark.domain_tags.map((tag) => (
           <li key={tag} className="chip chip--static">

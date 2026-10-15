@@ -25,6 +25,7 @@ const FIRST = {
   id: "aaa1",
   direction: "Route the overflow by relevance",
   claim: "The default metric is not the relevant one.",
+  first_step: "Instrument the ingest path before the model runs.",
   domain_tags: ["audio-dsp"],
   created_at: "2026-10-14T05:14:05Z",
 };
@@ -33,6 +34,7 @@ const SECOND = {
   id: "bbb2",
   direction: "Pair the transit lattice with audio",
   claim: "Scheduling and DSP share a shape.",
+  first_step: "Instrument the ingest path before the model runs.",
   domain_tags: ["transit"],
   created_at: "2026-10-13T05:14:05Z",
 };

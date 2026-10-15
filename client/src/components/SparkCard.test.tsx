@@ -14,6 +14,7 @@ const SPARK: Spark = {
   id: "1a2b",
   direction: "Route the overflow by relevance",
   claim: "The default metric is not the relevant one.",
+  first_step: "Instrument the ingest path before the model runs.",
   domain_tags: ["audio-dsp", "transit"],
   created_at: "2026-10-13T05:14:05Z",
 };
@@ -26,6 +27,12 @@ function renderCard() {
   return { onResolve, card: screen.getByLabelText("Spark") };
 }
 
+/** The same card over a payload the test chooses — the one caller that needs a legacy row. */
+function renderPayload(spark: Spark) {
+  render(<SparkCard spark={spark} onResolve={vi.fn()} swipeDistance={48} />);
+  return { card: screen.getByLabelText("Spark") };
+}
+
 test("the card shows the idea, the claim and the raw domain chips — and nothing from §3.3's ban", () => {
   const { card } = renderCard();
 
@@ -35,6 +42,29 @@ test("the card shows the idea, the claim and the raw domain chips — and nothin
   expect(card.textContent).toContain("transit");
   // No origin, no mechanism, no distance/alignment/similarity readout (§1 governance rule, §7).
   expect(card.textContent).not.toMatch(/distance|alignment|similar|origin|mechanism/i);
+});
+
+test("the card draws FIRST STEP from the payload, between THE CLAIM and the chips (§1's order)", () => {
+  const { card } = renderCard();
+
+  // The order is the spec's (stitch-prompts.md §1): IDEA · CLAIM · FIRST STEP · chips. Reading the
+  // labels off the card is what makes it an order check rather than a presence check.
+  expect([...card.querySelectorAll(".section__label")].map((node) => node.textContent)).toEqual([
+    "THE IDEA",
+    "THE CLAIM",
+    "FIRST STEP",
+  ]);
+  // And the value is the read's, not a literal on the card.
+  expect(card.textContent).toContain(SPARK.first_step);
+  expect(card.querySelector(".sparkcard__firststep")?.textContent).toBe(SPARK.first_step);
+});
+
+test("a `null` FIRST STEP is absent — no label over nothing, and no filler (§3.3)", () => {
+  // `null` is a legacy row (#115): the label must not be drawn above an empty value, and the card must
+  // not invent a step the payload did not carry.
+  const { card } = renderPayload({ ...SPARK, first_step: null });
+  expect(card.textContent).not.toContain("FIRST STEP");
+  expect(card.querySelector(".sparkcard__firststep")).toBeNull();
 });
 
 test("a swipe right and a Good press hand the seam identical arguments — the same path, not two", () => {

@@ -843,6 +843,12 @@ a {
   color: var(--muted);
 }
 
+/* The smallest next move (stitch-prompts.md §1 item 3) — the claim's register, in its own row. */
+.sparkcard__firststep {
+  margin: 0;
+  color: var(--muted);
+}
+
 .sparkcard .actionbar {
   margin-top: 1rem;
   margin-bottom: 0;

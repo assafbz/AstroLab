@@ -15,6 +15,7 @@ const SPARK: Spark = {
   id: "1a2b",
   direction: "Route the overflow by relevance",
   claim: "The default metric is not the relevant one.",
+  first_step: "Instrument the ingest path before the model runs.",
   domain_tags: ["audio-dsp"],
   created_at: "2026-10-13T05:14:05Z",
 };
