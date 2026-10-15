@@ -790,3 +790,44 @@ a {
   font-size: 0.8125rem;
   color: var(--dim);
 }
+
+/* --- S1 deck: the band's frame and the Spark Card (DESIGN.md §4, §9) --- */
+
+.deck__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.deck__count {
+  margin: 0;
+  font-size: 0.8125rem;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+}
+
+.deck .empty,
+.deck .banner {
+  margin-top: 1rem;
+}
+
+/* The card is the unit of E2: the idea, the claim, the chips, the two actions (§4). */
+.sparkcard__idea {
+  margin: 0 0 1rem;
+  font-size: 1.3125rem;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--ink);
+}
+
+.sparkcard__claim {
+  margin: 0;
+  color: var(--muted);
+}
+
+.sparkcard .actionbar {
+  margin-top: 1rem;
+  margin-bottom: 0;
+}

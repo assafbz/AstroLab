@@ -99,13 +99,21 @@ test("a bare #/ideas composes a 'choose an idea' landing, never blank (D10)", ()
 /** `#/` is S1 (home). Whichever entry brought the user there, a cold vault lands the E0 composition. */
 test("#/ renders S1, and a vault below the floor lands E0 Cold — not a placeholder", async () => {
   window.location.hash = "#/";
+  // S1 reads three routes (§4.10, §4.9, §3.2), so the stub routes by path: a cold summary, the
+  // engine's own E0, and an empty deck.
   vi.stubGlobal(
     "fetch",
-    vi.fn(() =>
-      Promise.resolve(
+    vi.fn((url: string) => {
+      if (url.includes("/v1/sparks/state")) {
+        return Promise.resolve(json({ state: "E0", unreviewed: 0, run: null }));
+      }
+      if (url.includes("/v1/sparks?state=offered")) {
+        return Promise.resolve(json({ sparks: [] }));
+      }
+      return Promise.resolve(
         json({ resolved_domains: 1, provisional_domains: 1, target: 3, floor: 2, eligible: false }),
-      ),
-    ),
+      );
+    }),
   );
   render(<App />);
 
