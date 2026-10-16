@@ -93,8 +93,8 @@ idea(
   lineage_kind       TEXT NOT NULL,    -- ROOT | FORK (iteration is a version, not a lineage kind)
   lineage_parent_id  TEXT NULL,        -- NOT a foreign key (T26): set only for FORK (single parent)
   mutation_delta     TEXT NULL,        -- the fork's mutation delta (V4 #15, `0005`); set only for a FORK
-  new_domain         INTEGER NULL,     -- did this idea's domain set widen the vault? (EV1 #43, `0006`);
-                                       -- 1 | 0 | NULL = not recorded (§4.13's ACCEPT, rows predating it)
+  new_domain         INTEGER NULL,     -- has this idea widened the vault? (EV1 #43, `0006`); a recorded
+                                       -- 1 is durable; 1 | 0 | NULL = not recorded (§4.13's ACCEPT, predating rows)
   status             TEXT NOT NULL,    -- ACTIVE | NEEDS_COMPLETION
   visibility         TEXT NOT NULL,    -- PRIVATE (MVP only)
   current_version    INTEGER NOT NULL,
@@ -654,9 +654,11 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
   gains the nullable `new_domain` (`0006`, `docs/SCHEMA.md` §1e): `1` where a write that can widen the
   vault reached a domain the vault did not already carry, `0` where it did not, `NULL` where the value
   was never recorded — §4.13's ACCEPT (its root's tags are the source pair's union, so the reading there
-  is constant-false) and every row predating the column. The three producers are §4.2's capture, §4.7's
-  fork and §4.6's iterate; the reporting reads live in `api/src/metrics.ts` and are not a route. The
-  column is additive and nullable, so no existing constraint or state-machine behaviour moves.
+  is constant-false) and every row predating the column. A recorded `1` is **durable**: §4.6's iterate is
+  the one producer whose row already exists, and it assigns the value monotonically (`CASE WHEN
+  new_domain = 1 THEN 1 ELSE ? END`), so an edit never clears a widening. The three producers are §4.2's
+  capture, §4.7's fork and §4.6's iterate; the reporting reads live in `api/src/metrics.ts` and are not a
+  route. The column is additive and nullable, so no existing constraint or state-machine behaviour moves.
 
 - **2026-10-14 — r3.5.** **O5 (`#25`) — §12 item 3 (cold-start ordering) closed.** The onboarding run is
   triggered by the exit the user chose: *See your sparks* presses `POST /v1/sparks/run` (`docs/API.md`

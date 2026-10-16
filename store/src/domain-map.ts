@@ -115,6 +115,18 @@ export function readDomainMap(db: DatabaseSync, tags: readonly string[]): Map<st
  * (measured 2026-10-16; the store suite pins the case), which is the false positive this shape removes.
  * For the two `INSERT` paths the distinction cannot arise: the row is not in the table yet.
  *
+ * ## A recorded `1` is durable, so the column is the idea's *history*
+ *
+ * `1` answers *"did this idea ever reach a domain the vault did not already carry?"* — NFR-Q1 reads an
+ * event (*"landed"*) — so it is not re-answered by a later write that happens not to widen. §4.6 is the
+ * one writer whose row already exists, and it writes the value **monotonically**
+ * (`CASE WHEN new_domain = 1 THEN 1 ELSE ? END`, `api/src/iterate.ts`): a `1` earned at birth or at any
+ * earlier iterate survives every later write of the row's own domain, a plain text edit included. The
+ * alternative — overwriting with this write's answer — resets such a row to `0` (the recomputation
+ * compares against a vault that now **includes the row itself**), so a widening would be erased by the
+ * next unrelated edit and both month views would drift down with use. `newDomainFlag` returns this
+ * write's answer; making it durable is the *writer's* job, and only §4.6 has a prior value to preserve.
+ *
  * Returns the column's value, `0 | 1`. `NULL` ("not recorded") is never returned: it is the *absence*
  * of a write, and only §4.13's ACCEPT leaves one — its root's tags are the source pair's union, drawn
  * from rows that already exist, so the reading there is constant-false by construction and a stored

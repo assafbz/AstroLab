@@ -272,6 +272,15 @@ are `api/src/metrics.ts` (`acceptedByMonth`, `newDomainByMonth`, `acceptedLandin
 documented in the module), which is NFR-Q1's *"instrumentation + reporting"* and is deliberately **not**
 a route.
 
+**A recorded `1` is durable.** The metric reads an event — *"a spark that **landed** in a new domain"* —
+so `1` is a fact about the idea's *history*, not the latest write's answer. §4.6 is the one writer whose
+row already exists, and it writes the value monotonically (`CASE WHEN new_domain = 1 THEN 1 ELSE ? END`,
+`api/src/iterate.ts`): once earned — at birth, or by a T27 completion onto a fresh domain — it survives
+every later write of the row's own domain, a plain text edit included. Without that, a widening would be
+cleared by the next unrelated edit (the recomputation compares against a vault that now includes the row
+itself), and both month views would drift down with use. `newDomainFlag` returns only *this* write's
+answer; preserving the prior `1` is the writer's job, and only §4.6 has a prior value to preserve.
+
 A **plain `ALTER TABLE … ADD COLUMN`**, not a rebuild (`0005`'s precedent): it adds a *new* column and
 changes no existing constraint. Nullable, so every pre-existing row lands `NULL` with no backfill — and
 the report counts `= 1`, never `!= 1`, so "did not widen" and "not recorded" cannot be confused.
@@ -286,6 +295,7 @@ the report counts `= 1`, never `!= 1`, so "did not widen" and "not recorded" can
 | **Single-parent lineage** (PRD §2) | structural: one nullable `lineage_parent_id` column (no longer a FK — `0003`), plus the `FORK`-only `CHECK`. |
 | **A mutation delta exists only on a FORK** (PRD §3.2 item 2; V4 `#15`) | structural: `mutation_delta` is nullable and carries `CHECK (lineage_kind='FORK' OR mutation_delta IS NULL)` (`0005`, §1d). |
 | **`new_domain` is `0`, `1`, or unrecorded** (EV1 `#43`; NFR-Q1) | structural: nullable `INTEGER` carrying `CHECK (new_domain IN (0,1))` (`0006`, §1e) — a `NULL` passes as the *absence* of a record, never as a value. |
+| **A recorded `new_domain = 1` is durable** (EV1 `#43`; NFR-Q1) | §4.6's iterate assigns `CASE WHEN new_domain = 1 THEN 1 ELSE ? END` (`api/src/iterate.ts`), so no later write clears a recorded widening — asserted by test (`api/src/nfr-q1.test.ts`, claim 3). |
 | **A repeated `decision_id` insert is a no-op** (FLOW §2.2/N4, H4) | PK on `decision.id`; write via `INSERT … ON CONFLICT(id) DO NOTHING` (then read the existing row). |
 | **`vault_meta.revision` monotonicity** (ARCH §4) | every candidate-affecting vault mutation bumps it inside the same transaction; test asserts non-decreasing and single-row. |
 | **At most one live offer per pair** (ARCH §3.5) | `ux_spark_live` partial unique index. |

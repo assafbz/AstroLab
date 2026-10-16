@@ -108,7 +108,9 @@ export function newDomainByMonth(db: DatabaseSync, from: string, to: string): Mo
  *   time**. A root born `NEEDS_COMPLETION` that a later month's iterate moves into a fresh domain
  *   therefore enters an **earlier** bucket than the write that flipped it. That is the cohort reading —
  *   "the sparks accepted in M, and what became of them" — not a claim about when the widening happened;
- *   `newDomainByMonth` is the month-of-widening view.
+ *   `newDomainByMonth` is the month-of-widening view. A recorded `1` is **durable** (§4.6 writes it
+ *   monotonically), so a cohort's landing count does not fall away when a root is later edited or
+ *   re-saved — the only exit is the row itself disappearing.
  * - **A root deleted since its accept is absent here and counted by `acceptedByMonth`.** An inner join
  *   is the only honest option: the flag lived on a row that no longer exists, so the instrument cannot
  *   speak for it, and inventing a `0` would understate the landing rate instead of recording that the

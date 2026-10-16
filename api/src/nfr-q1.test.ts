@@ -25,7 +25,7 @@ import { acceptedByMonth, acceptedLandingNewDomainByMonth, newDomainByMonth } fr
  * | :-- | :-- | :-- | :-- |
  * | 1 | §4.2's capture records it at the write | the stored `new_domain` of the returned idea | capture a tag the vault already carries → `0`; capture `payments` where the vault holds `fintech` → `0` (cluster-relative, not tag-relative) |
  * | 2 | §4.7's fork records it **vault**-relative, not parent-relative | the fork row's `new_domain` | fork into a domain covered by a *third* idea → `0`, though the parent does not carry it (T25's `409` only compares the fork to its parent) |
- * | 3 | §4.6's iterate re-records it, against the vault *as it stood* | the row's `new_domain` after the call | iterate onto a fresh domain → `1`; a text-only re-save of the same domain → `0` (the case a "no other row" rule gets wrong) |
+ * | 3 | §4.6's iterate records it, against the vault *as it stood*, and a recorded `1` is **durable** | the row's `new_domain` after the call | iterate onto a fresh domain → `1`; a text-only re-save of the same domain → `0` (the case a "no other row" rule gets wrong); a recorded `1` survives a later text-only re-save (the case an overwrite gets wrong) |
  * | 4 | §4.13's ACCEPT records **nothing** — the reading there is constant-false | the ACCEPT-born root's `new_domain` | the roots are `NULL`, never `0`: a naive compute-inside-`insertRootIdea` would store `0` and this reddens |
  * | 5 | the producers are **exactly** the three write sites, and each assigns the column | a scan of the shipped sources | a fourth `INSERT`/`UPDATE` of `idea` that never mentions `new_domain` |
  * | 6 | `acceptedByMonth` — §4.13's accepted sparks, by accept month | `decision`, `kind = 'ACCEPT'`, bucket `[from, to)` on `decided_at` | the `DISMISS`/`INSPIRED` rows in the same month are not counted (`kind = 'ACCEPT'`, not "all decisions") |
@@ -170,6 +170,44 @@ describe("§4.6 iterate re-records it against the vault as it stood (claim 3)", 
       domain_tags: ["fintech"],
     });
     expect(flagOf(db, "sole")).toBe(0);
+  });
+
+  test("a recorded `1` is durable — a later write of the idea's own domain cannot clear it", () => {
+    const db = newDb();
+    seedIdea(db, "existing", ["fintech"]);
+    // A capture that genuinely widened the vault: no row carried `health`.
+    const idea = captureIdea(db, fields(["health"]));
+    expect(flagOf(db, idea.id)).toBe(1);
+
+    // The commonest follow-through there is — a plain text edit, same domain. The write does not widen
+    // the vault, but the *landing* the row already recorded did. NFR-Q1 reads an event ("landed"), so a
+    // recorded `1` is a fact about the idea's history and a later write must not erase it. Without the
+    // durable form, this reads `0`: the flag would be recomputed against a vault that now includes the
+    // row's own tags, so every widening would be cleared by the next unrelated edit and both month
+    // views would drift down with use.
+    iterateIdea(db, idea.id, {
+      hypothesis: "rewritten",
+      problem: "p",
+      monetization: "m",
+      domain_tags: ["health"],
+    });
+    expect(flagOf(db, idea.id)).toBe(1);
+  });
+
+  test("durability does not resurrect a `0` — the write still decides when nothing was recorded", () => {
+    const db = newDb();
+    // `existing` carries `health` from the start, so a row iterated onto it never widens: `1` is not
+    // sticky for its own sake, only for a `1` the row actually earned.
+    seedIdea(db, "existing", ["health"]);
+    const idea = captureIdea(db, fields(["health"]));
+    expect(flagOf(db, idea.id)).toBe(0);
+    iterateIdea(db, idea.id, {
+      hypothesis: "rewritten",
+      problem: "p",
+      monetization: "m",
+      domain_tags: ["education"],
+    });
+    expect(flagOf(db, idea.id)).toBe(1);
   });
 });
 

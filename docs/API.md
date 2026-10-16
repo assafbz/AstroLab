@@ -328,6 +328,13 @@ Readings this doc had not pinned (settled in V3 `#14`):
   re-save is not a widening**, even when the idea is the sole carrier of its domain; computing the flag
   after the write instead would make it always `0`, and ignoring the node's own tags would report that
   re-save as `1`. Both cases are pinned in `api/src/nfr-q1.test.ts`.
+- **A recorded `new_domain = 1` is durable; iterate never clears one (`#43`).** The write is monotone —
+  `CASE WHEN new_domain = 1 THEN 1 ELSE ? END` — because the metric reads an event (*"landed"*): a row
+  that widened at birth (or at an earlier iterate) keeps its `1` through any later write of its own
+  domain, a plain text edit included. Overwriting with this write's answer instead would reset such a
+  row to `0` — the recomputation is against a vault that now includes the row itself — so a recorded
+  widening would vanish on the next unrelated edit. This does not weaken the bullet above: a row that
+  never widened still computes `0` on a text-only re-save.
 
 ### 4.7 `POST /v1/ideas/{id}/fork` — S5 Fork
 Request: `{ "mutation_delta": "…", "domain_tags": ["…"] }`.
