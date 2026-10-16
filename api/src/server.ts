@@ -18,6 +18,7 @@ import { engineState } from "./engine-state.js";
 import { exportVault } from "./export.js";
 import { forkIdea, parseForkInput } from "./fork.js";
 import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
+import { inspireSeed } from "./inspire.js";
 import { iterateIdea } from "./iterate.js";
 import { handleSparkEvents, type SparkEventsOptions } from "./spark-events.js";
 import { listOfferedSparks, parseSparkQuery, sparkDetail } from "./sparks.js";
@@ -223,9 +224,10 @@ async function handleRequest(
 
     // §4.12 — the spark detail (S1b, #118). The `{id}` shape is matched **after** the exact spark
     // routes above, so `state` / `events` / `run` are never read as a detail id; a further segment
-    // (`…/decision`, §4.13, K6 #39) or a non-`GET` method falls to the envelope below. An unknown id is
-    // §2's `not_found` — and it is the **only** 404 here: the read is status-blind, so a resolved spark
-    // still answers `200` (§3.3/§3.4 carry no `status`).
+    // (`…/decision`, §4.13; `…/inspire`, §4.14) is that action's own route, and a non-`GET` method on
+    // this shape is the envelope below. An unknown id is §2's `not_found` — and it is the **only** 404
+    // here: the read is status-blind, so a resolved spark still answers `200` (§3.3/§3.4 carry no
+    // `status`).
     const sparkId = sparkPath(path);
     if (sparkId !== null && method === "GET") {
       return handleSparkDetail(res, db, sparkId);
@@ -236,9 +238,18 @@ async function handleRequest(
     // (`…/decision/x`) or a non-`POST` method falls to the envelope below (§2). The write is the
     // envelope's other half: `422` for the body, `404` for an unknown spark, `409` for a spark that is
     // not a live offer or a `decision_id` committed elsewhere.
-    const decisionSparkId = sparkDecisionPath(path);
+    const decisionSparkId = sparkActionPath(path, "decision");
     if (decisionSparkId !== null && method === "POST") {
       return await handleDecision(req, res, db, decisionSparkId);
+    }
+
+    // §4.14 — INSPIRE (S2's seed, K5 `#39`). A **read**: it writes no `decision` and leaves the spark
+    // `OFFERED`; the seeded save (`POST /v1/ideas`, §4.2) is what resolves it. `POST` only, on §4.13's
+    // `{id}/<action>` shape; an unknown id is §2's `not_found`, and the read is status-blind like
+    // §4.12, so a resolved spark still answers `200` (INSPIRE is not a resolution gate).
+    const inspireSparkId = sparkActionPath(path, "inspire");
+    if (inspireSparkId !== null && method === "POST") {
+      return handleSparkInspire(res, db, inspireSparkId);
     }
 
     // §4.17 — the open, complete export (V6 `#17`; NFR-D1, ARCH §8). A `GET` only: the document is the
@@ -391,6 +402,18 @@ async function handleDecision(
 }
 
 /**
+ * `POST /v1/sparks/{id}/inspire` (docs/API.md §4.14): the S2 seed payload — validate nothing, write
+ * nothing. No body is read (there is nothing to validate) and the spark is untouched: it stays
+ * `OFFERED` until a seeded save commits (§4.2). An unknown id is the `not_found` envelope; the read is
+ * status-blind like §4.12, so a resolved spark still answers `200`.
+ */
+function handleSparkInspire(res: ServerResponse, db: DatabaseSync, id: string): void {
+  const seed = inspireSeed(db, id);
+  if (seed === null) return sendError(res, "not_found", `spark ${id} not found`);
+  sendJson(res, 200, seed);
+}
+
+/**
  * `DELETE /v1/ideas/{id}` (docs/API.md §4.8): orphan-with-warning, so the server never blocks and
  * never asks — §4.5's `referenced_by` is the client's warning, and the delete proceeds either way. An
  * unknown id is the `not_found` envelope, which is also what a repeat delete answers: the id is
@@ -426,8 +449,8 @@ function ideaPath(path: string): { id: string; action: "iterate" | "fork" | null
  * at #127's review: `GET /v1/sparks/run` read `run` as an id. Refusing the segment here is what makes
  * the clause literally true, and it costs only the accident it removes — ids are `randomUUID()`.)
  *
- * A further segment (`…/decision`, §4.13 — matched separately below) and an empty id (`/v1/sparks/`)
- * are not defined routes, which §2 answers as `not_found`.
+ * A further segment (`…/decision`, §4.13; `…/inspire`, §4.14 — each matched separately below) and an
+ * empty id (`/v1/sparks/`) are not defined routes, which §2 answers as `not_found`.
  */
 const SPARK_DETAIL_PREFIX = "/v1/sparks/";
 const RESERVED_SPARK_SEGMENTS: ReadonlySet<string> = new Set(["state", "events", "run"]);
@@ -440,18 +463,21 @@ function sparkPath(path: string): string | null {
 }
 
 /**
- * §4.13's `POST /v1/sparks/{id}/decision` (K4 `#38`) — one non-empty, unreserved segment and the
- * exact action. `/v1/sparks/{id}/decision/x`, `/v1/sparks/decision` and `/v1/sparks/run/decision` are
- * not this route; each falls to the envelope (§2), the `not_found` rule the deeper shapes already
- * follow.
+ * The two action routes under `/v1/sparks/` — `{id}/decision` (§4.13, K4 `#38`) and `{id}/inspire`
+ * (§4.14, K5 `#39`): one non-empty, unreserved segment and the exact action. `/v1/sparks/{id}/<action>/x`,
+ * `/v1/sparks/<action>` and `/v1/sparks/run/<action>` are not a route; each falls to the envelope (§2),
+ * the `not_found` rule the deeper shapes already follow.
+ *
+ * One function for both actions rather than one per action: the reserved-segment refusal below is
+ * load-bearing (Max's #127 nit — no reserved name is ever read as an id, on any method), and a second
+ * copy of it is a second thing to drift.
  */
-const SPARK_DECISION_ACTION = "/decision";
-
-function sparkDecisionPath(path: string): string | null {
+function sparkActionPath(path: string, action: string): string | null {
   if (!path.startsWith(SPARK_DETAIL_PREFIX)) return null;
   const rest = path.slice(SPARK_DETAIL_PREFIX.length);
-  if (!rest.endsWith(SPARK_DECISION_ACTION)) return null;
-  const id = rest.slice(0, -SPARK_DECISION_ACTION.length);
+  const suffix = `/${action}`;
+  if (!rest.endsWith(suffix)) return null;
+  const id = rest.slice(0, -suffix.length);
   if (id === "" || id.includes("/") || RESERVED_SPARK_SEGMENTS.has(id)) return null;
   return id;
 }
