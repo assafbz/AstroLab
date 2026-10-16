@@ -390,7 +390,12 @@ test("GET /v1/sparks/{id} is status-blind — a resolved spark answers 200; only
 });
 
 test("the {id} shape claims exactly one segment — §4.13's `{id}/decision` and an empty id stay the envelope", async () => {
+  // Seed a **real** spark, so a greedy matcher (which read `s1` out of `s1/decision`) would answer 200
+  // here and this test would catch it; without the row both spellings 404 for the wrong reason.
+  seedSparkDetail("s1", "OFFERED", true);
   const auth = { authorization: `Bearer ${TOKEN}` };
+
+  expect((await call("GET", "/v1/sparks/s1", auth)).status).toBe(200);
   // K6 #39 owns `POST /v1/sparks/{id}/decision`; until it lands, a further segment is not a route.
   expectEnvelope(await call("POST", "/v1/sparks/s1/decision", auth), 404, "not_found");
   expectEnvelope(await call("GET", "/v1/sparks/s1/decision", auth), 404, "not_found");
