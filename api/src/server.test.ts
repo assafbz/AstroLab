@@ -775,6 +775,120 @@ test("a seeded capture with an unknown spark is the not_found envelope, and writ
   expect(rows.n).toBe(0);
 });
 
+/** #39 — the seeded save's guards, over HTTP (`docs/API.md` §4.2, §4.13's order on the same key). */
+test("a seeded capture writes idea, provenance and the INSPIRED decision together, and answers 201 (§4.2)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+
+  const result = await call("POST", "/v1/ideas", {
+    ...auth,
+    json: { ...VALID, origin_spark_id: "s1", decision_id: "d-seed" },
+  });
+
+  expect(result.status).toBe(201);
+  expect(result.contentType).toBe(JSON_UTF8);
+  // All four mandatory fields are server-validated (§4.2), so the seeded save is `ACTIVE` by
+  // construction — **never** `NEEDS_COMPLETION`, which is ACCEPT's (a spark carries no monetization).
+  expect(result.body).toMatchObject({
+    lineage_kind: "ROOT",
+    lineage_parent_id: null,
+    status: "ACTIVE",
+    current_version: 1,
+  });
+  const { id } = result.body as { id: string };
+  // One transaction: the decision names this idea, its edges point at both sources, the spark resolves.
+  expect(db.prepare("SELECT id, spark_id, kind, result_idea_id FROM decision").get()).toEqual({
+    id: "d-seed",
+    spark_id: "s1",
+    kind: "INSPIRED",
+    result_idea_id: id,
+  });
+  expect(
+    db
+      .prepare(
+        "SELECT source_idea_id FROM provenance_edge WHERE derived_idea_id = ? ORDER BY source_idea_id",
+      )
+      .all(id),
+  ).toEqual([{ source_idea_id: "a" }, { source_idea_id: "b" }]);
+  expect(db.prepare("SELECT status FROM spark WHERE id = 's1'").get()).toEqual({
+    status: "RESOLVED-INSPIRED",
+  });
+});
+
+test("a double-tapped seeded save commits one idea — the repeat answers 201 with the first Idea (§4.2, §6)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const json = { ...VALID, origin_spark_id: "s1", decision_id: "d-seed" };
+
+  const first = await call("POST", "/v1/ideas", { ...auth, json });
+  const revision = db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get();
+  // The retry of an interrupted commit: the same key, on a spark the first attempt already resolved.
+  const second = await call("POST", "/v1/ideas", { ...auth, json });
+
+  expect(second.status).toBe(201); // §6 settled the repeat on §4.2's one named success
+  expect(second.body).toEqual(first.body);
+  expect(db.prepare("SELECT COUNT(*) AS n FROM decision").get()).toEqual({ n: 1 });
+  expect(db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get()).toEqual(revision);
+});
+
+test("a seeded save on a resolved spark, or one aliasing another spark's key, is 409 (§4.2/§4.13, #39)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  seedSparkDetail("s2", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+
+  expect(
+    (
+      await call("POST", "/v1/ideas", {
+        ...auth,
+        json: { ...VALID, origin_spark_id: "s1", decision_id: "d-seed" },
+      })
+    ).status,
+  ).toBe(201);
+  // The same spark, a *different* key: only a live offer may be seeded — and `s1` is `RESOLVED-INSPIRED`.
+  expectEnvelope(
+    await call("POST", "/v1/ideas", {
+      ...auth,
+      json: { ...VALID, origin_spark_id: "s1", decision_id: "d-2" },
+    }),
+    409,
+    "conflict",
+  );
+  // A different spark, the *same* key: one client id must not silently alias two saves.
+  expectEnvelope(
+    await call("POST", "/v1/ideas", {
+      ...auth,
+      json: { ...VALID, origin_spark_id: "s2", decision_id: "d-seed" },
+    }),
+    409,
+    "conflict",
+  );
+  expect(db.prepare("SELECT COUNT(*) AS n FROM decision").get()).toEqual({ n: 1 });
+});
+
+test("an unknown spark is 404 ahead of the cross-spark 409 — §4.13's order, on this key too (#39)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  expect(
+    (
+      await call("POST", "/v1/ideas", {
+        ...auth,
+        json: { ...VALID, origin_spark_id: "s1", decision_id: "d-seed" },
+      })
+    ).status,
+  ).toBe(201);
+
+  // The key is committed to `s1` and the request names a spark that does not exist: the id is consulted
+  // before the key's cross-spark conflict, so the answer is `not_found` — not a `409`.
+  expectEnvelope(
+    await call("POST", "/v1/ideas", {
+      ...auth,
+      json: { ...VALID, origin_spark_id: "nope", decision_id: "d-seed" },
+    }),
+    404,
+    "not_found",
+  );
+});
+
 test("GET /v1/ideas answers the §4.4 shape, filters, and ignores unknown parameters", async () => {
   const auth = { authorization: `Bearer ${TOKEN}` };
   expect(await call("GET", "/v1/ideas", auth)).toEqual({

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
-import { isoTimestamp, vaultMutation } from "@astrolab/store";
+import { isoTimestamp, LIVE_STATUS, vaultMutation } from "@astrolab/store";
 
 import { toIdea, type Idea, type IdeaRow } from "./idea.js";
 
@@ -49,8 +49,9 @@ export class NotFoundError extends Error {}
 
 /**
  * A request the contract refuses on state rather than shape (`409 conflict`, `docs/API.md` §2): a
- * same-domain fork, which offers **Iterate** instead (§4.7). Thrown inside the transaction, as
- * `NotFoundError` is, so the rollback is free.
+ * same-domain fork, which offers **Iterate** instead (§4.7), and — since `#39` — a seeded save whose
+ * `decision_id` is committed to another spark or whose spark is no longer `OFFERED` (§4.2). Thrown
+ * inside the transaction, as `NotFoundError` is, so the rollback is free.
  */
 export class ConflictError extends Error {}
 
@@ -102,6 +103,24 @@ export function parseCaptureInput(body: unknown): CaptureInput {
  * **Idempotent on `decision_id`**: a repeat returns the first result and writes nothing — not even
  * a revision bump. The lookup runs before any write, inside the transaction that would write.
  *
+ * ## The seeded save's check order (`#39`) — §4.13's, on this key
+ *
+ * | # | condition | answer |
+ * | :-- | :-- | :-- |
+ * | 0 | a malformed body — the HTTP layer's `parseCaptureInput` | `422` |
+ * | 1 | a recorded decision for this `decision_id`, **this** spark | `201`, the first `Idea` |
+ * | 2 | an unknown `origin_spark_id` | `404` §2 envelope |
+ * | 3 | a recorded decision for this `decision_id`, a **different** spark | `409` |
+ * | 4 | a spark that is not `OFFERED` | `409` |
+ *
+ * Steps 0→2→3→4 are the §4.2/§4.6/§4.7 order (`422 → 404 → 409`); step 1 is hoisted above them all
+ * for §4.13's reason — a committed save leaves its spark `RESOLVED-INSPIRED`, so a state check ahead
+ * of the repeat would `409` a legal retry. The two `409` arms are §4.13's, on the same
+ * `decision_id` key: the key is **global**, so one client id must not silently alias two saves
+ * (which `captureIdea` did until #39 — it returned the first idea whatever spark was asked for), and
+ * only a **live offer** may be resolved — the duplicate path `FLOW.md` H5 closes. Every state check
+ * runs **inside** the transaction, so a refused save writes nothing.
+ *
  * The engine is never called here (NFR-P1 / NFR-A1): the mutation commits and returns; the worker
  * picks the run up out of band.
  */
@@ -111,7 +130,10 @@ export function captureIdea(db: DatabaseSync, input: CaptureInput): Idea {
 
     if (sparkId !== null && decisionId !== null) {
       const prior = findDecision(db, decisionId);
-      if (prior !== null) {
+
+      // 1 — the retry of a committed save. A recorded key for **this** spark answers the first idea
+      // untouched; the spark's own status is irrelevant here, exactly as at §4.13.
+      if (prior !== null && prior.spark_id === sparkId) {
         const existing = prior.result_idea_id === null ? null : findIdea(db, prior.result_idea_id);
         if (existing === null) {
           throw new Error(`decision ${decisionId} exists without a result idea`);
@@ -119,10 +141,26 @@ export function captureIdea(db: DatabaseSync, input: CaptureInput): Idea {
         return existing;
       }
 
+      // 2 — §2: an unknown spark is `not_found` — the id is consulted **before** the key's cross-spark
+      // conflict, §4.13's `422 → 404 → 409` order.
       const spark = findSpark(db, sparkId);
       if (spark === null) {
         // Thrown inside the transaction, so the `NotFoundError` rolls back anything already written.
         throw new NotFoundError(`spark ${sparkId} not found`);
+      }
+
+      // 3 — the key is committed to a **different** spark. One client id must not silently alias two
+      // saves; answering the first idea would resolve the wrong card's provenance (§4.13's rule 3).
+      if (prior !== null) {
+        throw new ConflictError(
+          `decision_id ${decisionId} is already recorded for spark ${prior.spark_id}`,
+        );
+      }
+
+      // 4 — only a live offer may be seeded (`ARCHITECTURE.md` §3.5; `FLOW.md` §4.3): a spark already
+      // resolved by some *other* key is not re-savable — the duplicate-idea path H5 closes.
+      if (spark.status !== LIVE_STATUS) {
+        throw new ConflictError(`spark ${sparkId} is ${spark.status}`);
       }
 
       const idea = insertIdea(db, input);
@@ -187,10 +225,14 @@ interface SparkRow {
   id: string;
   idea_a_id: string;
   idea_b_id: string;
+  /** The row's state — read so steps 3–4 can tell a live offer from a resolved one (`#39`). */
+  status: string;
 }
 
 interface DecisionRow {
   id: string;
+  /** The spark the key resolved — read so a repeat is told from a cross-spark alias (`#39`). */
+  spark_id: string;
   result_idea_id: string | null;
 }
 
@@ -257,13 +299,15 @@ function findIdea(db: DatabaseSync, id: string): Idea | null {
 }
 
 function findSpark(db: DatabaseSync, id: string): SparkRow | null {
-  const row = db.prepare("SELECT id, idea_a_id, idea_b_id FROM spark WHERE id = ?").get(id) as
-    SparkRow | undefined;
+  const row = db
+    .prepare("SELECT id, idea_a_id, idea_b_id, status FROM spark WHERE id = ?")
+    .get(id) as SparkRow | undefined;
   return row ?? null;
 }
 
 function findDecision(db: DatabaseSync, id: string): DecisionRow | null {
-  const row = db.prepare("SELECT id, result_idea_id FROM decision WHERE id = ?").get(id) as
-    DecisionRow | undefined;
+  const row = db
+    .prepare("SELECT id, spark_id, result_idea_id FROM decision WHERE id = ?")
+    .get(id) as DecisionRow | undefined;
   return row ?? null;
 }

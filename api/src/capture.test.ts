@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, test } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 
 import {
+  ConflictError,
   MAX_HYPOTHESIS_LENGTH,
   NotFoundError,
   ValidationError,
@@ -46,11 +47,17 @@ function seedIdea(db: DatabaseSync, id: string): void {
   ).run(id);
 }
 
-function seedSpark(db: DatabaseSync, id: string, ideaA: string, ideaB: string): void {
+function seedSpark(
+  db: DatabaseSync,
+  id: string,
+  ideaA: string,
+  ideaB: string,
+  status = "OFFERED",
+): void {
   db.prepare(
     `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, status, created_at)
-     VALUES (?, ?, ?, ?, 'merge them', 'why not', 'OFFERED', 't')`,
-  ).run(id, ideaA, ideaB, `${ideaA}|${ideaB}`);
+     VALUES (?, ?, ?, ?, 'merge them', 'why not', ?, 't')`,
+  ).run(id, ideaA, ideaB, `${ideaA}|${ideaB}`, status);
 }
 
 const blank: CaptureInput = {
@@ -281,5 +288,123 @@ describe("captureIdea", () => {
 
   test("isoTimestamp is the contract's UTC shape (§1)", () => {
     expect(isoTimestamp(new Date("2026-10-13T05:14:05.123Z"))).toBe("2026-10-13T05:14:05Z");
+  });
+
+  // #39 — the seeded save's two guards. Before this lane `captureIdea` recognised a committed
+  // `decision_id` and returned its idea whatever spark was asked for, and it never looked at the
+  // spark's state: one key could alias two saves, and a resolved spark could be saved again.
+
+  test("a seeded save on a spark that is not OFFERED is 409, and writes nothing (#39)", () => {
+    seedIdea(db, "src-a");
+    seedIdea(db, "src-b");
+    seedSpark(db, "spark-res", "src-a", "src-b", "RESOLVED-INSPIRED");
+    const before = revision(db);
+
+    expect(() =>
+      captureIdea(db, { ...blank, origin_spark_id: "spark-res", decision_id: "decision-1" }),
+    ).toThrow(ConflictError);
+
+    // Only a live offer may be seeded (§4.13's rule 4; FLOW §4.3 — the duplicate path H5 closes).
+    expect(count(db, "idea")).toBe(2); // the two sources only
+    expect(count(db, "decision")).toBe(0);
+    expect(count(db, "provenance_edge")).toBe(0);
+    expect(revision(db)).toBe(before); // a refused save stamps nothing
+  });
+
+  test("…and the same pair's *live* offer still saves — the guard's positive control (#39)", () => {
+    seedIdea(db, "src-a");
+    seedIdea(db, "src-b");
+    // One pair, two rows: `ux_spark_live` constrains `OFFERED` alone, so the resolved sibling coexists
+    // and the only difference between the two saves is the status the guard reads.
+    seedSpark(db, "spark-res", "src-a", "src-b", "RESOLVED-DISMISSED");
+    seedSpark(db, "spark-live", "src-a", "src-b", "OFFERED");
+
+    const idea = captureIdea(db, {
+      ...blank,
+      origin_spark_id: "spark-live",
+      decision_id: "decision-1",
+    });
+
+    expect(idea.status).toBe("ACTIVE");
+    expect(count(db, "decision")).toBe(1);
+    expect(db.prepare("SELECT status FROM spark WHERE id = 'spark-live'").get()).toEqual({
+      status: "RESOLVED-INSPIRED",
+    });
+    // …and the resolved sibling is untouched.
+    expect(db.prepare("SELECT status FROM spark WHERE id = 'spark-res'").get()).toEqual({
+      status: "RESOLVED-DISMISSED",
+    });
+  });
+
+  test("a `decision_id` already recorded for another spark is 409, not a silent alias (#39)", () => {
+    seedIdea(db, "src-a");
+    seedIdea(db, "src-b");
+    seedIdea(db, "src-c");
+    seedSpark(db, "spark-1", "src-a", "src-b");
+    seedSpark(db, "spark-2", "src-a", "src-c"); // a distinct pair_key, so both are live offers
+    const first = captureIdea(db, {
+      ...blank,
+      origin_spark_id: "spark-1",
+      decision_id: "decision-1",
+    });
+
+    // The same key against a different card: returning `first` here would answer for the wrong spark.
+    expect(() =>
+      captureIdea(db, { ...blank, origin_spark_id: "spark-2", decision_id: "decision-1" }),
+    ).toThrow(ConflictError);
+
+    expect(count(db, "decision")).toBe(1);
+    expect(db.prepare("SELECT spark_id, result_idea_id FROM decision").get()).toEqual({
+      spark_id: "spark-1",
+      result_idea_id: first.id,
+    });
+    expect(count(db, "idea")).toBe(4); // three sources + the one derived ROOT
+    expect(db.prepare("SELECT status FROM spark WHERE id = 'spark-2'").get()).toEqual({
+      status: "OFFERED",
+    });
+  });
+
+  test("the repeat is answered before the already-resolved 409 — a retry of a committed save is legal (#39)", () => {
+    seedIdea(db, "src-a");
+    seedIdea(db, "src-b");
+    seedSpark(db, "spark-1", "src-a", "src-b");
+    const seeded: CaptureInput = {
+      ...blank,
+      origin_spark_id: "spark-1",
+      decision_id: "decision-1",
+    };
+
+    const first = captureIdea(db, seeded);
+    // The first save left the spark RESOLVED-INSPIRED, so a state check *ahead* of the repeat — the
+    // pre-#39 look-up returned the prior idea, but a naive guard would have 409'd here — must not fire.
+    expect(db.prepare("SELECT status FROM spark WHERE id = 'spark-1'").get()).toEqual({
+      status: "RESOLVED-INSPIRED",
+    });
+    expect(captureIdea(db, seeded)).toEqual(first);
+
+    // A *different* key on the same, now-resolved spark is the state conflict (§4.13's rule 4).
+    expect(() =>
+      captureIdea(db, { ...blank, origin_spark_id: "spark-1", decision_id: "decision-2" }),
+    ).toThrow(ConflictError);
+    expect(count(db, "decision")).toBe(1);
+  });
+
+  test("an unknown spark is 404 even when its `decision_id` is committed elsewhere (#39, §4.13's order)", () => {
+    seedIdea(db, "src-a");
+    seedIdea(db, "src-b");
+    seedSpark(db, "spark-1", "src-a", "src-b");
+    captureIdea(db, { ...blank, origin_spark_id: "spark-1", decision_id: "decision-1" });
+    const decisions = count(db, "decision");
+    const ideas = count(db, "idea");
+
+    // The key names a different spark and that spark does not exist: the id is consulted before the
+    // key's cross-spark conflict, so the answer is `not_found` — the pre-#39 lookup would have returned
+    // the first idea, which is exactly the alias this lane closes.
+    expect(() =>
+      captureIdea(db, { ...blank, origin_spark_id: "nope", decision_id: "decision-1" }),
+    ).toThrow(NotFoundError);
+
+    expect(count(db, "decision")).toBe(decisions);
+    expect(count(db, "idea")).toBe(ideas);
   });
 });
