@@ -111,6 +111,58 @@ test("a tap on the card opens S1b — the deck's one way into the expanded view 
   expect(onOpen).toHaveBeenCalledWith(SPARK.id);
 });
 
+test("#129 — the heading is a real button: focusable, so Enter/Space are the browser's activation", () => {
+  // The point of the primitive: a native `<button>` is activated by Enter/Space as the platform's
+  // default action, so there is no hand-rolled `onKeyDown` to drift from the pointer tap. jsdom does
+  // not implement the key→click default action, so this pins the *primitive* — a `<span role="button">`
+  // (no native activation) reddens it — and #129's visible focus ring is confirmed in review.
+  const { card } = renderCard();
+  const heading = card.querySelector<HTMLButtonElement>(".sparkcard__idea-open");
+
+  expect(heading?.tagName).toBe("BUTTON");
+  expect(heading?.getAttribute("type")).toBe("button");
+  heading?.focus();
+  expect(document.activeElement).toBe(heading);
+});
+
+test("#129 — activating the heading control opens S1b exactly once, and never resolves", () => {
+  const { onResolve, onOpen } = renderCard();
+  const heading = screen.getByRole("button", { name: SPARK.direction });
+
+  // The real event order for a press on the heading: it bubbles to the article's pointer handler,
+  // where the control guard stops the open-as-tap, and then the button's own click opens. One open —
+  // and no resolution, so the keyboard arm stays off `onResolve`.
+  fireEvent.pointerDown(heading, { clientX: 12, clientY: 20 });
+  fireEvent.pointerUp(heading, { clientX: 12, clientY: 20 });
+  fireEvent.click(heading);
+
+  expect(onOpen).toHaveBeenCalledTimes(1);
+  expect(onOpen).toHaveBeenCalledWith(SPARK.id);
+  expect(onResolve).not.toHaveBeenCalled();
+});
+
+test("#129 — a key event on a control never opens the card (the keyboard form of the control guard)", () => {
+  // The pointer guard is "a press that landed on a control is not an open"; on the keyboard the same
+  // property holds **structurally** — the open control is a *sibling* of Good/Not-for-me, so a key
+  // event on one of them cannot reach it. Pinned here so a later "make the whole card focusable" edit
+  // (which would nest the controls) has to redden something.
+  const { onOpen } = renderCard();
+  const good = screen.getByRole("button", { name: "Good" });
+
+  fireEvent.keyDown(good, { key: "Enter" });
+  fireEvent.keyDown(good, { key: " " });
+
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
+test("#129 — with no seam the heading is plain text: the card cannot invent an open", () => {
+  const { card } = renderPayload(SPARK);
+
+  expect(card.querySelector(".sparkcard__idea")?.textContent).toBe(SPARK.direction);
+  expect(card.querySelector(".sparkcard__idea-open")).toBeNull();
+  expect(screen.queryByRole("button", { name: SPARK.direction })).toBeNull();
+});
+
 test("a Good press does not open the card — a control's press is that control's, not a tap", () => {
   // The real hazard: the pointer stream is **shared**, so the `pointerup` that ends a press on the
   // Good button bubbles to the card's own handler. Without the control guard this navigates on every

@@ -838,6 +838,19 @@ a {
   color: var(--ink);
 }
 
+/* #129 — the heading is the card's keyboard arm, so it is a real button: reset it to read exactly
+   as the heading text. The `:focus-visible` outline above is deliberately **not** suppressed — a
+   keyboard affordance with no visible focus ring would defeat the point of the issue. */
+.sparkcard__idea-open {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
 .sparkcard__claim {
   margin: 0;
   color: var(--muted);

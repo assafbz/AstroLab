@@ -20,12 +20,6 @@ import type { Decision } from "./types.ts";
  */
 
 /**
- * §4.13's two kinds — `ResolutionKind` minus the one that is not a resolution. Exported so a caller can
- * name the set the route accepts without re-deriving it.
- */
-export type RouteKind = Exclude<ResolutionKind, "INSPIRED">;
-
-/**
  * Resolve one spark, or post nothing — §4.13.
  *
  * **`INSPIRED` posts nothing and resolves `null`.** It is §4.14's *seeded capture*, not a resolution:

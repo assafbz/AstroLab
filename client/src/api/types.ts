@@ -125,7 +125,11 @@ export interface SparkDetail extends Spark {
  *
  * `kind` is the contract's **three** — a *response* may name `INSPIRED` even though §4.13's request
  * accepts only `ACCEPT`/`DISMISS` (the widening the response needs, the request does not; the request's
- * narrowing is `api/decisions.ts`'s). `spark_status` is `FLOW.md` §3's **verbatim** terminal status —
+ * narrowing is `api/decisions.ts`'s). The three are spelled here rather than aliased to the seam's
+ * `ResolutionKind` (`domain/deck-interaction.ts`) **on purpose**: aliasing would bind the *interaction*
+ * vocabulary to §3.5's *response*, so a response kind added later would force the seam to widen to a
+ * gesture the card cannot make. Same three today, deliberately two names (#129, Max's #41 review).
+ * `spark_status` is `FLOW.md` §3's **verbatim** terminal status —
  * never a bare `ACCEPTED` — and `result_idea_id` is the ROOT that `ACCEPT` derived, `null` for a
  * `DISMISS`. `undoable` reports §5.4's server-side window at response time; the client computes none
  * of it.
