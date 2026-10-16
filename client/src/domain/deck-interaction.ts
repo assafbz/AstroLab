@@ -9,6 +9,10 @@
  *
  * Pure: no request, no React, no state. The card holds the seam; the screen supplies it; **the
  * resolution call itself is K4 `#38`** (its `POST /v1/sparks/{id}/decision`), not this slice.
+ *
+ * The module also owns the gesture that **does not** resolve: T08's **tap**, which opens S1b. It is
+ * here for the same reason the swipe is — a gesture is a rule, and the card reads it rather than
+ * deciding it — and it stays off the seam, so the one-call-site count above is untouched by it.
  */
 
 /** `docs/API.md` §3.6 — a decision's `kind`, verbatim. */
@@ -45,4 +49,28 @@ export function swipeKind(
   const dx = toX - fromX;
   if (Math.abs(dx) < distance) return null;
   return dx > 0 ? "ACCEPT" : "DISMISS";
+}
+
+/**
+ * §6's **tap tolerance**, in px: a press that travelled less than this on **both** axes is a tap —
+ * `FLOW.md` §4.5 **T08**, *"tap card → expand the spark"*, which is the deck's one way into S1b.
+ */
+export const TAP_SLOP_PX = 10;
+
+/**
+ * Whether a completed press is a **tap** (T08) rather than a drag.
+ *
+ * It reads **both** axes, and that asymmetry with `swipeKind` is deliberate: a swipe is judged on the
+ * horizontal axis alone so an ordinary vertical scroll never resolves a card — but the same leniency
+ * on a tap would read *every* scroll as an open, because the deck and the list both scroll. The
+ * boundary is exclusive (a press that travelled exactly the slop is a drag), pinned by a test.
+ */
+export function isTap(
+  fromX: number,
+  fromY: number,
+  toX: number,
+  toY: number,
+  slop: number = TAP_SLOP_PX,
+): boolean {
+  return Math.abs(toX - fromX) < slop && Math.abs(toY - fromY) < slop;
 }

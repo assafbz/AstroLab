@@ -11,6 +11,7 @@ import { deckBand, type DeckBand } from "../domain/deck-state.ts";
 import { createDeckStream, type DeckStream } from "../domain/deck-stream.ts";
 import type { ResolveSeam } from "../domain/deck-interaction.ts";
 import { createRunTrigger } from "../domain/run-trigger.ts";
+import { sparkHref } from "../router.ts";
 
 /**
  * S1 — Sparks, the home and the review queue (`FLOW.md` §2.1, `DESIGN.md` §9).
@@ -190,12 +191,12 @@ function Band(props: {
         <ul className="list">
           {band.cards.map((spark) => (
             <li key={spark.id}>
-              <SparkCard spark={spark} onResolve={resolve} />
+              <SparkCard spark={spark} onResolve={resolve} onOpen={openSpark} />
             </li>
           ))}
         </ul>
       ) : head ? (
-        <SparkCard spark={head} onResolve={resolve} />
+        <SparkCard spark={head} onResolve={resolve} onOpen={openSpark} />
       ) : null}
 
       {/* E1 sits *with* the cards — in-flight work, never a full-screen takeover. Nothing about a
@@ -242,3 +243,12 @@ function Band(props: {
  * edge.
  */
 const resolve: ResolveSeam = () => {};
+
+/**
+ * T08 — the card's **tap** opens S1b (`#/sparks/<id>`, `FLOW.md` §4.5). It is a route change, not a
+ * resolution: the deck stays where it is, and the tapped spark is read again by its own §4.12 read, so
+ * nothing here hands the detail a payload to be stale against.
+ */
+function openSpark(id: string): void {
+  window.location.hash = sparkHref(id);
+}

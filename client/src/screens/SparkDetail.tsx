@@ -21,9 +21,6 @@ import type { ResolutionKind, ResolveSeam } from "../domain/deck-interaction.ts"
  * a stale in-memory card must not be able to shadow the server. A `null` field is a legacy row and is
  * rendered **absent** — no label over nothing (the #115 treatment, §3.3/§3.4).
  *
- * **The decision seat is S3's**, and the call module behind it is K7 `#41`'s; `Make it mine` needs
- * §4.14 and the seeded Capture, which nothing has built yet (#119). What this screen composes is the
- * read; nothing here resolves anything.
  * **The decision seat is here, wired inert, and the call module is K7 `#41`'s.** The detail's Good /
  * Not for me consume the **deck's own** `ResolveSeam` (`domain/deck-interaction.ts`) rather than a
  * second type of their own, so K7 has one shape to plug into per screen and the two screens cannot

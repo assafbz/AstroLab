@@ -23,8 +23,9 @@ afterEach(cleanup);
 
 function renderCard() {
   const onResolve = vi.fn();
-  render(<SparkCard spark={SPARK} onResolve={onResolve} swipeDistance={48} />);
-  return { onResolve, card: screen.getByLabelText("Spark") };
+  const onOpen = vi.fn();
+  render(<SparkCard spark={SPARK} onResolve={onResolve} onOpen={onOpen} swipeDistance={48} />);
+  return { onResolve, onOpen, card: screen.getByLabelText("Spark") };
 }
 
 /** The same card over a payload the test chooses — the one caller that needs a legacy row. */
@@ -99,6 +100,50 @@ test("a drag under the threshold resolves nothing — the buttons stay the only 
   fireEvent.pointerUp(card, { clientX: 40 });
 
   expect(onResolve).not.toHaveBeenCalled();
+});
+
+test("a tap on the card opens S1b — the deck's one way into the expanded view (T08)", () => {
+  const { onOpen, card } = renderCard();
+
+  fireEvent.pointerDown(card, { clientX: 12, clientY: 20 });
+  fireEvent.pointerUp(card, { clientX: 12, clientY: 20 });
+
+  expect(onOpen).toHaveBeenCalledWith(SPARK.id);
+});
+
+test("a Good press does not open the card — a control's press is that control's, not a tap", () => {
+  // The real hazard: the pointer stream is **shared**, so the `pointerup` that ends a press on the
+  // Good button bubbles to the card's own handler. Without the control guard this navigates on every
+  // resolution. Plant: drop the guard in `SparkCard.tsx` → this reddens.
+  const { onOpen } = renderCard();
+
+  const good = screen.getByRole("button", { name: "Good" });
+  fireEvent.pointerDown(good, { clientX: 12, clientY: 20 });
+  fireEvent.pointerUp(good, { clientX: 12, clientY: 20 });
+
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
+test("a swipe resolves, and does not also open — the two gestures stay distinct", () => {
+  const { onResolve, onOpen, card } = renderCard();
+
+  fireEvent.pointerDown(card, { clientX: 0, clientY: 0 });
+  fireEvent.pointerUp(card, { clientX: 200, clientY: 0 });
+
+  expect(onResolve).toHaveBeenCalledWith(SPARK.id, "ACCEPT");
+  expect(onOpen).not.toHaveBeenCalled();
+});
+
+test("a press the user dragged is neither a swipe nor a tap — scrolling never opens the detail", () => {
+  // Short on `x` (under the swipe threshold), long on `y`: an ordinary scroll of the list. A tap read
+  // off `x` alone would open the detail on every scroll release.
+  const { onResolve, onOpen, card } = renderCard();
+
+  fireEvent.pointerDown(card, { clientX: 12, clientY: 100 });
+  fireEvent.pointerUp(card, { clientX: 12, clientY: 400 });
+
+  expect(onResolve).not.toHaveBeenCalled();
+  expect(onOpen).not.toHaveBeenCalled();
 });
 
 test("the buttons are always present — the deck is operable without a gesture (§5.5)", () => {

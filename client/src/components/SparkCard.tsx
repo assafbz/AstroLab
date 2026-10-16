@@ -1,7 +1,12 @@
 import { useRef } from "react";
 
 import type { Spark } from "../api/types.ts";
-import { SWIPE_DISTANCE_PX, type ResolutionKind, swipeKind } from "../domain/deck-interaction.ts";
+import {
+  SWIPE_DISTANCE_PX,
+  type ResolutionKind,
+  isTap,
+  swipeKind,
+} from "../domain/deck-interaction.ts";
 import type { ResolveSeam } from "../domain/deck-interaction.ts";
 
 /**
@@ -23,18 +28,26 @@ import type { ResolveSeam } from "../domain/deck-interaction.ts";
  *
  * **The card does not resolve.** It calls the injected seam; the call is K4 `#38`'s
  * (`POST /v1/sparks/{id}/decision`), so this component holds no transport and imports no API value.
+ *
+ * **A tap opens S1b** (T08) through a second, equally injected seam — `onOpen` — and it is *not* a
+ * resolution, so it stays off `onResolve` and the one-call-site guard keeps its count of one. The
+ * hazard is that the pointer stream is **shared**: the `pointerup` that ends a press on the *Good*
+ * button bubbles to this card's own handler, so the tap carries two guards — it must be a press that
+ * stayed put on both axes (not a scroll), and it must not have landed on a control.
  */
 export function SparkCard(props: {
   spark: Spark;
   /** The one resolution path out of the card (§5.5). Supplied by the screen. */
   onResolve: ResolveSeam;
+  /** T08 — the tap that opens `#/sparks/<id>`. Supplied by the screen; absent, the card never opens. */
+  onOpen?: (id: string) => void;
   /** §6's gesture threshold; a test narrows it rather than fabricating a page-sized drag. */
   swipeDistance?: number;
 }) {
-  const { spark, onResolve } = props;
+  const { spark, onResolve, onOpen } = props;
   const distance = props.swipeDistance ?? SWIPE_DISTANCE_PX;
-  /** Where the current drag began, or `null` when no drag is open. */
-  const dragStartX = useRef<number | null>(null);
+  /** Where the current press began, or `null` when no press is open. */
+  const pressStart = useRef<{ x: number; y: number } | null>(null);
 
   // The ONE resolution path. Every affordance on this card reaches the seam through it — a second,
   // inline `onResolve` is the divergence the structural guard exists for.
@@ -47,14 +60,24 @@ export function SparkCard(props: {
       className="card sparkcard"
       aria-label="Spark"
       onPointerDown={(event) => {
-        dragStartX.current = event.clientX;
+        pressStart.current = { x: event.clientX, y: event.clientY };
       }}
       onPointerUp={(event) => {
-        if (dragStartX.current === null) return;
-        const kind = swipeKind(dragStartX.current, event.clientX, distance);
-        dragStartX.current = null;
-        // A drag under the threshold is not a gesture; the buttons stay the only path it can take.
-        if (kind !== null) dispatch(kind);
+        const from = pressStart.current;
+        pressStart.current = null;
+        if (from === null) return;
+        const kind = swipeKind(from.x, event.clientX, distance);
+        if (kind !== null) {
+          dispatch(kind);
+          return;
+        }
+        // Not a swipe. A press that stayed put is a **tap** on the card (T08) — unless it landed on a
+        // control, whose own click it is: this pointer stream is shared, so a Good press bubbles here
+        // too, and without the control guard the tap would navigate on every resolution.
+        if (!isTap(from.x, from.y, event.clientX, event.clientY)) return;
+        if (event.target instanceof Element && event.target.closest(CONTROL_SELECTOR) !== null)
+          return;
+        onOpen?.(spark.id);
       }}
     >
       <p className="section__label">THE IDEA</p>
@@ -89,3 +112,10 @@ export function SparkCard(props: {
     </article>
   );
 }
+
+/**
+ * The controls a press can land on: a press there belongs to the control, never to the card. Stated
+ * once, and by role rather than by the action bar's class — a control added to the card later is
+ * covered without a second rule to keep in step.
+ */
+const CONTROL_SELECTOR = "button, a, input, select, textarea";

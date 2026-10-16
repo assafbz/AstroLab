@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { Sparks } from "./Sparks.tsx";
@@ -141,6 +141,8 @@ function stubDeck(reads: Reads) {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  // The tap's one side effect is the route change; leaving it set would leak into the next test.
+  window.location.hash = "";
 });
 
 test("E0 — §4.10's state draws the cold composition and nothing else", async () => {
@@ -180,6 +182,19 @@ test("the card shown is the read's first — §4.9's order is deck order, no loc
   const card = await screen.findByLabelText("Spark");
   expect(card.textContent).toContain(FIRST.direction);
   expect(card.textContent).not.toContain(SECOND.direction);
+});
+
+test("tapping the card opens the detail's own route — `#/sparks/<id>` (T08)", async () => {
+  stubDeck({ state: state("E2", 2), sparks: [FIRST, SECOND] });
+  render(<Sparks />);
+
+  const card = await screen.findByLabelText("Spark");
+  expect(card.textContent).toContain(FIRST.direction);
+  fireEvent.pointerDown(card, { clientX: 12, clientY: 20 });
+  fireEvent.pointerUp(card, { clientX: 12, clientY: 20 });
+
+  // The route the tapped spark was read at — the deck's own head, and its id, not a literal.
+  expect(window.location.hash).toBe("#/sparks/aaa1");
 });
 
 test("E1 — the shimmer sits with the cards, never instead of them", async () => {
