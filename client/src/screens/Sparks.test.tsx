@@ -288,15 +288,22 @@ test("E3 — the composed empty, with §9's widening nudge only at the floor", a
   expect(screen.queryByLabelText("Spark")).toBeNull();
 });
 
-test("E3 above the floor gets no widening nudge — Fork and Recompute are its levers", async () => {
+test("E3 above the floor gets no widening nudge — and all three of §9's levers, in order", async () => {
   stubDeck({ state: state("E3", 0), sparks: [], summary: OPEN });
-  render(<Sparks />);
+  const { container } = render(<Sparks />);
 
   await screen.findByText("No sparks left — for now.");
   expect(screen.queryByText(/One more field widens what can spark\./)).toBeNull();
-  // §9's E3 composes Add idea + Recompute (the Fork CTA belongs to S5's route).
+  // §9's E3 composes three levers, in this order: Add idea (S2) · Fork an idea into a new domain (S5,
+  // V9 `#20` — the flywheel's own lever) · Recompute (the guarded run trigger).
+  expect(screen.getByRole("link", { name: "Add idea" }).getAttribute("href")).toBe("#/capture");
+  expect(
+    screen.getByRole("link", { name: "Fork an idea into a new domain" }).getAttribute("href"),
+  ).toBe("#/fork");
   expect(screen.getByRole("button", { name: "Recompute" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "Add idea" })).toBeTruthy();
+  expect(
+    [...container.querySelectorAll(".empty__actions > *")].map((node) => node.textContent),
+  ).toEqual(["Add idea", "Fork an idea into a new domain", "Recompute"]);
 });
 
 test("a failed read says so and retries — it never shows E0 as a guess", async () => {
