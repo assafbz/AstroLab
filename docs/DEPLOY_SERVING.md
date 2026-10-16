@@ -68,7 +68,10 @@ Four integration notes that bite in practice (examples use nginx; the contract i
   `Authorization` header — so a Basic gate over `/v1` would answer `401` to every API call the app makes,
   and the app would be broken at the boundary the gate was added to protect. Gate `/`, `/assets/*`,
   `/icon.svg`, `/manifest.webmanifest`; leave `/v1/*` to the API's own bearer (`docs/API.md` §1) and
-  `/healthz` open.
+  `/healthz` open. **Operationally (nginx): `auth_basic` goes *inside* each static `location` — never at
+  `server` level.** nginx inherits a server-level directive into *every* location, so `/healthz` and `/v1`
+  get gated too: the probe then fails exactly when the secret is broken, and the app's own calls fail with
+  it. (Raised in review by Max.)
 - **Do not buffer `/v1/sparks/events`.** nginx: `proxy_buffering off;` and a raised
   `proxy_read_timeout` for that location (or respond `X-Accel-Buffering: no`). Reverse proxies commonly
   buffer `text/event-stream`, which looks like "the deck never updates".
@@ -127,6 +130,13 @@ regression.
 strongest and the zero-spend fallback. G2 is deferred until a second user or an audit trail is required.
 G5 is a follow-up, not a blocker.
 
+**G1 rests on one premise that is a host check, not a premise to assume.** The mechanism assumes a browser
+will not let a cached Basic credential override the explicit `Authorization: Bearer` the app sets on every
+`/v1` call. That is spec-consistent — an explicitly set `Authorization` suppresses automatic credential
+attachment — but G1's viability hinges on it: were a browser to send `Basic …` instead, the API would
+`401` every call and the gate would break the app it exists to protect. Verify it on the host (§6);
+do not carry it as settled. (Raised in review by Max.)
+
 ---
 
 ## 5. Recommendation (for the owner's "exposure model" item)
@@ -157,6 +167,9 @@ intended semantics; it is not "the API is now protected by a password".
 - **To Ari (host layer):** the `/`, `/assets/*`, `/healthz`, `/v1/*` contract in §2, and no-buffering on
   `/v1/sparks/events`.
 - **To Max (go-live evidence):** exercise the SSE stream *through the proxy* (not just against the API),
-  confirm a gated request without credentials is refused, and confirm `/healthz` still answers.
+  confirm a gated request without credentials is refused, and confirm `/healthz` still answers. Plus
+  **G1's own hinge** (§4): with Basic cached, a `fetch("/v1/…")` that sets `Authorization: Bearer` must
+  still reach the API as `Bearer` (200 with a valid token; the API's own `401` without one) — if the
+  cached Basic credential ever won, every call would fail.
 - **Open, for the host layer / owner:** where it runs, the hostname + TLS (owner); whether the gate is G1
   or G3 (owner, on this thread).
