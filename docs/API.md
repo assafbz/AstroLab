@@ -90,7 +90,8 @@ Enums: `lineage_kind` ∈ `ROOT | FORK`; `status` ∈ `ACTIVE | NEEDS_COMPLETION
 `visibility` = `PRIVATE` (MVP only). `lineage_parent_id` is set **only** for `FORK` and always refers
 to **one** parent (`PRD.md` §2; `ARCHITECTURE.md` §2.1). `NEEDS_COMPLETION` = a spark-derived idea
 whose mandatory fields could not be fully prefilled; it is **excluded from candidate selection** until
-complete (`FLOW.md` §4.3 step 4 / T27).
+complete — and completed by an iterate that supplies the four fields, which clears it through the same
+predicate that mints it (§4.6; `FLOW.md` §4.3 step 4 / T27).
 
 ### 3.2 `VaultSummary` — deterministic, **no provider call** (`ARCHITECTURE.md` §3.2)
 ```json
@@ -225,8 +226,8 @@ Readings this doc had not pinned (settled in K5 `#39`):
   mandatory fields arrive in the request and are server-validated (§4.2's `422`), so there is no
   prefill gap to land in. `NEEDS_COMPLETION` is **ACCEPT's** (settled at §4.13; `FLOW.md` §4.3 step 4 /
   T27): a `spark` carries no `monetization` and `PRD.md` §2 makes it mandatory, so a one-tap Good is
-  saved and flagged. The two paths never share a status; the lifecycle is the decision path's contract,
-  with its surfaces in K8 `#42`.
+  saved and flagged. **Capture never mints it, and §4.6's iterate clears it** — the whole status
+  lifecycle is one predicate's (`derivedStatus`, shared by §4.13 and §4.6), with its surfaces in K8 `#42`.
 - **The response is `201` on the repeat too.** §4.2's response is its only named success, and §6
   (settled in V1 `#12`) already records that a repeat on `decision_id` returns the first `Idea` with the
   same `201`. §4.13's `200` is that endpoint's own reading and does not carry over.
@@ -288,7 +289,8 @@ Readings this doc had not pinned (settled in V2 `#13`):
 ### 4.6 `POST /v1/ideas/{id}/iterate` — S6 Iterate
 Request: the mandatory fields (`hypothesis`, `problem`, `monetization`, `domain_tags`).
 `200` → `Idea` with `current_version` bumped. Writes a new `idea_version`; creates **no** lineage edge
-(`FLOW.md` §2.3 / L1; T23). Validation as §4.2.
+(`FLOW.md` §2.3 / L1; T23). Validation as §4.2. **`status` is re-derived** — an idea that arrived
+`NEEDS_COMPLETION` leaves `ACTIVE` (`FLOW.md` T27).
 
 Readings this doc had not pinned (settled in V3 `#14`):
 
@@ -300,8 +302,13 @@ Readings this doc had not pinned (settled in V3 `#14`):
   trigger §4.8 records, reached through the same `vaultMutation(db, body)` primitive (`SCHEMA.md` §1c).
 - **An unknown id is `not_found` and writes nothing** — the read throws inside the transaction before
   any row is written, so no version is appended and no revision stamps (V5's rule, §4.8).
-- **`status` is not touched.** A `NEEDS_COMPLETION` idea stays `NEEDS_COMPLETION`; completing it is the
-  K8 `#42` path. Iterate refines content, it does not clear the flag.
+- **`status` is re-derived, and supplying the four fields clears the flag.** Iterate writes
+  `status = derivedStatus(fields)` — the **same** predicate §4.13's ACCEPT mints it with, so the two
+  paths cannot disagree (K8 `#42`; `FLOW.md` §4.3 step 4 / T27). §4.2's validation already makes all
+  four fields mandatory, so there is **no partial iterate**: a `200` on this route **always** answers
+  `ACTIVE`, and iterating an `ACTIVE` idea leaves it `ACTIVE`. This is how a spark-derived
+  `NEEDS_COMPLETION` idea becomes fully valid **and eligible again** — the W7 gate selects on
+  `status = 'ACTIVE'` (`ARCHITECTURE.md` §3.2).
 - **`lineage_kind` and `lineage_parent_id` are not touched.** Iterating a `FORK` leaves it a `FORK` on
   the same parent — iteration is a version, not a branch (`FLOW.md` §2.3 / L1).
 - **Only `POST` on `{id}/iterate` is a route.** `GET`/`DELETE` on `…/iterate`, a `POST` on the detail
