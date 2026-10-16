@@ -5,6 +5,7 @@ import { isoTimestamp, newDomainFlag, vaultMutation } from "@astrolab/store";
 
 import {
   ConflictError,
+  derivedStatus,
   NotFoundError,
   parseDomainTags,
   requiredText,
@@ -62,6 +63,13 @@ export function forkIdea(db: DatabaseSync, id: string, input: ForkInput): Idea {
       monetization: parent.monetization,
     };
 
+    // The status is **derived**, not asserted (#137). A fork copies the parent's text verbatim, so a
+    // parent whose `monetization` is blank forks a node whose content is still incomplete: re-deriving
+    // it with the same predicate that lands a spark's ACCEPT `NEEDS_COMPLETION` (FLOW §4.3 step 4)
+    // keeps the fork out of §3.5's candidate set, instead of hard-coding `ACTIVE` and letting an
+    // incomplete copy pose as a live candidate.
+    const status = derivedStatus({ ...content, domain_tags: input.domain_tags });
+
     const now = isoTimestamp();
     const idea: Idea = {
       id: randomUUID(),
@@ -69,7 +77,7 @@ export function forkIdea(db: DatabaseSync, id: string, input: ForkInput): Idea {
       domain_tags: input.domain_tags,
       lineage_kind: "FORK",
       lineage_parent_id: id,
-      status: "ACTIVE",
+      status,
       visibility: "PRIVATE",
       current_version: 1,
       created_at: now,
@@ -80,13 +88,13 @@ export function forkIdea(db: DatabaseSync, id: string, input: ForkInput): Idea {
     // the **vault-relative** test, not T25's parent-relative one: `sameDomainSet` above keeps the fork
     // distinct from *its parent*, while the instrument asks whether the vault as a whole gains a domain
     // (`EV1` #43 / NFR-Q1; `PRD.md` §1.2's "genuine spread vs near-variants"). Computed before the
-    // insert: the fork is not yet a row, so no other-row exclusion is needed.
+    // insert, so the row it is about is not yet in the table.
     const newDomain = newDomainFlag(db, idea.domain_tags);
     db.prepare(
       `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                          lineage_parent_id, status, visibility, current_version, created_at, updated_at,
                          mutation_delta, new_domain)
-       VALUES (?, ?, ?, ?, ?, 'FORK', ?, 'ACTIVE', 'PRIVATE', 1, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, 'FORK', ?, ?, 'PRIVATE', 1, ?, ?, ?, ?)`,
     ).run(
       idea.id,
       idea.hypothesis,
@@ -94,6 +102,7 @@ export function forkIdea(db: DatabaseSync, id: string, input: ForkInput): Idea {
       idea.monetization,
       tags,
       id,
+      idea.status,
       now,
       now,
       input.mutation_delta,

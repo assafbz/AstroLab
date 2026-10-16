@@ -40,19 +40,21 @@ function pendingRuns(db: DatabaseSync): Array<{ vault_revision: number; status: 
 function seedIdea(
   db: DatabaseSync,
   id: string,
-  over: { domainTags?: string[]; hypothesis?: string } = {},
+  over: { domainTags?: string[]; hypothesis?: string; monetization?: string; status?: string } = {},
 ): void {
   const tags = JSON.stringify(over.domainTags ?? ["health"]);
   const hypothesis = over.hypothesis ?? "the parent's hypothesis";
+  const monetization = over.monetization ?? "m";
+  const status = over.status ?? "ACTIVE";
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                        lineage_parent_id, status, visibility, current_version, created_at, updated_at)
-     VALUES (?, ?, 'p', 'm', ?, 'ROOT', NULL, 'ACTIVE', 'PRIVATE', 1, 't', 't')`,
-  ).run(id, hypothesis, tags);
+     VALUES (?, ?, 'p', ?, ?, 'ROOT', NULL, ?, 'PRIVATE', 1, 't', 't')`,
+  ).run(id, hypothesis, monetization, tags, status);
   db.prepare(
     `INSERT INTO idea_version (idea_id, version, hypothesis, problem, monetization, domain_tags, created_at)
-     VALUES (?, 1, ?, 'p', 'm', ?, 't')`,
-  ).run(id, hypothesis, tags);
+     VALUES (?, 1, ?, 'p', ?, ?, 't')`,
+  ).run(id, hypothesis, monetization, tags);
 }
 
 const forkInput: ForkInput = {
@@ -117,6 +119,26 @@ describe("forkIdea — a new node branching from a parent", () => {
     expect(
       db.prepare("SELECT lineage_kind, current_version FROM idea WHERE id = 'parent'").get(),
     ).toEqual({ lineage_kind: "ROOT", current_version: 1 });
+  });
+
+  test("a fork of a NEEDS_COMPLETION parent re-derives its status — it lands NEEDS_COMPLETION (#137)", () => {
+    // The parent's `monetization` is blank, so the copied text is incomplete. Deriving the fork's
+    // status (rather than asserting `ACTIVE`) keeps the incomplete copy out of §3.5's candidate set:
+    // §4.7 copies the parent's text verbatim, so an incomplete parent forks an incomplete node.
+    seedIdea(db, "parent", {
+      domainTags: ["health"],
+      monetization: "",
+      status: "NEEDS_COMPLETION",
+    });
+
+    const fork = forkIdea(db, "parent", forkInput);
+
+    expect(fork.monetization).toBe("");
+    expect(fork.status).toBe("NEEDS_COMPLETION");
+    // The stored row agrees with the returned shape, not just the in-memory object.
+    expect(db.prepare("SELECT status FROM idea WHERE id = ?").get(fork.id)).toEqual({
+      status: "NEEDS_COMPLETION",
+    });
   });
 
   test("the mutation delta is stored on the new node and nowhere else", () => {
