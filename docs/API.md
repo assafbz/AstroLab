@@ -329,6 +329,11 @@ Readings this doc had not pinned (settled in V4 `#15`):
   **parent's, copied verbatim**. With no text in the request the parent is the only possible source, so
   the copy is the only reading — not a choice. (The S5 sketch, `stitch-prompts.md` §6, shows the same two
   inputs: parent dimmed, a delta field, a domain picker.)
+- **The fork's `status` is *derived*, not asserted (`#137`).** The copied text **is** the fork's
+  content, so its status comes from the same predicate capture and §4.13's ACCEPT use
+  (`derivedStatus`): a fork whose copied `monetization` is blank lands `NEEDS_COMPLETION` and is
+  excluded from candidate generation (`ARCHITECTURE.md` §3.5) until completed; a fork of a complete
+  parent lands `ACTIVE`.
 - **`201`, not `200`.** A fork creates a **new**, addressable node — the id is the server's and it is a
   new resource. Capture and fork create (`201`); iterate and delete do not (§4.6, §4.8).
 - **The `idea` row and its `idea_version` 1 commit in one `vaultMutation`.** A fork is
