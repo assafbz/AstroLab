@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { Sparks } from "./Sparks.tsx";
@@ -97,6 +97,28 @@ interface Reads {
   holdRun?: boolean;
   /** Answer the run POST with the envelope's failure (§2) instead of a `202`. */
   failRun?: boolean;
+  /**
+   * §4.13's answer, from the parsed body and the url. Defaults to a `200 Decision` built from them, so
+   * a test that does not care about the shape still exercises a real commit.
+   */
+  decision?: (
+    body: { decision_id: string; kind: string },
+    url: string,
+  ) => Response | Promise<Response>;
+}
+
+/** The `Decision` (§3.5) the server would record for a §4.13 body — the stub's own reading of it. */
+function decisionResponse(body: { decision_id: string; kind: string }, url: string) {
+  const sparkId = url.split("/v1/sparks/")[1]!.split("/")[0]!;
+  return {
+    decision_id: body.decision_id,
+    spark_id: sparkId,
+    kind: body.kind,
+    result_idea_id: body.kind === "ACCEPT" ? "9f1c" : null,
+    spark_status: body.kind === "ACCEPT" ? "RESOLVED-ACCEPTED" : "RESOLVED-DISMISSED",
+    decided_at: "2026-10-16T09:00:00Z",
+    undoable: true,
+  };
 }
 
 /** Route by route, so a read cannot silently receive another route's payload. */
@@ -104,11 +126,23 @@ function stubDeck(reads: Reads) {
   let statesSeen = 0;
   let decksSeen = 0;
   const runCalls: string[] = [];
+  /** Every §4.13 call, with the body it carried — the decision id is what the tests read back. */
+  const decisionCalls: Array<{ url: string; body: { decision_id: string; kind: string } }> = [];
 
-  const mock = vi.fn((input: RequestInfo | URL) => {
+  const mock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.includes("/v1/sparks/events")) {
       return Promise.resolve(reads.events ?? quiet());
+    }
+    if (url.includes("/decision")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as {
+        decision_id: string;
+        kind: string;
+      };
+      decisionCalls.push({ url, body });
+      return Promise.resolve(
+        reads.decision ? reads.decision(body, url) : json(decisionResponse(body, url)),
+      );
     }
     if (url.includes("/v1/sparks/run")) {
       runCalls.push(url);
@@ -135,7 +169,7 @@ function stubDeck(reads: Reads) {
   });
 
   vi.stubGlobal("fetch", mock);
-  return { mock, runCalls };
+  return { mock, runCalls, decisionCalls };
 }
 
 afterEach(() => {
@@ -447,4 +481,161 @@ test("a run that never enqueued is dropped, not surfaced — the deck still repo
   expect(screen.queryByText("Computing sparks…")).toBeNull();
   expect(screen.getByText("No sparks left — for now.")).toBeTruthy();
   expect(screen.queryByText("Sparks are out of reach.")).toBeNull();
+});
+
+/**
+ * K7 `#41` — the **resolution seam** at the screen. The card still holds the one `onResolve` (the
+ * structural guards own that); what these tests own is what the *screen* does with the outcome:
+ * re-read on success, never remove locally, and — on a failure — keep the card and draw T29's
+ * non-destructive notice with the one lever Retry.
+ */
+
+test("Good posts §4.13 and the screen re-reads — a committed card is never removed locally (K7)", async () => {
+  const stub = stubDeck({ state: state("E2", 1), sparks: [FIRST], sparksAfter: [SECOND] });
+  render(<Sparks />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Good" }));
+
+  // The server's *next read* decides what stands. A screen that removed the card locally would show an
+  // empty deck; the re-read shows the spark the server now offers.
+  await waitFor(() =>
+    expect(screen.getByLabelText("Spark").textContent).toContain(SECOND.direction),
+  );
+  expect(stub.decisionCalls).toHaveLength(1);
+  expect(stub.decisionCalls[0]!.url).toBe("/v1/sparks/aaa1/decision");
+  expect(stub.decisionCalls[0]!.body.kind).toBe("ACCEPT");
+  // A real client-generated key, not a literal (§2.2): the id is what a Retry would have to re-issue.
+  expect(stub.decisionCalls[0]!.body.decision_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-/);
+  // And §4.10 was re-read too — the ladder is the server's, not the press's (§4.10).
+  expect(stateReads(stub.mock)).toBe(2);
+});
+
+test("a retryable failure keeps the card and draws T29's notice — non-destructive, with Retry (K7)", async () => {
+  const stub = stubDeck({
+    state: state("E2", 1),
+    sparks: [FIRST],
+    sparksAfter: [SECOND],
+    decision: () => Promise.reject(new Error("dropped")),
+  });
+  render(<Sparks />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Good" }));
+
+  // §2 gives a rejected `fetch` the `network` code — the T29 case the surface exists for.
+  expect(await screen.findByText(/Nothing was recorded/)).toBeTruthy();
+  const notice = screen.getByText(/Nothing was recorded/).closest("p")!;
+  expect(within(notice).getByRole("button", { name: "Retry" })).toBeTruthy();
+  // The card **stays**: nothing was removed, and no read ran to replace it (§4.10/§4.9 untouched).
+  expect(screen.getByLabelText("Spark").textContent).toContain(FIRST.direction);
+  expect(stateReads(stub.mock)).toBe(1);
+});
+
+test("Retry re-issues the same decision_id, and a successful retry re-reads (K7)", async () => {
+  const stub = stubDeck({
+    state: state("E2", 1),
+    sparks: [FIRST],
+    sparksAfter: [SECOND],
+    decision: (body, url) =>
+      stub.decisionCalls.length === 1
+        ? Promise.reject(new Error("dropped"))
+        : Promise.resolve(json(decisionResponse(body, url))),
+  });
+  render(<Sparks />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Good" }));
+  const notice = (await screen.findByText(/Nothing was recorded/)).closest("p")!;
+  fireEvent.click(within(notice).getByRole("button", { name: "Retry" }));
+
+  await waitFor(() => expect(stub.decisionCalls).toHaveLength(2));
+  // The whole of §2.2: the retry carries **the same** `decision_id`, so a commit the response lost is
+  // answered by §4.13's hoisted repeat rather than resolved a second time.
+  expect(stub.decisionCalls[1]!.body.decision_id).toBe(stub.decisionCalls[0]!.body.decision_id);
+  // The retry committed, so the notice goes and the deck follows the server's next read.
+  await waitFor(() => expect(screen.queryByText(/Nothing was recorded/)).toBeNull());
+  await waitFor(() =>
+    expect(screen.getByLabelText("Spark").textContent).toContain(SECOND.direction),
+  );
+});
+
+test("a `409` re-reads and offers no Retry — the server stated a truth, so Retrying would loop (K7)", async () => {
+  const stub = stubDeck({
+    state: state("E2", 1),
+    sparks: [FIRST],
+    sparksAfter: [SECOND],
+    decision: () => json({ error: { code: "conflict", message: "spark is not OFFERED" } }, 409),
+  });
+  render(<Sparks />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Good" }));
+
+  // Not a blip: the read is re-run instead, and the deck follows it — no notice, no Retry.
+  await waitFor(() => expect(stateReads(stub.mock)).toBe(2));
+  expect(screen.queryByText(/Nothing was recorded/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  await waitFor(() =>
+    expect(screen.getByLabelText("Spark").textContent).toContain(SECOND.direction),
+  );
+});
+
+test("E4 does not disable a resolution — a paused engine still resolves from the deck (K7, NFR-A1)", async () => {
+  // E4 is the *server's* engine state (§4.10): the provider is down, the vault is not. Resolving writes
+  // the vault, so its lever must reach the seam in E4 exactly as in E2.
+  const stub = stubDeck({ state: state("E4", 1), sparks: [FIRST] });
+  render(<Sparks />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Good" }));
+
+  await waitFor(() => expect(stub.decisionCalls).toHaveLength(1));
+  expect(stub.decisionCalls[0]!.body.kind).toBe("ACCEPT");
+});
+
+test("the T29 notice is its own surface — in E4 its Retry re-issues the decision, not the run (K7)", async () => {
+  // Both surfaces may be on screen at once (an engine that is paused, a resolution that dropped), so
+  // the notice is not `band.paused`'s: its Retry re-issues §4.13 and never `POST /v1/sparks/run` (§4.16).
+  const stub = stubDeck({
+    state: state("E4", 1),
+    sparks: [FIRST],
+    decision: () => Promise.reject(new Error("dropped")),
+  });
+  render(<Sparks />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Good" }));
+  const notice = (await screen.findByText(/Nothing was recorded/)).closest("p")!;
+
+  // E4's own Retry (the run) is a *different* lever, and both are on screen.
+  expect(screen.getByText("Sparks are paused. Your vault is fully available.")).toBeTruthy();
+  expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(2);
+
+  fireEvent.click(within(notice).getByRole("button", { name: "Retry" }));
+
+  await waitFor(() => expect(stub.decisionCalls).toHaveLength(2));
+  expect(stub.decisionCalls[1]!.body.decision_id).toBe(stub.decisionCalls[0]!.body.decision_id);
+  expect(stub.runCalls).toHaveLength(0);
+});
+
+test("the notice is tied to its own decision — another spark committing does not clear it (K7)", async () => {
+  // A notice belongs to the decision that failed. Clearing it on *any* success would drop a surface the
+  // user still needs the moment they resolve a different card.
+  const stub = stubDeck({
+    state: state("E2", 2),
+    sparks: [FIRST, SECOND],
+    decision: (body, url) =>
+      url.includes("aaa1")
+        ? Promise.reject(new Error("dropped"))
+        : Promise.resolve(json(decisionResponse(body, url))),
+  });
+  render(<Sparks />);
+
+  await screen.findByLabelText("Spark");
+  screen.getByRole("button", { name: "View all" }).click();
+  await waitFor(() => expect(screen.getAllByLabelText("Spark")).toHaveLength(2));
+
+  // FIRST fails → a notice for `aaa1`.
+  fireEvent.click(screen.getAllByRole("button", { name: "Good" })[0]!);
+  expect(await screen.findByText(/Nothing was recorded/)).toBeTruthy();
+
+  // SECOND commits — its own decision, and not the one the notice is about.
+  fireEvent.click(screen.getAllByRole("button", { name: "Good" })[1]!);
+  await waitFor(() => expect(stub.decisionCalls).toHaveLength(2));
+  expect(screen.getByText(/Nothing was recorded/)).toBeTruthy();
 });
