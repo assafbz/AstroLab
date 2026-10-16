@@ -1,16 +1,28 @@
 # CI GATE — enforcing `main`
 
-What CI *checks* and what CI *blocks* are two different things. Until the `main-gate` ruleset is
-applied, `main` is unprotected: a red `citations` or `o1-taxonomy` job does not stop a merge, and a
-direct push to `main` is allowed — the "required" gate is honour-system. This document is the
-definition of the gate, the one command that applies it, and the duties the gate cannot enforce on
-its own.
+What CI *checks* and what CI *blocks* are two different things. Before `main-gate` was applied,
+`main` was unprotected: a red `citations` or `o1-taxonomy` job did not stop a merge, and a direct
+push to `main` was allowed — the "required" gate was honour-system. This document is the definition
+of the gate, the one command that applies it, the duties the gate cannot enforce on its own, and the
+record of what it was proved to do (§5.1).
 
-**Status (2026-10-16).** Not live yet — measured, `gh api repos/assafbz/AstroLab/rulesets` → `[]`
-and `branches/main/protection` → 404. Only once this is applied does a direct push to `main` get
-refused and a red required check block a merge. The live apply waits on the owner call —
-`bypass_actors: []` changes how the owner lands work — and the proof (A1–A5, §5) runs against the
-live gate.
+**Status — LIVE since 2026-10-16T21:53:26Z.** Applied by the implement seat; read back from the API
+after the apply, not from the payload — ruleset id `25277384`, `main-gate`, `enforcement: active`:
+
+| measured on the live rule | value |
+| :-- | :-- |
+| `bypass_actors` · `current_user_can_bypass` | `[]` · `never` — no actor bypasses it, the owner included |
+| required contexts | 3, each `integration_id 15368`, `strict: true` |
+| `require_extra_approval_for_unattributed_changes` | `false` (explicit) |
+| `allowed_merge_methods` | `["merge"]` |
+| `main` at the apply | `bc389f1` — the apply moved nothing |
+
+The gate carries its own definition. This file and `.github/rulesets/main-gate.json` arrived on
+`main` as PR #156, merged at **A3** — the proof's own positive control (§5.1) — so the definition
+went through the gate it describes.
+
+**The one owner-visible change.** The owner lands work on `main` by pull request, not by direct push;
+the "merge anyway" button is gone. Nothing else about how the team works changed.
 
 ## 1 · The object
 
@@ -93,6 +105,41 @@ the review seat, not the author.
 | A3 | an all-green, agent-authored, approval-free PR (**the positive control** — confirms the gate is not a freeze) | merges |
 | A4 | a required context that does not run | PR sits `blocked` — no silent pass on a skip |
 | A5 | a PR behind `main` (`strict`) | blocked until updated |
+
+### 5.1 · Result — the live gate, 2026-10-16
+
+Run by the review seat immediately after the apply, against ruleset `25277384`. Preflight compared
+the live rule to `.github/rulesets/main-gate.json` field by field — contexts byte-exact — and refused
+to run a phase until it matched. **All five PASS.**
+
+| # | state reproduced | measured refusal / result |
+| :-- | :-- | :-- |
+| A1 | a red required check (`citations`) on a PR | plain → `base branch policy prohibits the merge` · `--admin` → `Repository rule violations found · Required status check "citation ref-lint — §X.Y item N form" is failing.` · `main` stayed `bc389f1` |
+| A2 | direct push to `main`, fast-forward **and** force, under the admin token | both `GH013`: `Changes must be made through a pull request` · `Cannot force-push to this branch` · `3 of 3 required status checks are expected` · `main` pre = post |
+| A3 | an all-green, agent-authored, approval-free PR — **the positive control** | **merged** — `main` `bc389f1` → `640f79f`, a 2-parent merge |
+| A4 | a required context that cannot report for the head — its `name:` renamed **inside the PR's own workflow** | PR `blocked`; the required name is **absent** from the rollup (only the renamed job reports) · `--admin` → `2 of 3 required status checks have not succeeded: 1 expected` |
+| A5 | a green branch behind `main` (`strict`) | `BEHIND` · `head branch is not up to date with the base branch` until updated |
+
+What the two contested fields settle, now measured rather than argued:
+
+- **`bypass_actors: []`** bites the admin token itself — A1's `--admin` merge and A2's two pushes are
+  refused by the rule, not by convention.
+- **`require_extra_approval_for_unattributed_changes: false`** is **inert, not load-bearing**: A3's
+  merged head reads `author.login: null` (`eli@astrolab.local`) with zero approving reviews, so the
+  `true` this repo inherits by default would have demanded an approval no second account can give — a
+  permanent freeze, not a weaker gate.
+- **A4** is the byte-exactness freeze (§2) demonstrated live, and reachable from inside the very PR
+  the gate is judging.
+
+Two things are **not** exercised, both recorded rather than rounded off:
+
+- A5's *recovery* half — `update-branch` → new head → required checks re-run. The refusal is the
+  assertion; recovery is the path every PR takes.
+- The apply script's **update** path. The live apply took the create path, so re-running the script
+  against an already-existing `main-gate` (its idempotent branch, §1) is still unproven.
+
+Evidence: the review seat's run artifacts (`a1-*` … `a5-*`, `live-ruleset.json`) and the five
+verdicts on #151.
 
 ## 6 · Follow-ups (recorded, not built here)
 
