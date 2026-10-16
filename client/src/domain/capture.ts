@@ -101,6 +101,27 @@ export function seedToDraft(seed: InspireSeed): CaptureDraft {
   };
 }
 
+/**
+ * Whether two drafts carry the **same four fields** — `DESIGN.md` §8's *"a refinement that changes
+ * nothing is not a version"*, which S6's sticky CTA reads (`FLOW.md` T23). A draft is spelled once
+ * here, so the comparison is written once too, next to the type it compares.
+ *
+ * `domain_tags` is compared as a **set**: tags are a set everywhere else (§4.4 matches a tag exactly,
+ * and the field stores one chip per value), so removing a tag and adding it back in another position
+ * is the same domain set — versioning it would put an identical row in the history. The three text
+ * fields are compared **as typed**, not trimmed: §4.6 stores the string the user wrote, so an edit to
+ * the whitespace is a real change to the version.
+ */
+export function sameDraft(a: CaptureDraft, b: CaptureDraft): boolean {
+  return (
+    a.hypothesis === b.hypothesis &&
+    a.problem === b.problem &&
+    a.monetization === b.monetization &&
+    a.domain_tags.length === b.domain_tags.length &&
+    a.domain_tags.every((tag) => b.domain_tags.includes(tag))
+  );
+}
+
 /** The live mono counter (`FLOW.md` T17; `DESIGN.md` §3). */
 export function counterText(length: number): string {
   return `${length} / ${HYPOTHESIS_MAX}`;

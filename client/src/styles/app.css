@@ -921,3 +921,69 @@ a {
   margin-top: 1rem;
   margin-bottom: 0;
 }
+
+/* S6 Iterate (V9 `#20`; DESIGN.md §8) — the same node with a new version. The header keeps Idea
+   Detail's shape: a ghost back affordance, the title, and the node's own id in mono. */
+.iterate__head {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.iterate__head .screen__title {
+  margin: 0;
+}
+
+/* History — the node's versions, flat. Deliberately **not** lineage: no brass node markers, no
+   connectors, no chain, because that vocabulary reads a version as an ancestor (DESIGN.md §8). */
+.history {
+  margin-top: 2rem;
+}
+
+.history__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history__row {
+  border-bottom: 1px solid var(--hairline);
+}
+
+.history__summary {
+  display: grid;
+  gap: 0.125rem;
+  padding: 0.75rem 0;
+  cursor: pointer;
+}
+
+.history__stamp {
+  font-size: 0.6875rem;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+
+.history__headline {
+  color: var(--muted);
+}
+
+.history__row--current .history__headline {
+  color: var(--ink);
+}
+
+.history__current {
+  font-size: 0.6875rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--brass-highlight);
+}
+
+.history__body {
+  padding: 0 0 0.75rem;
+}
+
+.history__line {
+  margin: 0 0 0.25rem;
+  color: var(--muted);
+}

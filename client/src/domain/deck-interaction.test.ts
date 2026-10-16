@@ -127,19 +127,23 @@ test("the deck and S1b resolve through one module — two screens, one shape (§
 
 test("a vault screen reaches no engine or run module — its request never waits on a run (K7 #41)", () => {
   // The criterion's *"no vault request waits on a run"*. It is a property of the **files**, so it is
-  // checked here rather than asserted in prose: none of S2/S3/S4 may import the engine surface
-  // (`api/sparks.ts`: §4.9/§4.10/§4.11/§4.16) or the run policy (`domain/run-trigger.ts`,
-  // `domain/deck-stream.ts`). Vault writes are vault writes and must succeed with the AI down (NFR-A1).
-  const vaultScreens = ["Capture.tsx", "Vault.tsx", "IdeaDetail.tsx"].map((name) => ({
-    name,
-    source: readFileSync(fileURLToPath(new URL(`../screens/${name}`, import.meta.url)), "utf8"),
-  }));
-  // Non-vacuity: it must actually be looking at the three files, and each must import *something* —
-  // a walk that read nothing would pass this guard for the wrong reason.
+  // checked here rather than asserted in prose: none of S2/S3/S4 — nor the S6 editor V9 `#20` adds,
+  // which writes §4.6 — may import the engine surface (`api/sparks.ts`: §4.9/§4.10/§4.11/§4.16) or the
+  // run policy (`domain/run-trigger.ts`, `domain/deck-stream.ts`). Vault writes are vault writes and
+  // must succeed with the AI down (NFR-A1).
+  const vaultScreens = ["Capture.tsx", "Vault.tsx", "IdeaDetail.tsx", "Iterate.tsx"].map(
+    (name) => ({
+      name,
+      source: readFileSync(fileURLToPath(new URL(`../screens/${name}`, import.meta.url)), "utf8"),
+    }),
+  );
+  // Non-vacuity: it must actually be looking at the four files — a walk that read nothing, or that
+  // silently skipped the screen this lane added, would pass this guard for the wrong reason.
   expect(vaultScreens.map((screen) => screen.name)).toEqual([
     "Capture.tsx",
     "Vault.tsx",
     "IdeaDetail.tsx",
+    "Iterate.tsx",
   ]);
 
   for (const screen of vaultScreens) {
