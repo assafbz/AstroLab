@@ -112,6 +112,35 @@ test("a root idea's chain is its own node — a one-node chain, never a bare 'no
   expect(screen.queryByText(/no lineage/i)).toBeNull();
 });
 
+test("Iterate and Fork are two route changes — never a transport of their own (T22, T24)", async () => {
+  renderDetail(detail());
+
+  await screen.findByRole("heading", { level: 1, name: "A fork of the root" });
+  // T22 is S4 → S6 and T24 is S4 → S5: both are links the shell resolves (`forkHref` / `iterateHref`),
+  // so this screen carries no fork/iterate request of its own.
+  expect(screen.getByRole("link", { name: "Iterate" }).getAttribute("href")).toBe(
+    "#/iterate/child",
+  );
+  expect(screen.getByRole("link", { name: "Fork" }).getAttribute("href")).toBe("#/fork/child");
+});
+
+test("a fork child whose parent was deleted shows the tombstone — the reference, never resolved (V8 #19 carry)", async () => {
+  // §4.8: the child keeps `lineage_parent_id`; §4.5's walk stops, so the chain reads `[]`. Rendering
+  // that as-is would claim this idea was always a root.
+  const { container } = renderDetail(detail({ lineage: [] }));
+
+  await screen.findByRole("heading", { level: 1, name: "A fork of the root" });
+  const nodes = [...container.querySelectorAll(".chain__node")];
+  expect(nodes).toHaveLength(2);
+
+  const tombstone = nodes[0] as HTMLElement;
+  expect(tombstone.className).toContain("chain__node--tombstone");
+  expect(within(tombstone).getByText("root")).toBeTruthy();
+  // Shown, never resolved: the id is the only thing left of the parent, and a link would 404.
+  expect(within(tombstone).queryByRole("link")).toBeNull();
+  expect((nodes[1] as HTMLElement).className).toContain("chain__node--current");
+});
+
 test("provenance renders the ids the contract returned, muted — even when one names a tombstone (D5, #80 carry)", async () => {
   renderDetail(detail({ provenance: [{ source_idea_id: "gone-1", spark_id: "spark-1" }] }));
 

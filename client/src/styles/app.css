@@ -628,6 +628,17 @@ a {
   color: var(--brass-highlight);
 }
 
+/* S4's lineage tombstone (V8 `#19` carry): a parent that no longer exists. Shown, never resolved —
+   a dashed marker instead of the brass one, because there is nothing left to open (§4.8, D5). */
+.chain__node--tombstone::before {
+  border-color: var(--outline);
+  border-style: dashed;
+}
+
+.chain__node--tombstone .chain__title {
+  color: var(--dim);
+}
+
 /* Muted provenance — recorded, not displayed as lineage (FLOW.md §2.3; docs/API.md §4.5). */
 .provenance {
   margin-top: 1.5rem;
