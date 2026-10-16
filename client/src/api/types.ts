@@ -67,6 +67,19 @@ export interface CaptureInput extends IdeaFields {
   decision_id?: string | null;
 }
 
+/**
+ * `docs/API.md` §4.7 — the fork's request, the **frozen two fields**, spelled once.
+ *
+ * Deliberately *not* a widening of `IdeaFields`: §4.7 carries no text, and the fork's
+ * `hypothesis` / `problem` / `monetization` are the **parent's, copied verbatim**. With no text in the
+ * request the parent is the only possible source, so the copy is the only reading, not a choice (V4
+ * `#15`). `domain_tags` here is the *fork's own* set — §4.7 requires it to differ from the parent's.
+ */
+export interface ForkFields {
+  mutation_delta: string;
+  domain_tags: string[];
+}
+
 /** `docs/API.md` §4.4. `null`/absent = the contract's "no restriction"; `""` is never sent (422). */
 export interface VaultFilters {
   domain?: string | null;

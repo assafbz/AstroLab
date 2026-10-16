@@ -122,3 +122,38 @@ export function seedSparkIdFromPath(path: string): string | null {
   const match = /^\/capture\/([^/]+)$/.exec(path.replace(/\/+$/, ""));
   return match ? match[1]! : null;
 }
+
+/** The S5 Fork route's hash for one parent idea (`#/fork/<id>`). Ids are opaque — never encoded here. */
+export function forkHref(id: string): string {
+  return `#/fork/${id}`;
+}
+
+/**
+ * The parent id in a `#/fork/<id>` path, or `null` when the path is not that per-id route — the same
+ * contract as `ideaIdFromPath`, for the same reason: the **seeded** S5 is not an entry in `SCREENS`
+ * (`SCREENS`'s S5 entry is the bare `/fork`), so the shell must resolve the id *before* it matches.
+ * A trailing slash still resolves.
+ *
+ * **A bare `/fork` is not this route, and is not a not-found either.** It is `SCREENS`' own S5 and is
+ * matched as such: §4.7 needs a parent id, so E3's parentless entry composes the parent picker rather
+ * than forking nothing — the `#/capture` / `#/capture/<id>` pairing, one route family (`V9` `#20`).
+ */
+export function forkParentIdFromPath(path: string): string | null {
+  const match = /^\/fork\/([^/]+)$/.exec(path.replace(/\/+$/, ""));
+  return match ? match[1]! : null;
+}
+
+/** The S6 Iterate route's hash for one idea (`#/iterate/<id>`) — the node it edits, in place. */
+export function iterateHref(id: string): string {
+  return `#/iterate/${id}`;
+}
+
+/**
+ * The idea id in a `#/iterate/<id>` path, or `null` when the path is not that per-id route. T22 is
+ * S4 → S6, so iterate always names a node; a bare `/iterate` carries none and composes a choice (the
+ * S4-bare `#/ideas` rule), never an editor over nothing.
+ */
+export function iterateIdFromPath(path: string): string | null {
+  const match = /^\/iterate\/([^/]+)$/.exec(path.replace(/\/+$/, ""));
+  return match ? match[1]! : null;
+}
