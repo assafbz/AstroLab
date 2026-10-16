@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { App } from "./App.tsx";
@@ -136,6 +136,60 @@ test("#/ renders S1, and a vault below the floor lands E0 Cold — not a placeho
   expect(screen.queryByText(/not built yet/i)).toBeNull();
   // The Sparks tab is the active one: S1 is home, not a screen reached from elsewhere.
   expect(screen.getByRole("link", { name: "Sparks" }).getAttribute("aria-current")).toBe("page");
+});
+
+test("tapping a card on the deck opens its detail — the shell follows the hash to S1b (T08)", async () => {
+  window.location.hash = "#/";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/v1/sparks/events")) {
+        // A stream that opens and ends: S1 subscribes first (§4.11), and this test drives the tap.
+        return Promise.resolve(
+          new Response(
+            new ReadableStream<Uint8Array>({
+              start(controller) {
+                controller.close();
+              },
+            }),
+            { status: 200, headers: { "content-type": "text/event-stream" } },
+          ),
+        );
+      }
+      if (url.includes("/v1/sparks/state")) {
+        return Promise.resolve(json({ state: "E2", unreviewed: 1, run: null }));
+      }
+      if (url.includes("/v1/sparks?state=offered")) {
+        return Promise.resolve(json({ sparks: [SPARK_DETAIL] }));
+      }
+      if (url.startsWith("/v1/sparks/")) return Promise.resolve(json(SPARK_DETAIL));
+      if (url.includes("/v1/vault/summary")) {
+        return Promise.resolve(
+          json({
+            resolved_domains: 3,
+            provisional_domains: 0,
+            target: 3,
+            floor: 2,
+            eligible: true,
+          }),
+        );
+      }
+      return Promise.resolve(json({ error: { code: "not_found", message: "no route" } }, 404));
+    }),
+  );
+  render(<App />);
+
+  const card = await screen.findByLabelText("Spark");
+  fireEvent.pointerDown(card, { clientX: 12, clientY: 20 });
+  fireEvent.pointerUp(card, { clientX: 12, clientY: 20 });
+
+  // S1b, read from §4.12 for the tapped id — the deck's tap is the only way in, and nothing is stale
+  // from the card it came from (the detail reads its own endpoint).
+  expect(
+    await screen.findByRole("heading", { level: 1, name: SPARK_DETAIL.direction }),
+  ).toBeTruthy();
+  expect(window.location.hash).toBe("#/sparks/abc");
 });
 
 test("#/sparks/<id> renders S1b Spark Detail, with the Sparks tab active (D8)", async () => {

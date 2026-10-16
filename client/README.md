@@ -1,8 +1,8 @@
 # Client (V8)
 
 The mobile-first PWA. S2 Capture, S3 Vault and S4 Idea Detail are built (V8, `#19`), S0 Onboarding
-(O3, `#23`), and S1 Sparks' **E0 branch** (O4, `#24` — the deck is K2 `#36`); S5/S6 are still the
-shell's placeholders until their own issues land.
+(O3, `#23`), S1 Sparks' **E0 branch** (O4, `#24` — the deck is K2 `#36`) with its **S1b Spark Detail**
+(K3 `#37`); S5/S6 are still the shell's placeholders until their own issues land.
 
 - **Stack:** Vite + React + TypeScript (`docs/adr/0005-client-stack.md`).
 - **Design tokens:** `src/styles/tokens.css`, lifted from `DESIGN.md` §2 (colour and geometry) and §5 (layout).
@@ -26,13 +26,15 @@ labels.
 | S3 Vault | `#/vault` | built (V8) |
 | S4 Idea detail | `#/ideas` | built (V8) — the bare path is a "choose an idea" landing |
 | S4 Idea detail | `#/ideas/<id>` | built (V8) — the per-id route |
+| S1b Spark detail | `#/sparks/<id>` | built (K3 `#37`) — the per-id route, reached by tapping a card |
 | S5 Fork | `#/fork` | placeholder |
 | S6 Iterate | `#/iterate` | placeholder |
 
-The per-id route is resolved **before** `matchScreen`: `#/ideas/<id>` is not one of `SCREENS`
-(whose S4 entry is the bare `#/ideas`), so the matcher alone would call it a not-found. The S4
-paths leave the **Vault** tab active — S4 is reached from the Vault, and a screen with no tab of
-its own must not read as "nowhere".
+The per-id routes are resolved **before** `matchScreen`: neither `#/ideas/<id>` nor `#/sparks/<id>` is
+one of `SCREENS` (whose S4 entry is the bare `#/ideas`, and whose S1 entry is `/`), so the matcher alone
+would call them a not-found. The S4 paths leave the **Vault** tab active — S4 is reached from the Vault —
+and `#/sparks/<id>` leaves the **Sparks** tab active, since S1b is reached from the deck: a screen with
+no tab of its own must not read as "nowhere".
 
 ### The entry rule — where `/` goes
 
