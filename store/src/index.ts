@@ -1,4 +1,5 @@
 export {
+  newDomainFlag,
   readClusterAdjacency,
   readClusters,
   readDomainMap,

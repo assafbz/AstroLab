@@ -77,6 +77,91 @@ export function readDomainMap(db: DatabaseSync, tags: readonly string[]): Map<st
 }
 
 /**
+ * The new-domain instrument — EV1 `#43` (`PRD.md` §5 / NFR-Q1: *"of the sparks accepted, how many
+ * landed in a new domain"*). One question, asked **at the write**: does this domain set reach a domain
+ * the vault **did not already carry**?
+ *
+ * ## A domain's identity is the vault's own rule, not a second one
+ *
+ * A domain is the **cluster** (`docs/API.md:119` — *"`#fintech` + `#banking` are **one** domain"*), and
+ * the vault already counts coverage that way: `SUMMARY_SQL` (`api/src/vault-summary.ts`) reads
+ * `COUNT(DISTINCT m.cluster_id)`, with an unmapped tag counted as **its own cluster** (provisional).
+ * The identity used here is that same expression — `COALESCE(domain_map.cluster_id, <the tag>)` — so
+ * the instrument cannot disagree with the readout it feeds. A tag in `domain_map` therefore resolves
+ * identically for every row (the map is keyed by the exact raw tag, §3.2), and a tag the vocabulary
+ * has not seen is its own domain until the worker writes it back.
+ *
+ * Consequence, stated deliberately: a **typed** fresh tag counts as a widening at the write. `NULL`-ing
+ * it instead would hide exactly the widening the flywheel wants, and the worker's later normalisation
+ * can only collapse a provisional tag into a cluster that some row already carried — never split one.
+ *
+ * ## Why the write, and not report time
+ *
+ * The answer is a fact about the vault **at that instant** and is not recomputable later: the vault is
+ * append-and-iterate, so a later idea carrying the same domain changes it, and the worker's `domain_map`
+ * write-back moves a provisional tag's identity. NFR-Q1's verification is *"instrumentation +
+ * reporting"*, so the flag is **stored** by the writes that can widen (§4.2 capture, §4.7 fork, §4.6
+ * iterate) and read back by month — never re-derived from the current vault.
+ *
+ * ## The comparison is the vault *before* the write
+ *
+ * The flag answers *"did this write widen the vault?"*, so the domain set is compared against the vault
+ * **as it stood at that moment** — callers compute it before their `INSERT`/`UPDATE`, never after. That
+ * is what makes the rule the same one for all three writers, and it is what the plan's parenthetical
+ * ("a re-save of its own domain is not a widening") actually requires: for §4.6's iterate — the one
+ * writer whose row already exists — the row's **own current tags are part of the coverage being
+ * compared against**, because they are exactly what the vault already carried. Ignoring them would
+ * report a plain text-only re-save as a widening whenever no *other* row happened to share that domain
+ * (measured 2026-10-16; the store suite pins the case), which is the false positive this shape removes.
+ * For the two `INSERT` paths the distinction cannot arise: the row is not in the table yet.
+ *
+ * ## A recorded `1` is durable, so the column is the idea's *history*
+ *
+ * `1` answers *"did this idea ever reach a domain the vault did not already carry?"* — NFR-Q1 reads an
+ * event (*"landed"*) — so it is not re-answered by a later write that happens not to widen. §4.6 is the
+ * one writer whose row already exists, and it writes the value **monotonically**
+ * (`CASE WHEN new_domain = 1 THEN 1 ELSE ? END`, `api/src/iterate.ts`): a `1` earned at birth or at any
+ * earlier iterate survives every later write of the row's own domain, a plain text edit included. The
+ * alternative — overwriting with this write's answer — resets such a row to `0` (the recomputation
+ * compares against a vault that now **includes the row itself**), so a widening would be erased by the
+ * next unrelated edit and both month views would drift down with use. `newDomainFlag` returns this
+ * write's answer; making it durable is the *writer's* job, and only §4.6 has a prior value to preserve.
+ *
+ * Returns the column's value, `0 | 1`. `NULL` ("not recorded") is never returned: it is the *absence*
+ * of a write, and only §4.13's ACCEPT leaves one — its root's tags are the source pair's union, drawn
+ * from rows that already exist, so the reading there is constant-false by construction and a stored
+ * `0` would be a measurement where there is none to make.
+ */
+const NEW_DOMAIN_SQL = `WITH other_domains(cluster) AS (
+  SELECT COALESCE(m.cluster_id, j.value) AS cluster
+    FROM idea AS i, json_each(i.domain_tags) AS j
+    LEFT JOIN domain_map AS m ON m.tag = j.value
+)
+SELECT EXISTS (
+  SELECT 1
+    FROM json_each(?) AS j
+    LEFT JOIN domain_map AS m ON m.tag = j.value
+   WHERE NOT EXISTS (
+           SELECT 1 FROM other_domains o WHERE o.cluster IS COALESCE(m.cluster_id, j.value)
+         )
+) AS is_new`;
+
+/**
+ * The `idea.new_domain` value (`0006`, `SCHEMA.md` §1e) for a write of `domainTags`: `1` iff at least
+ * one domain it reaches is carried by **no row the vault already holds**, else `0`. One statement, so
+ * the "carried" set and the question are a single read snapshot; the comparison is `IS` (null-safe)
+ * rather than `=`, so a row whose `domain_tags` carried a JSON `null` cannot poison it into a false
+ * "not new".
+ *
+ * **Call it before the write** — for §4.6's iterate that is load-bearing (see above), and it is the
+ * only order in which the question has an answer.
+ */
+export function newDomainFlag(db: DatabaseSync, domainTags: readonly string[]): 0 | 1 {
+  const row = db.prepare(NEW_DOMAIN_SQL).get(JSON.stringify(domainTags)) as { is_new: number };
+  return row.is_new === 1 ? 1 : 0;
+}
+
+/**
  * Write (or replace) one tag's cluster — idempotent, keyed by the **exact raw tag**. Never lower-cased
  * or trimmed here: `ARCHITECTURE.md` §3.2 stores the tag raw and the worker "writes that exact
  * spelling back", which is the invariant the S3 filter and the vault summary's exact match both rest
