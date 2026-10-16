@@ -158,10 +158,26 @@ describe("iterateIdea — a new version on the same node", () => {
     ).toEqual([{ version: 1 }, { version: 2 }, { version: 3 }]);
   });
 
-  test("status is not silently promoted — completing an idea is K8's path, not this one", () => {
+  test("a full iterate clears NEEDS_COMPLETION — the completion path (§4.6 / T27)", () => {
     seedIdea(db, "i1", { status: "NEEDS_COMPLETION" });
 
-    expect(iterateIdea(db, "i1", edited).status).toBe("NEEDS_COMPLETION");
+    expect(iterateIdea(db, "i1", edited).status).toBe("ACTIVE");
+  });
+
+  test("the **stored row** is ACTIVE — the flag is cleared on the node, not only in the answer", () => {
+    seedIdea(db, "i1", { status: "NEEDS_COMPLETION" });
+
+    iterateIdea(db, "i1", edited);
+
+    expect(db.prepare("SELECT status FROM idea WHERE id = 'i1'").get()).toEqual({
+      status: "ACTIVE",
+    });
+  });
+
+  test("an ACTIVE idea stays ACTIVE — iterate never downgrades the status (§4.6)", () => {
+    seedIdea(db, "i1");
+
+    expect(iterateIdea(db, "i1", edited).status).toBe("ACTIVE");
   });
 
   test("an unknown id is NotFoundError, and writes nothing at all", () => {
