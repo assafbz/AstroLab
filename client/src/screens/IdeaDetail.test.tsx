@@ -194,3 +194,107 @@ test("the first render is a skeletal shimmer — not a spinner (DESIGN.md §4)",
 
   expect(container.querySelector(".card--shimmer")).toBeTruthy();
 });
+
+test("a needs-completion idea prompts with the field it owes, behind one press — K8 #42", async () => {
+  renderDetail(
+    detail({
+      idea: idea({ id: "child", monetization: "", status: "NEEDS_COMPLETION" }),
+      lineage: [],
+    }),
+  );
+
+  const panel = await screen.findByRole("region", { name: "Needs completion" });
+  expect(
+    within(panel).getByText("Add the monetization / value angle to put it back in play."),
+  ).toBeTruthy();
+  expect(within(panel).getByRole("button", { name: "Complete" })).toBeTruthy();
+  // The read view is untouched: the four fields are read-only until the edit is opened (stitch §5).
+  expect(within(panel).queryByLabelText("Monetization / Value Angle")).toBeNull();
+});
+
+test("an active idea shows no completion panel — the prompt is the incomplete case only", async () => {
+  const { container } = renderDetail(detail());
+
+  await screen.findByRole("heading", { level: 1, name: "A fork of the root" });
+  expect(container.querySelector(".complete")).toBeNull();
+  expect(screen.queryByText(/to put it back in play/)).toBeNull();
+});
+
+test("Complete → fill → save posts §4.6 and the re-read clears the prompt (T27)", async () => {
+  const owed = idea({ id: "child", monetization: "", status: "NEEDS_COMPLETION" });
+  const cleared = { ...owed, monetization: "the value angle", status: "ACTIVE" };
+  const bodies: unknown[] = [];
+  let reads = 0;
+  stubFetch((url, init) => {
+    if (url.includes("/iterate")) {
+      bodies.push(JSON.parse(String(init?.body)));
+      return Promise.resolve(json(cleared));
+    }
+    reads += 1;
+    return Promise.resolve(json(detail({ idea: reads === 1 ? owed : cleared, lineage: [] })));
+  });
+  render(<IdeaDetail id="child" />);
+
+  const panel = await screen.findByRole("region", { name: "Needs completion" });
+  fireEvent.click(within(panel).getByRole("button", { name: "Complete" }));
+
+  fireEvent.change(screen.getByLabelText("Monetization / Value Angle"), {
+    target: { value: "the value angle" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save completion" }));
+
+  // §4.6's request is the four mandatory fields verbatim — the idea's own values, plus the one filled.
+  await waitFor(() => expect(bodies).toHaveLength(1));
+  expect(bodies[0]).toEqual({
+    hypothesis: owed.hypothesis,
+    problem: owed.problem,
+    monetization: "the value angle",
+    domain_tags: owed.domain_tags,
+  });
+
+  // The committed save **re-reads** §4.5: the idea answers `ACTIVE`, so the prompt is gone.
+  await waitFor(() =>
+    expect(screen.queryByRole("region", { name: "Needs completion" })).toBeNull(),
+  );
+  expect(screen.queryByText(/needs completion/i)).toBeNull();
+});
+
+test("saving a still-incomplete draft shows the inline error and writes nothing (T17's rule, reused)", async () => {
+  const owed = idea({ id: "child", monetization: "", status: "NEEDS_COMPLETION" });
+  let writes = 0;
+  stubFetch((url) => {
+    if (url.includes("/iterate")) {
+      writes += 1;
+      return Promise.resolve(json(owed));
+    }
+    return Promise.resolve(json(detail({ idea: owed, lineage: [] })));
+  });
+  render(<IdeaDetail id="child" />);
+
+  const panel = await screen.findByRole("region", { name: "Needs completion" });
+  fireEvent.click(within(panel).getByRole("button", { name: "Complete" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save completion" }));
+
+  expect(await screen.findByText("Monetization is required")).toBeTruthy();
+  expect(writes).toBe(0);
+});
+
+test("a rejected save surfaces the envelope and keeps the draft (T29)", async () => {
+  const owed = idea({ id: "child", monetization: "", status: "NEEDS_COMPLETION" });
+  stubFetch((url) =>
+    url.includes("/iterate")
+      ? Promise.resolve(envelope("validation_failed", "monetization must not be empty", 422))
+      : Promise.resolve(json(detail({ idea: owed, lineage: [] }))),
+  );
+  render(<IdeaDetail id="child" />);
+
+  const panel = await screen.findByRole("region", { name: "Needs completion" });
+  fireEvent.click(within(panel).getByRole("button", { name: "Complete" }));
+  fireEvent.change(screen.getByLabelText("Monetization / Value Angle"), {
+    target: { value: "m" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save completion" }));
+
+  expect(await screen.findByText("monetization must not be empty")).toBeTruthy();
+  expect((screen.getByLabelText("Monetization / Value Angle") as HTMLInputElement).value).toBe("m");
+});

@@ -41,6 +41,22 @@ const SECOND = {
 
 const THIRD = { ...SECOND, id: "ccc3", direction: "Index the vault by mechanism" };
 
+/** K8 `#42` — a spark-derived idea that could not be prefilled: the shape ACCEPT mints (§4.13). */
+const OWED = {
+  id: "9f1c",
+  hypothesis: "Route the overflow by relevance",
+  problem: "the friction",
+  monetization: "",
+  domain_tags: ["audio-dsp"],
+  lineage_kind: "ROOT",
+  lineage_parent_id: null,
+  status: "NEEDS_COMPLETION",
+  visibility: "PRIVATE",
+  current_version: 1,
+  created_at: "2026-10-16T09:00:00Z",
+  updated_at: "2026-10-16T09:00:00Z",
+};
+
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -86,6 +102,11 @@ function state(name: string, unreviewed: number, run: unknown = null) {
 
 interface Reads {
   summary?: unknown;
+  /**
+   * K8 `#42` — §4.4's answer to the needs-completion read (`{ ideas: […] }`). Absent = an empty list,
+   * so the deck's other tests never see a prompt; `"fail"` rejects it (the best-effort test).
+   */
+  incomplete?: unknown;
   state?: unknown;
   /** §4.10's answer *after* the first read — the ladder moving while the screen is open. */
   stateAfter?: unknown;
@@ -161,6 +182,12 @@ function stubDeck(reads: Reads) {
       decksSeen += 1;
       const answer = decksSeen > 1 ? (reads.sparksAfter ?? reads.sparks) : reads.sparks;
       return Promise.resolve(json({ sparks: answer ?? [] }));
+    }
+    if (url.includes("/v1/ideas")) {
+      // K8 `#42` — §4.4's needs-completion slice. `"fail"` exercises the best-effort catch inside
+      // `readDeck`: the prompt read may reject, and the deck must still render (NFR-A1).
+      if (reads.incomplete === "fail") return Promise.reject(new TypeError("offline"));
+      return Promise.resolve(json(reads.incomplete ?? { ideas: [] }));
     }
     if (url.includes("/v1/vault/summary")) {
       return Promise.resolve(json(reads.summary ?? OPEN));
@@ -638,4 +665,51 @@ test("the notice is tied to its own decision — another spark committing does n
   fireEvent.click(screen.getAllByRole("button", { name: "Good" })[1]!);
   await waitFor(() => expect(stub.decisionCalls).toHaveLength(2));
   expect(screen.getByText(/Nothing was recorded/)).toBeTruthy();
+});
+
+test("a needs-completion idea draws T27's prompt on the deck — K8 #42", async () => {
+  stubDeck({ state: state("E2", 1), sparks: [FIRST], incomplete: { ideas: [OWED] } });
+  render(<Sparks />);
+
+  expect(await screen.findByText(/1 idea needs completion/)).toBeTruthy();
+  // Its one lever opens the newest owed idea, where the missing field is named and supplied (S4).
+  expect(screen.getByRole("link", { name: "Complete" }).getAttribute("href")).toBe("#/ideas/9f1c");
+  // Non-blocking, the E4 pattern: the notice composes *around* the reviewable card (§5.6, NFR-A1).
+  expect(screen.getByLabelText("Spark").textContent).toContain(FIRST.direction);
+});
+
+test("the deck prompt pluralises — two owed ideas read as a count, not a card", async () => {
+  stubDeck({
+    state: state("E2", 1),
+    sparks: [FIRST],
+    incomplete: { ideas: [OWED, { ...OWED, id: "other" }] },
+  });
+  render(<Sparks />);
+
+  expect(await screen.findByText(/2 ideas need completion/)).toBeTruthy();
+});
+
+test("the deck prompt is best-effort — a failed prompt read never fails the deck (NFR-A1)", async () => {
+  // The three deck reads are fatal; this fourth one is not. A prompt that could not be fetched must
+  // read as "nothing owed", never as a deck that failed to load.
+  stubDeck({ state: state("E2", 1), sparks: [FIRST], incomplete: "fail" });
+  render(<Sparks />);
+
+  expect((await screen.findByLabelText("Spark")).textContent).toContain(FIRST.direction);
+  expect(screen.queryByText(/needs? completion/i)).toBeNull();
+});
+
+test("E0's cold composition owns the screen — T27's prompt does not intrude (FLOW §4.1)", async () => {
+  // Completing an idea does not change E0 (its arms are status-blind), so the prompt would be noise
+  // over a state that is a statement about breadth.
+  stubDeck({
+    state: state("E0", 0),
+    sparks: [],
+    summary: COLD,
+    incomplete: { ideas: [OWED] },
+  });
+  render(<Sparks />);
+
+  await screen.findByLabelText("Sparks need more domains");
+  expect(screen.queryByText(/needs completion/i)).toBeNull();
 });
