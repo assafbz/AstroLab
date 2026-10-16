@@ -109,9 +109,14 @@ parameters.
 
 The API's auth gate classifies a request by its **own** normaliser — decode, then collapse repeated
 slashes — and gates any path whose first segment begins `/v1` (`api/src/server.ts`, `looksLikeV1`).
-The proxy must not re-decide that: it forwards the URI unchanged, with **no URI in the upstream and no
-`rewrite`**, so the one normaliser stays the only place the namespace is decided. (The serving side of
-this — what the client and the edge do with it — is `docs/DEPLOY_SERVING.md`; this is the host's half.)
+The proxy never re-decides the namespace by rewriting: it forwards the URI unchanged, with **no URI in
+the upstream and no `rewrite`**, so a *matched* path reaches the API byte-verbatim from the one
+normaliser. One limit is worth stating rather than assuming: the `path_regexp` matcher tests the
+**cleaned** path, and it resolves `.`/`..` — which the API's normaliser does not — so a spelling that
+cleans *out* of the namespace is answered by the static handler instead of the API. Both refuse; the
+status differs (`404` vs the API's `401`) and no route is reached either way (dot-segment row below).
+(The serving side — what the client and the edge do with it — is `docs/DEPLOY_SERVING.md`; this is the
+host's half.)
 
 That is a requirement with a failure state, so it is checked against a real Caddy and the real API
 (direct-to-API status vs through-the-proxy status, `--path-as-is`, no token):
@@ -121,6 +126,7 @@ That is a requirement with a failure state, so it is checked against a real Cadd
 | `/v1/ideas` · `//v1/ideas` · `///v1/ideas` · `/v1//ideas` | `401` | `401` |
 | `/v1%2Fideas` · `/%2Fv1/ideas` · `/%76%31/ideas` · `/v1/../v1/ideas` | `401` | `401` |
 | `/v1` · `/v1;x` · `/v1x/ideas` · `/v1%25` | `401` | `401` |
+| `/v1/../ideas` · `/v1/..%2Fideas` (cleans out of the namespace → `/ideas`) | `401` | `404` — static, not forwarded |
 | `/v1/sparks/events` · `//v1/sparks/events` | `401` | `401` |
 | `/healthz` · `//healthz` | `200` | `200` |
 | `/V1/ideas` · `/foo/ideas` · `/nope` (not the namespace, and no such file) | `404` | `404` |
@@ -133,8 +139,9 @@ than a silent `200` index.html — which would otherwise hand back the bundled b
 The first draft of `deploy/Caddyfile` matched the namespace with `path /v1/*`, which is **not** the
 API's test: it missed `/v1`, `/v1x/…` and `/v1;x`, so those bypassed the API entirely and were answered
 by the static handler — a `200` HTML index, because that draft also still had a SPA fallback. The
-shipped config matches `path_regexp ^/v1` (`path_regexp` sees the same decode-then-collapse path the
-API does), and the `/v1`, `/v1x/…` and `/v1;x` rows above moved from `200` to `401`.
+shipped config matches `path_regexp ^/v1` (`path_regexp` tests the **cleaned** path — the same
+decode-then-collapse the API does for every spelling above *bar the dot-segment row*), and the `/v1`,
+`/v1x/…` and `/v1;x` rows above moved from `200` to `401`.
 
 The event stream is checked the same way: `flush_interval -1` (no buffering), HTTP/1.1 to the
 upstream, and no read timeout, so a quiet stream survives between heartbeats. Verified end to end:

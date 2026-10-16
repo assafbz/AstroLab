@@ -10,12 +10,15 @@
 :8080 {
 	encode zstd gzip
 
-	# The API namespace, classified the way the API itself classifies it: **any path whose first
-	# segment begins `/v1`** (`api/src/server.ts`, `looksLikeV1`, over the decode-then-collapse
-	# `normalizePath`). The naive `path /v1/*` is not that test — it misses `/v1` and `/v1x/…`, which
-	# the API gates, so those fell through to the static handler instead of the API's `401`.
-	# Normalisation stays in the API's one normaliser; the proxy must not re-decide it, and it must not
-	# rewrite the prefix (no URI in the upstream, no `rewrite`).
+	# The API namespace, classified the way the API classifies it: **any path whose first segment begins
+	# `/v1`** (`api/src/server.ts`, `looksLikeV1`, over the decode-then-collapse `normalizePath`). The
+	# naive `path /v1/*` is not that test — it misses `/v1` and `/v1x/…`, which the API gates, so those
+	# fell through to the static handler instead of the API's `401`.
+	# The prefix is never rewritten (no URI in the upstream, no `rewrite`), so a matched request reaches
+	# the API byte-verbatim. Matching tests the *cleaned* path, though: `path_regexp` resolves `.`/`..`,
+	# which the API's normaliser does not, so a spelling that cleans out of the namespace
+	# (`/v1/../ideas` → `/ideas`) is refused by the static handler (`404`) instead of the API (`401`) —
+	# either way no route is reached (`docs/DEPLOY.md`, "The proxy is a pass-through").
 	@api path_regexp ^/v1
 
 	# The event stream must reach the client unbuffered, or the deck updates on a timer instead of on
