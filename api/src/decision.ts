@@ -58,6 +58,16 @@ import {
  * `BEGIN IMMEDIATE` the primary-key conflict is unreachable: the lookup and the insert are one
  * serialised transaction, and a guard that cannot fail in the state it forbids is not a guard.
  *
+ * **The evidence is replay-shaped, not a race (the N4 residual, stated).** `node:sqlite` is synchronous
+ * and so is `resolveDecision`, so no in-process test interleaves two connections: both the
+ * two-connection test (`decision.test.ts`) and the `Promise.all` pair over HTTP (`server.test.ts`)
+ * *replay* — one call commits, then the other runs and reads the row the first left behind. That
+ * replay is exactly the property N4 needs (a **retry**, not a lock), and it is what the tests check:
+ * delete step 1 and both redden on the key-conflict branch, reached only because the second connection
+ * read the committed row. The lock half is SQLite's own `BEGIN IMMEDIATE`, and only a genuinely
+ * concurrent caller — two OS processes on one file, which no test here is — would exercise it.
+ * Recorded rather than left implied.
+ *
  * ## The one product call (ruled: `K4 #38`'s plan, call 1)
  *
  * A spark carries no `monetization` (`ARCHITECTURE.md` §2.3), so a one-tap Good cannot supply all four
