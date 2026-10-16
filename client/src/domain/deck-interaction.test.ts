@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 
 import { expect, test } from "vitest";
 
-import { SWIPE_DISTANCE_PX, swipeKind } from "./deck-interaction.ts";
+import { SWIPE_DISTANCE_PX, TAP_SLOP_PX, isTap, swipeKind } from "./deck-interaction.ts";
 
 /**
  * §5.5's parity, at the two places it can break: the **gesture's mapping** (right = ACCEPT, left =
@@ -35,6 +35,21 @@ test("the threshold is inclusive: exactly the distance is a swipe", () => {
   // The boundary is stated once so a later tweak cannot quietly move it to an exclusive read.
   expect(swipeKind(0, SWIPE_DISTANCE_PX)).toBe("ACCEPT");
   expect(swipeKind(0, -SWIPE_DISTANCE_PX)).toBe("DISMISS");
+});
+
+test("a tap is a press that stayed put on **both** axes — T08's opening gesture", () => {
+  expect(isTap(10, 10, 10, 10)).toBe(true);
+  expect(isTap(10, 10, 10 + TAP_SLOP_PX - 1, 10 + TAP_SLOP_PX - 1)).toBe(true);
+  // The one that would bite: a scroll is long on `y` and short on `x`, and the deck *and the list*
+  // scroll — a tap judged on `x` alone would open a detail on every scroll release.
+  expect(isTap(10, 10, 10, 10 + TAP_SLOP_PX)).toBe(false);
+  expect(isTap(10, 10, 10 + TAP_SLOP_PX, 10)).toBe(false);
+});
+
+test("the tap slop is exclusive: exactly the slop has travelled, so it is not a tap", () => {
+  // Pinned, like the swipe threshold, so a later tweak cannot quietly move the boundary.
+  expect(isTap(0, 0, TAP_SLOP_PX, 0)).toBe(false);
+  expect(isTap(0, 0, TAP_SLOP_PX - 1, 0)).toBe(true);
 });
 
 test("the card resolves through exactly one call site — a second, inline dispatch reddens this", () => {
