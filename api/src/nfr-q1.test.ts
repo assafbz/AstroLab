@@ -11,6 +11,7 @@ import { resolveDecision, type DecisionInput } from "./decision.js";
 import { exportVault } from "./export.js";
 import { forkIdea } from "./fork.js";
 import { iterateIdea } from "./iterate.js";
+import { acceptedByMonth, acceptedLandingNewDomainByMonth, newDomainByMonth } from "./metrics.js";
 
 /**
  * EV1 (#43) — **NFR-Q1, the new-domain instrument** (`docs/PRD.md` §5 / NFR-Q1: *"accepted sparks, and
@@ -27,6 +28,10 @@ import { iterateIdea } from "./iterate.js";
  * | 3 | §4.6's iterate re-records it, against the vault *as it stood* | the row's `new_domain` after the call | iterate onto a fresh domain → `1`; a text-only re-save of the same domain → `0` (the case a "no other row" rule gets wrong) |
  * | 4 | §4.13's ACCEPT records **nothing** — the reading there is constant-false | the ACCEPT-born root's `new_domain` | the roots are `NULL`, never `0`: a naive compute-inside-`insertRootIdea` would store `0` and this reddens |
  * | 5 | the producers are **exactly** the three write sites, and each assigns the column | a scan of the shipped sources | a fourth `INSERT`/`UPDATE` of `idea` that never mentions `new_domain` |
+ * | 6 | `acceptedByMonth` — §4.13's accepted sparks, by accept month | `decision`, `kind = 'ACCEPT'`, bucket `[from, to)` on `decided_at` | the `DISMISS`/`INSPIRED` rows in the same month are not counted (`kind = 'ACCEPT'`, not "all decisions") |
+ * | 7 | `newDomainByMonth` — ideas that widened, by birth month | `idea.new_domain = 1`, bucket on `created_at` | the `0` **and** the `NULL` rows in the same month are absent — the "not recorded" state is not a zero |
+ * | 8 | `acceptedLandingNewDomainByMonth` — NFR-Q1's literal sentence | `decision` (ACCEPT) ⋈ `idea` on `result_idea_id` | a root written in a later month than its accept still counts in the **accept's** bucket; a root deleted since its accept is absent (inner join) |
+ * | 9 | the reported set is the instrument's, end to end | a real `resolveDecision` ACCEPT | the ACCEPT-born root (flag `NULL`) is counted by 6 and by neither 7 nor 8 |
  *
  * **0 provider calls** — every path here is `api`-local; nothing reaches a provider (`worker/src/
  * provider/boundary.test.ts`).
@@ -268,5 +273,162 @@ describe("the producers are exactly the three write sites (claim 5)", () => {
     expect(writers).toEqual(["api/src/capture.ts", "api/src/fork.ts", "api/src/iterate.ts"]);
     // …and each of them assigns the instrument, so a writer added without it goes red here.
     expect(missing).toEqual([]);
+  });
+});
+
+/**
+ * Claims 6–8 — the **reporting** half (`api/src/metrics.ts`). Rows are seeded with explicit stamps, so
+ * a bucket is asserted against a month the test names rather than against whatever `isoTimestamp()`
+ * happened to return; claim 9 then ties the shape back to the real writer.
+ *
+ * The bucket convention is read into the fixtures: `[from, to)` over `YYYY-MM` keys, `from` inclusive,
+ * `to` exclusive — so the two boundary rows below (the first instant of each month) must straddle it.
+ */
+describe("the reporting queries — accepted, widened, and the ratio between them (claims 6–8)", () => {
+  const stamp = (month: string, day: string, time = "00:00:00"): string =>
+    `${month}-${day}T${time}Z`;
+
+  function seedIdeaAt(
+    db: DatabaseSync,
+    id: string,
+    over: { tags?: string[]; createdAt: string; newDomain?: 0 | 1 | null } = {
+      createdAt: "2026-01-15T00:00:00Z",
+    },
+  ): void {
+    db.prepare(
+      `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
+                         lineage_parent_id, status, visibility, current_version, created_at, updated_at,
+                         new_domain)
+       VALUES (?, 'h', 'p', 'm', ?, 'ROOT', NULL, 'ACTIVE', 'PRIVATE', 1, ?, ?, ?)`,
+    ).run(
+      id,
+      JSON.stringify(over.tags ?? ["fintech"]),
+      over.createdAt,
+      over.createdAt,
+      over.newDomain ?? null,
+    );
+  }
+
+  /** A spark (the `decision` FK) plus one decision on it. */
+  function seedDecisionAt(
+    db: DatabaseSync,
+    id: string,
+    kind: "ACCEPT" | "DISMISS" | "INSPIRED",
+    decidedAt: string,
+    resultIdeaId: string | null = null,
+  ): void {
+    db.prepare(
+      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, status, created_at)
+       VALUES (?, 's-a', 's-b', ?, 'd', 'c', 'OFFERED', 't')`,
+    ).run(`spark-${id}`, `s-a|s-b|${id}`);
+    db.prepare(
+      `INSERT INTO decision (id, spark_id, kind, result_idea_id, decided_at) VALUES (?, ?, ?, ?, ?)`,
+    ).run(id, `spark-${id}`, kind, resultIdeaId, decidedAt);
+  }
+
+  test("`acceptedByMonth` counts ACCEPTs only, and honours the half-open range", () => {
+    const db = newDb();
+    seedDecisionAt(db, "d1", "ACCEPT", stamp("2026-01", "31", "23:59:59"));
+    seedDecisionAt(db, "d2", "ACCEPT", stamp("2026-01", "01"));
+    seedDecisionAt(db, "d3", "ACCEPT", stamp("2026-02", "28"));
+    seedDecisionAt(db, "d4", "DISMISS", stamp("2026-01", "15"));
+    seedDecisionAt(db, "d5", "INSPIRED", stamp("2026-02", "15"));
+    // The boundary rows: the first instant of each month belongs to that month alone.
+    seedDecisionAt(db, "d6", "ACCEPT", stamp("2026-03", "01"));
+    seedDecisionAt(db, "d7", "ACCEPT", stamp("2026-04", "01"));
+
+    expect(acceptedByMonth(db, "2026-01", "2026-03")).toEqual([
+      { month: "2026-01", count: 2 }, // `d1`, `d2` — the DISMISS `d4` is not an acceptance
+      { month: "2026-02", count: 1 }, // `d3`, not the INSPIRED `d5`
+    ]);
+    // `to` is exclusive: `2026-03-01T00:00:00Z` is March's, and a month with no rows is absent.
+    expect(acceptedByMonth(db, "2026-03", "2026-04")).toEqual([{ month: "2026-03", count: 1 }]);
+    expect(acceptedByMonth(db, "2026-04", "2026-05")).toEqual([{ month: "2026-04", count: 1 }]);
+    expect(acceptedByMonth(db, "2025-01", "2026-01")).toEqual([]); // nothing before the vault existed
+    expect(acceptedByMonth(newDb(), "2026-01", "2026-02")).toEqual([]); // an empty vault
+  });
+
+  test("`newDomainByMonth` counts the recorded `1`s, and neither a `0` nor the unrecorded `NULL`", () => {
+    const db = newDb();
+    seedIdeaAt(db, "widened-jan", { createdAt: stamp("2026-01", "15"), newDomain: 1 });
+    seedIdeaAt(db, "plain-jan", { createdAt: stamp("2026-01", "16"), newDomain: 0 });
+    seedIdeaAt(db, "unrecorded-jan", { createdAt: stamp("2026-01", "17") }); // §4.13's ACCEPT-born shape
+    seedIdeaAt(db, "widened-feb", { createdAt: stamp("2026-02", "15"), newDomain: 1 });
+
+    expect(newDomainByMonth(db, "2026-01", "2026-03")).toEqual([
+      { month: "2026-01", count: 1 },
+      { month: "2026-02", count: 1 },
+    ]);
+    // The discriminating half, read out of the table rather than assumed: the month really does hold
+    // three ideas, so a `!= 0`- or `IS NOT 1`-shaped predicate would report more than 1 here.
+    expect(
+      (
+        db
+          .prepare("SELECT COUNT(*) AS n FROM idea WHERE substr(created_at, 1, 7) = '2026-01'")
+          .get() as { n: number }
+      ).n,
+    ).toBe(3);
+  });
+
+  test("`acceptedLandingNewDomainByMonth` buckets on the accept, and excludes what cannot answer", () => {
+    const db = newDb();
+    // A root accepted in January but *written* in March: the cohort is the accept, so January is its
+    // bucket. (This is the assertion a `GROUP BY i.created_at` implementation fails.)
+    seedIdeaAt(db, "landed", { createdAt: stamp("2026-03", "10"), newDomain: 1 });
+    seedDecisionAt(db, "a1", "ACCEPT", stamp("2026-01", "20"), "landed");
+    // Not recorded (§4.13's own shape) and recorded `0` — neither is a landing.
+    seedIdeaAt(db, "unrecorded", { createdAt: stamp("2026-01", "21") });
+    seedDecisionAt(db, "a2", "ACCEPT", stamp("2026-01", "21"), "unrecorded");
+    seedIdeaAt(db, "stayed", { createdAt: stamp("2026-01", "22"), newDomain: 0 });
+    seedDecisionAt(db, "a3", "ACCEPT", stamp("2026-01", "22"), "stayed");
+    // A DISMISS has no result idea at all.
+    seedDecisionAt(db, "a4", "DISMISS", stamp("2026-01", "23"));
+    // A root deleted since its accept: the flag died with the row (inner join, documented).
+    seedIdeaAt(db, "gone", { createdAt: stamp("2026-01", "24"), newDomain: 1 });
+    seedDecisionAt(db, "a5", "ACCEPT", stamp("2026-01", "24"), "gone");
+    db.exec("DELETE FROM idea WHERE id = 'gone'");
+
+    expect(acceptedLandingNewDomainByMonth(db, "2026-01", "2026-02")).toEqual([
+      { month: "2026-01", count: 1 },
+    ]);
+    // …and the denominator is unaffected by any of it: five ACCEPTs, one landing.
+    expect(acceptedByMonth(db, "2026-01", "2026-02")).toEqual([{ month: "2026-01", count: 4 }]);
+    // The other numerator: January's ideas that widened are none — `landed` is the March row — while
+    // the *same* root is in January's trickle-down count above. That gap is the two cohorts, stated.
+    expect(newDomainByMonth(db, "2026-01", "2026-02")).toEqual([]);
+    expect(newDomainByMonth(db, "2026-03", "2026-04")).toEqual([{ month: "2026-03", count: 1 }]);
+    expect(acceptedLandingNewDomainByMonth(db, "2026-03", "2026-04")).toEqual([]);
+  });
+
+  test("a bound that is an instant, not a month, fails loudly instead of reporting zero", () => {
+    const db = newDb();
+    expect(() => acceptedByMonth(db, "2026-10-16T00:00:00Z", "2026-11")).toThrow(/YYYY-MM/);
+    expect(() => acceptedByMonth(db, "2026-1", "2026-11")).toThrow(/YYYY-MM/);
+    expect(() => newDomainByMonth(db, "2026-01", "2026-13")).toThrow(/YYYY-MM/);
+    expect(() => acceptedLandingNewDomainByMonth(db, "", "2026-13")).toThrow(/YYYY-MM/);
+    // Reversed but well-formed bounds are a legitimate empty range, not an error.
+    expect(newDomainByMonth(db, "2026-05", "2026-02")).toEqual([]);
+  });
+
+  test("claim 9 — the real ACCEPT is counted by the denominator and by neither numerator", () => {
+    const db = newDb();
+    seedIdea(db, "a", ["fintech"]);
+    seedIdea(db, "b", ["health"]);
+    db.prepare(
+      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, first_step,
+                          status, created_at)
+       VALUES ('s1', 'a', 'b', 'a|b', 'd', 'c', 'f', 'OFFERED', 't')`,
+    ).run();
+    const decision = resolveDecision(db, "s1", { decision_id: "d1", kind: "ACCEPT" });
+    const thisMonth = decision.decided_at.slice(0, 7);
+    const year = Number(thisMonth.slice(0, 4));
+
+    expect(acceptedByMonth(db, `${year}-01`, `${year + 1}-01`)).toEqual([
+      { month: thisMonth, count: 1 },
+    ]);
+    // The root's tags are the pair's union, so the instrument never claimed a widening here — and the
+    // report says so by reporting nothing, rather than by reporting a `0`.
+    expect(newDomainByMonth(db, `${year}-01`, `${year + 1}-01`)).toEqual([]);
+    expect(acceptedLandingNewDomainByMonth(db, `${year}-01`, `${year + 1}-01`)).toEqual([]);
   });
 });
