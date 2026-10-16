@@ -1431,6 +1431,46 @@ test("only POST on `{id}/iterate` is a route; anything else is the envelope (§2
 });
 
 /**
+ * K8 (#42) — the **needs-completion lifecycle** over HTTP: `exclude → complete → re-eligible`
+ * (`FLOW.md` T27; `docs/API.md` §4.6). This is the *transition* half of the composite e2e arm — the
+ * exclusion half is the worker's `status = 'ACTIVE'` candidate read
+ * (`worker/src/engine/gate.test.ts`), and the surfaces are the client lane's.
+ */
+test("needs-completion lifecycle: ACCEPT holds it out, an iterate completes it, it is eligible again (§4.6/T27)", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  seedSparkDetail("s-t27", "OFFERED", true);
+
+  /** The ids the vault list names for a `status` filter — §4.4, order-independent here. */
+  const idsWith = async (status: string): Promise<string[]> => {
+    const body = await call("GET", `/v1/ideas?status=${status}`, auth);
+    return (body.body as { ideas: Array<{ id: string }> }).ideas.map((idea) => idea.id);
+  };
+
+  // 1 — ACCEPT mints the flag: a spark carries no `monetization`, so the derived ROOT idea is
+  // NEEDS_COMPLETION (§4.13 / T27). It is **excluded from candidate selection** — the vault read shows
+  // it under `?status=NEEDS_COMPLETION` and never under `?status=ACTIVE`.
+  const accepted = await call("POST", "/v1/sparks/s-t27/decision", {
+    ...auth,
+    json: { decision_id: "d-t27", kind: "ACCEPT" },
+  });
+  const id = (accepted.body as { result_idea_id: string }).result_idea_id;
+  expect(await idsWith("NEEDS_COMPLETION")).toContain(id);
+  expect(await idsWith("ACTIVE")).not.toContain(id);
+
+  // 2 — the completion path is an iterate supplying the four mandatory fields (§4.6). `200` — an
+  // update, not a creation — and the answer is already `ACTIVE`.
+  const completed = await call("POST", `/v1/ideas/${id}/iterate`, { ...auth, json: EDITED });
+  expect(completed.status).toBe(200);
+  expect(completed.body).toMatchObject({ id, status: "ACTIVE", current_version: 2 });
+
+  // 3 — fully valid **and eligible again**: the node flipped, and both reads follow it. `EDITED` keeps a
+  // domain tag, so the W7 gate's *other* arm (≥ 1 domain) holds too — the idea is a candidate again.
+  expect(db.prepare("SELECT status FROM idea WHERE id = ?").get(id)).toEqual({ status: "ACTIVE" });
+  expect(await idsWith("ACTIVE")).toContain(id);
+  expect(await idsWith("NEEDS_COMPLETION")).not.toContain(id);
+});
+
+/**
  * V4 (#15) — `POST /v1/ideas/{id}/fork` (`docs/API.md` §4.7). The contract-level half: `201` with a new
  * `FORK` node whose text is the parent's and whose domains are the request's; the `409` that offers
  * Iterate; the `404`/`422` envelopes; the pinned check order; and the gate on the path.
