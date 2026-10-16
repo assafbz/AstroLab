@@ -74,6 +74,14 @@ skills."* Applied to this repo's harness, that means:
    `Closes #<n>`, with `<n>` replaced by its own issue number. A missing keyword has left
    a finished lane's issue OPEN twice (#94 / PR #96, #37 / PR #128).
 
+4. **`main` carries a repository ruleset, and the committed definition is the source of truth.**
+   The `main-gate` ruleset (`bypass_actors: []` — no actor, the owner included, can bypass it) is
+   defined in `.github/rulesets/main-gate.json` and applied with
+   `scripts/apply-ci-gate-ruleset.sh`; never edit the live rule in settings by hand, and never
+   require a check the workflow does not publish. **Any PR that touches `.github/` must show the
+   three required jobs still report on that PR** — a renamed, no-op'd or `paths:`-filtered required
+   job is a permanent freeze, not a weaker gate (`docs/CI_GATE.md`).
+
 ## Guard discipline — what counts as evidence
 
 A structural claim a test asserts — an import boundary, a single call site, a deterministic
