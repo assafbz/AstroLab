@@ -5,6 +5,7 @@ import { listIdeas } from "../api/ideas.ts";
 import type { Idea, VaultFilters } from "../api/types.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { Shimmer } from "../components/Shimmer.tsx";
+import { completionPrompt } from "../domain/completion.ts";
 import { ideaHref } from "../router.ts";
 
 /**
@@ -14,6 +15,11 @@ import { ideaHref } from "../router.ts";
  * a **pristine empty** vault composes an invitation with the Add idea CTA (T19); a **filtered
  * empty** result names the filter and offers to clear it (T20); a **load failure** is a
  * non-destructive error with Retry that leaves the loaded list alone (T29).
+ *
+ * K8 `#42` adds T27's **polish prompt** to a card: a `NEEDS_COMPLETION` idea already carries the
+ * badge, and the prompt is the actionable half — *what* to add. It is prose inside the card's own
+ * link (the card tap opens S4, where the field is supplied), never a nested control: an `<a>` inside
+ * an `<a>` is invalid, and the card is already the affordance.
  */
 
 /** The distinct tags of one list, sorted. The Vault's own tags are the only honest palette (D6). */
@@ -156,6 +162,10 @@ export function Vault() {
                         <span className="badge badge--attention">Needs completion</span>
                       ) : null}
                     </p>
+                    {/* K8 `#42` — T27's prompt: the badge names the status, this names the next move. */}
+                    {idea.status === "NEEDS_COMPLETION" ? (
+                      <p className="card__prompt">{completionPrompt(idea)}</p>
+                    ) : null}
                     <ul className="chips chips--tight">
                       {idea.domain_tags.map((tag) => (
                         <li key={tag} className="chip">

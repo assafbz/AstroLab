@@ -27,31 +27,51 @@ export interface CaptureErrors {
   domain_tags?: string;
 }
 
-/** The three required *text* fields; `domain_tags` is an array and is checked separately below. */
-type RequiredTextField = "hypothesis" | "problem" | "monetization";
-
-const REQUIRED: Array<[RequiredTextField, string]> = [
-  ["hypothesis", "Hypothesis is required"],
-  ["problem", "Problem is required"],
-  ["monetization", "Monetization is required"],
+/**
+ * §4.2's mandatory set — the four fields, with the inline message each carries when absent. **One
+ * table**, so `validateCapture` and `emptyMandatoryFields` cannot disagree about what "mandatory"
+ * means; the emptiness test itself is `isAbsent` below.
+ */
+const MANDATORY: ReadonlyArray<{ field: keyof CaptureDraft; message: string }> = [
+  { field: "hypothesis", message: "Hypothesis is required" },
+  { field: "problem", message: "Problem is required" },
+  { field: "monetization", message: "Monetization is required" },
+  { field: "domain_tags", message: "Add at least one domain" },
 ];
+
+/**
+ * Absent = empty on the trimmed value for the three text fields, and no tag for `domain_tags`.
+ * Whitespace-only is a missing field, not a present one — a naive `!== ""` check would let `"   "`
+ * through and the server would answer `422` with no inline error having shown (Review Focus 3;
+ * `api/src/capture.ts` `requiredText`).
+ */
+function isAbsent(draft: CaptureDraft, field: keyof CaptureDraft): boolean {
+  return field === "domain_tags" ? draft.domain_tags.length === 0 : draft[field].trim() === "";
+}
+
+/**
+ * The mandatory fields that are **absent**, in the contract's order. This is the client mirror of the
+ * server's `derivedStatus` (`api/src/decision.ts:205`): the same four-field completeness test, which
+ * is what decides `ACTIVE` vs `NEEDS_COMPLETION` and therefore what a completion prompt names
+ * (§4.6, K8 `#42`). It is deliberately *not* `validateCapture`: that also fails a 281-character
+ * hypothesis, which is a fixable draft error, not a field the user has not supplied.
+ */
+export function emptyMandatoryFields(draft: CaptureDraft): Array<keyof CaptureDraft> {
+  return MANDATORY.filter(({ field }) => isAbsent(draft, field)).map(({ field }) => field);
+}
 
 export function validateCapture(draft: CaptureDraft): CaptureErrors {
   const errors: CaptureErrors = {};
 
-  for (const [field, message] of REQUIRED) {
-    // Emptiness is judged on the trimmed value: whitespace-only is a missing field, not a present
-    // one — a naive `!== ""` check would let `"   "` through and the server would answer `422`
-    // with no inline error having shown (Review Focus 3; `api/src/capture.ts` `requiredText`).
-    if (draft[field].trim() === "") errors[field] = message;
+  for (const { field, message } of MANDATORY) {
+    if (isAbsent(draft, field)) errors[field] = message;
   }
 
-  // The length is the value *as typed*, matching the server, which measures the untrimmed string.
+  // The length is the value *as typed*, matching the server, which measures the untrimmed string —
+  // and it is only reached when the field is present, so an empty one keeps its "required" message.
   if (!errors.hypothesis && draft.hypothesis.length > HYPOTHESIS_MAX) {
     errors.hypothesis = `Hypothesis exceeds ${HYPOTHESIS_MAX} characters`;
   }
-
-  if (draft.domain_tags.length === 0) errors.domain_tags = "Add at least one domain";
 
   return errors;
 }

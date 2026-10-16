@@ -1,6 +1,13 @@
 import { afterEach, expect, test, vi } from "vitest";
 
-import { createIdea, deleteIdea, getIdeaDetail, listIdeas, vaultQuery } from "./ideas.ts";
+import {
+  createIdea,
+  deleteIdea,
+  getIdeaDetail,
+  iterateIdea,
+  listIdeas,
+  vaultQuery,
+} from "./ideas.ts";
 import type { Idea } from "./types.ts";
 
 const IDEA: Idea = {
@@ -52,6 +59,14 @@ test("vaultQuery omits an empty-string filter — a present-but-empty value is 4
   expect(vaultQuery({ domain: "", lineage: null })).toBe("");
 });
 
+test("vaultQuery carries the status slice — K8 #42's needs-completion read (§4.4)", () => {
+  expect(vaultQuery({ status: "NEEDS_COMPLETION" })).toBe("?status=NEEDS_COMPLETION");
+  expect(vaultQuery({ domain: "fin", status: "ACTIVE" })).toBe("?domain=fin&status=ACTIVE");
+  // An absent filter is no restriction; `""` is still never sent, the status field included.
+  expect(vaultQuery({ status: null })).toBe("");
+  expect(vaultQuery({ status: "" as Idea["status"] })).toBe("");
+});
+
 test("listIdeas GETs the collection and returns body.ideas", async () => {
   const fetchMock = stubFetch(() => Promise.resolve(json({ ideas: [IDEA] })));
 
@@ -98,4 +113,23 @@ test("deleteIdea sends DELETE to the idea's path", async () => {
   const [url, init] = fetchMock.mock.calls[0]!;
   expect(url).toBe("/v1/ideas/x");
   expect(init!.method).toBe("DELETE");
+});
+
+test("iterateIdea POSTs the four mandatory fields to {id}/iterate — K8 #42, §4.6", async () => {
+  const updated = { ...IDEA, status: "ACTIVE" as const, monetization: "the value angle" };
+  const fetchMock = stubFetch(() => Promise.resolve(json(updated)));
+  const fields = {
+    hypothesis: "h",
+    problem: "p",
+    monetization: "the value angle",
+    domain_tags: ["fintech"],
+  };
+
+  await expect(iterateIdea("a b", fields)).resolves.toEqual(updated);
+  const [url, init] = fetchMock.mock.calls[0]!;
+  expect(url).toBe("/v1/ideas/a%20b/iterate");
+  expect(init!.method).toBe("POST");
+  expect(new Headers(init!.headers).get("content-type")).toBe("application/json");
+  // Exactly the four — §4.6's request is `IdeaFields` verbatim, with no extra key to 422 on.
+  expect(JSON.parse(init!.body as string)).toEqual(fields);
 });

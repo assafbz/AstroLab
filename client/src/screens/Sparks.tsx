@@ -1,19 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { postDecision } from "../api/decisions.ts";
+import { listIdeas } from "../api/ideas.ts";
 import { enqueueRun, engineState, offeredSparks, subscribeEngineEvents } from "../api/sparks.ts";
-import type { EngineState, Spark, VaultSummary } from "../api/types.ts";
+import type { EngineState, Idea, Spark, VaultSummary } from "../api/types.ts";
 import { vaultSummary } from "../api/vault.ts";
 import { ColdState } from "../components/ColdState.tsx";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { Shimmer } from "../components/Shimmer.tsx";
 import { SparkCard } from "../components/SparkCard.tsx";
+import { needsCompletion } from "../domain/completion.ts";
 import { deckBand, type DeckBand } from "../domain/deck-state.ts";
 import { createDeckStream, type DeckStream } from "../domain/deck-stream.ts";
 import type { ResolveSeam } from "../domain/deck-interaction.ts";
 import { createDecisionResolver, isRetryable, resolutionNotice } from "../domain/decision.ts";
 import { createRunTrigger } from "../domain/run-trigger.ts";
-import { sparkHref } from "../router.ts";
+import { ideaHref, sparkHref } from "../router.ts";
 
 /**
  * S1 — Sparks, the home and the review queue (`FLOW.md` §2.1, `DESIGN.md` §9).
@@ -30,8 +32,10 @@ import { sparkHref } from "../router.ts";
  * rule it has to get right is §4.11's ordering — **subscribe first, then read §4.9**.
  *
  * Reads, in one load: the summary (only for E0's readout and the E3-at-floor nudge — the gate itself is
- * `eligible`, the server's), §4.10's state, and §4.9's deck. The **count in the header is §4.10's
- * `unreviewed`**, never the length of the deck read, so the two cannot drift while a run is in flight.
+ * `eligible`, the server's), §4.10's state, §4.9's deck, and — best-effort (K8 `#42`) — §4.4's
+ * `status=NEEDS_COMPLETION` slice, which feeds T27's polish prompt and nothing else. The **count in the
+ * header is §4.10's `unreviewed`**, never the length of the deck read, so the two cannot drift while a
+ * run is in flight.
  */
 export function Sparks() {
   const [reads, setReads] = useState<DeckReads | null>(null);
@@ -159,6 +163,7 @@ export function Sparks() {
       band={band}
       unreviewed={reads.state.unreviewed}
       summary={reads.summary}
+      incomplete={reads.incomplete}
       view={view}
       onToggleView={() => setView((current) => (current === "deck" ? "list" : "deck"))}
       onRun={() => void runTrigger.fire()}
@@ -171,23 +176,33 @@ export function Sparks() {
   );
 }
 
-/** §4.10's state · §4.9's deck · §3.2's summary — the three reads the band composes from. */
+/** §4.10's state · §4.9's deck · §3.2's summary — the reads the band composes from, plus T27's. */
 interface DeckReads {
   state: EngineState;
   sparks: Spark[];
   summary: VaultSummary;
+  /**
+   * K8 `#42` — the ideas still owed completion (§4.4 with `status=NEEDS_COMPLETION`). The **fourth**
+   * read, and the only one that can fail without the deck failing: it feeds a prompt, not the deck.
+   */
+  incomplete: Idea[];
 }
 
 /** §2.1 S1: the deck is the default, **View all** the escape hatch. UI state, not a route. */
 type DeckView = "deck" | "list";
 
 async function readDeck(): Promise<DeckReads> {
-  const [state, sparks, summary] = await Promise.all([
+  const [state, sparks, summary, incomplete] = await Promise.all([
     engineState(),
     offeredSparks(),
     vaultSummary(),
+    // **Best-effort, deliberately** (K8 `#42`): the completion prompt is a courtesy, and NFR-A1 is
+    // "never degrade the vault". A failed *prompt* read must not take the deck down with it — so it
+    // answers `[]`, and the deck renders exactly as it would with nothing owed. The three reads above
+    // stay fatal: they *are* the deck, and a deck read that failed is a fact the screen must show.
+    listIdeas({ status: "NEEDS_COMPLETION" }).catch(() => []),
   ]);
-  return { state, sparks, summary };
+  return { state, sparks, summary, incomplete };
 }
 
 /**
@@ -198,6 +213,8 @@ function Band(props: {
   band: DeckBand;
   unreviewed: number;
   summary: VaultSummary;
+  /** K8 `#42` — the ideas still owed completion; the band draws T27's prompt for them. */
+  incomplete: Idea[];
   view: DeckView;
   onToggleView: () => void;
   onRun: () => void;
@@ -214,6 +231,11 @@ function Band(props: {
 
   // E0 dominates: the cold composition and nothing else — no cards from a stale read, no shimmer.
   if (band.cold) return <ColdState summary={props.summary} />;
+
+  // K8 `#42` — the ideas still owed completion, in the read's own order (newest owed first). Computed
+  // past E0 on purpose: the cold state is a full statement about breadth, and completing an idea does
+  // not change E0 (its arms are status-blind — `FLOW.md` §4.1), so the prompt would be noise there.
+  const owed = needsCompletion(props.incomplete);
 
   // §4.1 E2 / DESIGN §9: the toggle's bar is **n > 1**, and n is §4.10's `unreviewed` — the number the
   // header already shows, never `cards.length`. The list is the escape hatch for a count, not for an
@@ -237,6 +259,20 @@ function Band(props: {
           </button>
         ) : null}
       </header>
+
+      {/* K8 `#42` — T27's polish prompt, on the deck. Non-blocking, the E4 pattern: it composes *around*
+          reviewable cards and never replaces one. Its one lever opens the newest owed idea, where the
+          missing field is named and supplied (S4 owns the completion edit — T27 is S4 → S4). */}
+      {owed.length > 0 ? (
+        <p className="banner">
+          <span className="banner__body" role="status">
+            {nudgeText(owed.length)}
+          </span>
+          <a className="button button--ghost" href={ideaHref(owed[0]!.id)}>
+            Complete
+          </a>
+        </p>
+      ) : null}
 
       {/* §4.9's head, one card at a time — or, on the toggle, the same read as a list. Either way its
           order is deck order, and nothing here sorts or filters. */}
@@ -307,6 +343,18 @@ function Band(props: {
 interface ResolutionFailure {
   sparkId: string;
   message: string;
+}
+
+/**
+ * K8 `#42` — T27's deck sentence. One line for one owed idea, another for several; the prompt names
+ * the *count*, and the fields are named where they are supplied (S4), not here.
+ */
+function nudgeText(count: number): string {
+  const one = count === 1;
+  return (
+    `${count} idea${one ? "" : "s"} need${one ? "s" : ""} completion — ` +
+    `add what’s missing to put ${one ? "it" : "them"} back in play.`
+  );
 }
 
 /**

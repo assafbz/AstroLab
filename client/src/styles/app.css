@@ -377,6 +377,14 @@ a {
   color: var(--brass-highlight);
 }
 
+/* K8 #42 — T27's prompt on a Vault card: prose inside the card's own link, under the status badge
+   (the badge names the status, this names the next move). */
+.card__prompt {
+  margin: 0.375rem 0 0;
+  color: var(--brass-highlight);
+  font-size: 0.875rem;
+}
+
 .chips--tight {
   margin: 0.75rem 0 0;
 }
@@ -444,6 +452,21 @@ a {
 
 .seedcard__body {
   margin: 0;
+  color: var(--muted);
+}
+
+/* K8 #42 — T27's completion panel on S4: a brass-edged Card, like T09's seeded banner. It is
+   attention, not error — Destructive stays for delete and validation (DESIGN.md §2). */
+.complete {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid var(--brass);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.complete__prompt {
+  margin: 0 0 0.75rem;
   color: var(--muted);
 }
 

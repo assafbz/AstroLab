@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { Vault } from "./Vault.tsx";
@@ -55,6 +55,28 @@ test("a loaded idea links to its detail (T21)", async () => {
 
   const card = await screen.findByRole("link", { name: /A single sentence/ });
   expect(card.getAttribute("href")).toBe("#/ideas/9f1c");
+});
+
+test("a needs-completion card carries T27's prompt — the badge names it, the prompt names the fix", async () => {
+  stubFetch(okList([{ ...IDEA, status: "NEEDS_COMPLETION", monetization: "" }]));
+  render(<Vault />);
+
+  const card = await screen.findByRole("link", { name: /A single sentence/ });
+  expect(within(card).getByText("Needs completion")).toBeTruthy();
+  expect(
+    within(card).getByText("Add the monetization / value angle to put it back in play."),
+  ).toBeTruthy();
+  // The prompt is prose inside the card's own link — never a nested control (§4.4 is a list, not a form).
+  expect(within(card).queryByRole("button")).toBeNull();
+  expect(within(card).queryByRole("link", { name: /complete/i })).toBeNull();
+});
+
+test("an active card carries no prompt — the incomplete case is the only one that prompts", async () => {
+  stubFetch(okList([IDEA]));
+  render(<Vault />);
+
+  const card = await screen.findByRole("link", { name: /A single sentence/ });
+  expect(within(card).queryByText(/to put it back in play/)).toBeNull();
 });
 
 test("an empty filtered result names the filter and offers to clear it (T20)", async () => {

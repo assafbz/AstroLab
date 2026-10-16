@@ -47,12 +47,22 @@ export interface IdeaDetail {
   referenced_by: { forks: string[]; derived: string[] };
 }
 
-/** `docs/API.md` §4.2. The seeded pair is both-or-neither — a blank capture sends both as `null`. */
-export interface CaptureInput {
+/**
+ * `docs/API.md` §4.2 / §4.6 — the four mandatory fields (`PRD.md` §2), spelled **once**.
+ *
+ * Both the blank capture (§4.2) and the iterate (§4.6) carry exactly this set, and §4.6's clear of
+ * `NEEDS_COMPLETION` is decided from it (`derivedStatus`, `api/src/decision.ts`). Two spellings of
+ * "the mandatory four" would be two places for the set to drift.
+ */
+export interface IdeaFields {
   hypothesis: string;
   problem: string;
   monetization: string;
   domain_tags: string[];
+}
+
+/** `docs/API.md` §4.2. The seeded pair is both-or-neither — a blank capture sends both as `null`. */
+export interface CaptureInput extends IdeaFields {
   origin_spark_id?: string | null;
   decision_id?: string | null;
 }
@@ -61,6 +71,8 @@ export interface CaptureInput {
 export interface VaultFilters {
   domain?: string | null;
   lineage?: Idea["lineage_kind"] | null;
+  /** K8 `#42` — the deck's and the Vault's *needs completion* prompt reads this slice. */
+  status?: Idea["status"] | null;
 }
 
 /**
