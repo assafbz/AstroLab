@@ -14,7 +14,7 @@ import type { Migration } from "./migrate.js";
  * migration rather than an edit to `0001_init`, which is already applied — rewriting it would break
  * forward-only and skip every store already at v1.
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;
 
 export const MIGRATIONS: Migration[] = [
   {
@@ -311,5 +311,23 @@ ALTER TABLE idea_new RENAME TO idea;
     // changes no existing constraint, so SQLite applies it in place. The column-level CHECK is enforced on
     // both INSERT and UPDATE (probed on `node:sqlite`, `foreign_keys=ON`, a table that already has rows).
     sql: "ALTER TABLE idea ADD COLUMN mutation_delta TEXT CHECK (lineage_kind = 'FORK' OR mutation_delta IS NULL);",
+  },
+  {
+    version: 6,
+    name: "0006_idea_new_domain",
+    // EV1 (#43): NFR-Q1 needs *"of the accepted sparks, how many landed in a new domain"*
+    // (`PRD.md` §5 / NFR-Q1) recorded as an instrument, and no `idea`/`idea_version` column carried one.
+    //
+    // The column lives on **`idea`, not `decision`** — the rejected alternative, for the next reader:
+    // a `decision` row is immutable and one per ACCEPT, but the accepted root's domain *can* change
+    // after the accept (§4.6 iterate / T27 completion), so a `decision`-stored flag goes stale on
+    // exactly the follow-through this metric reads, while an idea-stored flag travels with the row.
+    // A `decision.new_domain` ready-slot would also be a column nothing writes (a trap), not a plan.
+    //
+    // A plain `ALTER TABLE … ADD COLUMN`, not a rebuild: unlike `0003`/`0004` it adds a *new* column and
+    // changes no existing constraint, so SQLite applies it in place (`0005`'s precedent). Nullable ⇒
+    // every pre-existing row lands `NULL` = **"not recorded"**, which is the state the report must be
+    // able to say out loud: the metric counts `new_domain = 1`, never `!= 1`, so no backfill is faked.
+    sql: "ALTER TABLE idea ADD COLUMN new_domain INTEGER CHECK (new_domain IN (0,1));",
   },
 ];
