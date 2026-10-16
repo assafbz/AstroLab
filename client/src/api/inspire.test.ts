@@ -1,7 +1,22 @@
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { afterEach, expect, test, vi } from "vitest";
 
 import { inspireSeed } from "./inspire.ts";
 import type { InspireSeed } from "./types.ts";
+
+/** `client/src/` — this file is `client/src/api/inspire.test.ts`. */
+const SRC_DIR = fileURLToPath(new URL("../", import.meta.url));
+
+/** Every non-test client module, from its source, as a path relative to `client/src`. */
+function clientModules(): { path: string; source: string }[] {
+  return readdirSync(SRC_DIR, { recursive: true })
+    .map((name) => String(name))
+    .filter((name) => /\.tsx?$/.test(name) && !/\.test\.tsx?$/.test(name))
+    .map((name) => ({ path: name, source: readFileSync(join(SRC_DIR, name), "utf8") }));
+}
 
 /** A stubbed `fetch` whose calls the test can inspect. */
 function stubFetch(impl: (url: string, init?: RequestInit) => Promise<Response>) {
@@ -75,4 +90,26 @@ test("a refusal that is not a 404 keeps its own code — one envelope path", asy
   );
 
   await expect(inspireSeed("1a2b")).rejects.toMatchObject({ code: "unauthorized", status: 401 });
+});
+
+test("#119 — §4.14 is read from exactly one place, so the seed has one definition to be stale against", () => {
+  const modules = clientModules();
+  // Non-vacuity: the walk must be reading the client source (and its `.tsx`, not just its `.ts`), and
+  // it must *see* the module §4.14 lives in — an empty read would pass the rule below for the wrong
+  // reason. This is the same shape as the deck seam's one-call-site guards, one package over.
+  const paths = modules.map((module) => module.path);
+  expect(paths).toContain("api/inspire.ts");
+  expect(paths).toContain("screens/Capture.tsx");
+  expect(paths).toContain("App.tsx");
+
+  const readers = modules
+    // The module itself defines `inspireSeed(`; the rule is about its **callers**.
+    .filter((module) => module.path !== "api/inspire.ts")
+    .filter((module) => module.source.includes("inspireSeed("))
+    .map((module) => module.path);
+
+  // Plant: add `await inspireSeed(id)` in any other module → a second entry → red.
+  expect(readers).toEqual(["screens/Capture.tsx"]);
+  // Residual: text, not syntax. A comment or string mentioning `inspireSeed(` in another module
+  // false-positives, and a call spelled `inspireSeed (…)` — name and paren apart — false-negatives.
 });

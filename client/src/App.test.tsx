@@ -80,6 +80,38 @@ test("#/capture renders S2 Capture, not the placeholder", () => {
   expect(screen.queryByText(/not built yet/i)).toBeNull();
 });
 
+test("#/capture/<id> renders the seeded S2 Capture, before matchScreen — the Capture tab stays lit (T09)", async () => {
+  window.location.hash = "#/capture/abc";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/inspire")) {
+        // §4.14 — the seed the seeded capture prefills from.
+        return Promise.resolve(
+          json({
+            spark_id: "abc",
+            direction: "Pair the transit lattice with audio",
+            claim: "Scheduling and DSP share a shape.",
+            what_it_takes: "Two weekends on the ingest path.",
+            first_step: "Instrument the ingest path before the model runs.",
+            domain_tags: ["transit"],
+          }),
+        );
+      }
+      return Promise.resolve(json({ error: { code: "not_found", message: "no route" } }, 404));
+    }),
+  );
+  render(<App />);
+
+  // The per-id seeded route is resolved *before* `matchScreen` — without that it falls through to the
+  // shell's not-found — and it renders the same S2, so the Capture tab stays the active one.
+  expect(await screen.findByText("FROM A SPARK")).toBeTruthy();
+  expect(screen.getByRole("heading", { level: 1, name: "Capture" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Capture" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByText(/not built yet/i)).toBeNull();
+});
+
 test("#/vault renders S3 Vault, not the placeholder", async () => {
   renderAt("#/vault");
 

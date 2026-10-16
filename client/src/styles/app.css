@@ -156,7 +156,13 @@ a {
   font-size: 0.875rem;
 }
 
+/* A save failure, inline under the form. Flex so a retryable one can carry T29's Retry beside the
+   text; a failure without a Retry is a single child and reads unchanged. */
 .form-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   margin: 0 0 1rem;
   padding: 0.75rem;
   border: 1px solid var(--destructive);
@@ -422,6 +428,21 @@ a {
 
 .banner__body {
   flex: 1;
+  margin: 0;
+  color: var(--muted);
+}
+
+/* T09's seeded banner (stitch-prompts.md §3 · FLOW.md §2.2): a Card with a **brass** edge, a mono
+   label and one line — the form beneath it is pre-seeded from the spark. */
+.seedcard {
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  border: 1px solid var(--brass);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.seedcard__body {
   margin: 0;
   color: var(--muted);
 }
