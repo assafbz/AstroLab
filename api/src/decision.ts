@@ -136,10 +136,14 @@ export function parseDecisionInput(body: unknown): DecisionInput {
  */
 export function resolveDecision(db: DatabaseSync, sparkId: string, input: DecisionInput): Decision {
   return vaultMutation(db, () => {
+    // The clock is read once, at the top: §3.5's `undoable` is a property of the *response time*, so
+    // both branches below — the idempotent repeat and the fresh resolution — read it off the same pass.
+    const now = isoTimestamp();
+
     // 1 — the key first. A recorded row for this `decision_id` **and this spark** is the retry, and it
     // answers the first `Decision` untouched; putting the state check first would `409` a legal retry.
     const prior = findDecision(db, input.decision_id);
-    if (prior !== null && prior.spark_id === sparkId) return toDecision(prior);
+    if (prior !== null && prior.spark_id === sparkId) return toDecision(db, prior, now);
 
     // 2 — §2: an unknown spark is `not_found`. The resolving read is status-blind, so a resolved spark
     // still reads here; only an id the vault never held is absent.
@@ -160,24 +164,17 @@ export function resolveDecision(db: DatabaseSync, sparkId: string, input: Decisi
       throw new ConflictError(`spark ${sparkId} is ${spark.status}`);
     }
 
-    const decidedAt = isoTimestamp();
-    const resultIdeaId = input.kind === "ACCEPT" ? accept(db, spark, decidedAt) : null;
+    const resultIdeaId = input.kind === "ACCEPT" ? accept(db, spark, now) : null;
     if (input.kind === "DISMISS") recordDismissal(db, spark.pair_key);
 
     db.prepare(
       `INSERT INTO decision (id, spark_id, kind, result_idea_id, decided_at) VALUES (?, ?, ?, ?, ?)`,
-    ).run(input.decision_id, sparkId, input.kind, resultIdeaId, decidedAt);
+    ).run(input.decision_id, sparkId, input.kind, resultIdeaId, now);
     db.prepare(`UPDATE spark SET status = ? WHERE id = ?`).run(SPARK_STATUS[input.kind], sparkId);
 
-    return {
-      decision_id: input.decision_id,
-      spark_id: sparkId,
-      kind: input.kind,
-      result_idea_id: resultIdeaId,
-      spark_status: SPARK_STATUS[input.kind],
-      decided_at: decidedAt,
-      undoable: true,
-    };
+    // Read the row back so the shape is built **once**, from the stored row — including its `rowid`,
+    // which the "a later decision exists" arm needs and an inline object cannot carry.
+    return toDecision(db, findDecision(db, input.decision_id) as DecisionRow, now);
   });
 }
 
@@ -214,8 +211,13 @@ function derivedStatus(fields: IdeaFields): "ACTIVE" | "NEEDS_COMPLETION" {
   return supplied ? "ACTIVE" : "NEEDS_COMPLETION";
 }
 
-/** The `decision` row as stored (`docs/SCHEMA.md`; the DDL's CHECK is the vocabulary). */
-interface DecisionRow {
+/**
+ * The `decision` row as stored (`docs/SCHEMA.md`; the DDL's CHECK is the vocabulary), plus its
+ * `rowid` — `decided_at` is second-granular, so "the next decision" is ordered by the same monotonic
+ * insertion order the run reads use (§4.9, §4.15).
+ */
+export interface DecisionRow {
+  rowid: number;
   id: string;
   spark_id: string;
   kind: Decision["kind"];
@@ -225,7 +227,9 @@ interface DecisionRow {
 
 function findDecision(db: DatabaseSync, id: string): DecisionRow | null {
   const row = db
-    .prepare("SELECT id, spark_id, kind, result_idea_id, decided_at FROM decision WHERE id = ?")
+    .prepare(
+      "SELECT rowid, id, spark_id, kind, result_idea_id, decided_at FROM decision WHERE id = ?",
+    )
     .get(id) as DecisionRow | undefined;
   return row ?? null;
 }
@@ -234,11 +238,13 @@ function findDecision(db: DatabaseSync, id: string): DecisionRow | null {
  * §3.5's shape, from the row. `spark_status` is derived from `kind` rather than read back off the
  * spark, so the answer is the resolution's own and a repeat cannot describe it differently.
  *
- * `undoable` is `true` on a fresh resolution, and §5.4 leaves the window unspecified: it is server
- * policy, and **K6 `#40`** owns it. Until that lands there is no closed window, so nothing is
- * un-reversible and this is the honest reading rather than a placeholder.
+ * `undoable` is `undoableAt`'s verdict **at response time** — §3.5's "reflects server-side
+ * reversibility (§5.4) at response time". A fresh resolution is reversible (nothing has happened to
+ * retire it) and so is a repeat inside the window; a repeat of a decision a later swipe, a closed
+ * window, or an edit has retired is `false`. The window is the server policy §4.15 owns, and this is
+ * the *same* export §4.15's handler consults, so the two surfaces cannot describe one state two ways.
  */
-function toDecision(row: DecisionRow): Decision {
+function toDecision(db: DatabaseSync, row: DecisionRow, now: string): Decision {
   return {
     decision_id: row.id,
     spark_id: row.spark_id,
@@ -246,6 +252,56 @@ function toDecision(row: DecisionRow): Decision {
     result_idea_id: row.result_idea_id,
     spark_status: SPARK_STATUS[row.kind],
     decided_at: row.decided_at,
-    undoable: true,
+    undoable: undoableAt(db, row, now),
   };
+}
+
+/**
+ * The undo window — `docs/API.md` §4.15's *"server-side policy (`FLOW.md` §5.4 leaves its duration
+ * unspecified)"*. Five minutes: long enough to catch a mis-swipe, short enough that the deck has
+ * moved on. A named constant and **not** `config`, which is the gate-threshold surface (§3.4);
+ * promote it only if the window should be operator-tunable.
+ */
+export const UNDO_WINDOW_SECONDS = 300;
+
+/**
+ * Why a decision is no longer reversible — `docs/API.md` §4.15 / §3.5. Four arms, in the precedence
+ * §4.15 pins (a later decision, then the window, then the derived idea): a state the client must see
+ * the same way whether it reads `undoable` or calls the route.
+ */
+export type UndoRefusal = "superseded" | "expired" | "edited" | "missing";
+
+/**
+ * The **one** reversibility predicate (§4.15 / §3.5, K6 `#40`). `null` means reversible; otherwise
+ * the first arm that retires it:
+ *
+ * - `superseded` — a later `decision` exists. §5.4's *"no longer than until the next decision"* is the
+ *   deck session's next swipe, either card, so the test is **global** and ordered by `rowid`
+ *   (`decided_at` is second-granular and ties).
+ * - `expired` — the window closed (`UNDO_WINDOW_SECONDS`).
+ * - `edited` / `missing` — ACCEPT (and a committed seeded INSPIRED save) retracts its derived idea
+ *   *"only if still unedited"* (§5.4): an idea past version 1 is edited, and one already gone leaves
+ *   nothing to retract. A DISMISS created no idea, so neither arm applies to it.
+ *
+ * §4.13's `undoable` calls this through `toDecision`; §4.15's handler calls it too, so one state has
+ * one answer. Kept out of the transaction-free read path deliberately: it reads the vault, so every
+ * caller already holds a connection.
+ */
+export function undoRefusal(db: DatabaseSync, row: DecisionRow, now: string): UndoRefusal | null {
+  const later = db.prepare("SELECT 1 FROM decision WHERE rowid > ? LIMIT 1").get(row.rowid);
+  if (later !== undefined) return "superseded";
+  if (Date.parse(now) - Date.parse(row.decided_at) > UNDO_WINDOW_SECONDS * 1000) return "expired";
+  if (row.kind !== "DISMISS") {
+    const idea = db
+      .prepare("SELECT current_version FROM idea WHERE id = ?")
+      .get(row.result_idea_id) as { current_version: number } | undefined;
+    if (idea === undefined) return "missing";
+    if (idea.current_version > 1) return "edited";
+  }
+  return null;
+}
+
+/** §3.5's `undoable`, as the boolean the response carries — `undoRefusal`'s null. */
+export function undoableAt(db: DatabaseSync, row: DecisionRow, now: string): boolean {
+  return undoRefusal(db, row, now) === null;
 }

@@ -41,18 +41,31 @@ function count(db: DatabaseSync, table: string): number {
   return row.n;
 }
 
-/** The two sources a spark pairs, with distinct tags so the union is observable. */
-function seedPair(db: DatabaseSync): void {
-  for (const [id, tags] of [
-    ["a", ["fintech"]],
-    ["b", ["health", "fintech"]],
-  ] as const) {
+/** Root ideas with the given tags, so a spark's derived union is observable. */
+function seedIdeas(db: DatabaseSync, rows: ReadonlyArray<readonly [string, readonly string[]]>): void {
+  for (const [id, tags] of rows) {
     db.prepare(
       `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                          lineage_parent_id, status, visibility, current_version, created_at, updated_at)
        VALUES (?, 'h', 'p', 'm', ?, 'ROOT', NULL, 'ACTIVE', 'PRIVATE', 1, 't', 't')`,
     ).run(id, JSON.stringify(tags));
   }
+}
+
+/** The two sources a spark pairs, with distinct tags so the union is observable. */
+function seedPair(db: DatabaseSync): void {
+  seedIdeas(db, [
+    ["a", ["fintech"]],
+    ["b", ["health", "fintech"]],
+  ]);
+}
+
+/** A second, disjoint pair — a second OFFERED spark needs its own `pair_key` (`ux_spark_live`). */
+function seedSecondPair(db: DatabaseSync): void {
+  seedIdeas(db, [
+    ["c", ["govt"]],
+    ["d", ["edu"]],
+  ]);
 }
 
 function seedSpark(db: DatabaseSync, id: string, a: string, b: string, status = "OFFERED"): void {
@@ -347,6 +360,80 @@ describe("resolveDecision — idempotency on `decision_id` (§4.13, FLOW §2.2/N
       first.close();
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("`undoable` is §4.15's window, computed at response time (§3.5, K6 #40 gate 1)", () => {
+  // The wiring check: `undoable` must come from the shared predicate and not a hardcoded `true`. Each
+  // test below puts the vault in a state the predicate forbids and reads the *response* back through
+  // the §4.13 repeat path — the only way to observe a resolved decision's `Decision`. If `toDecision`
+  // ever hardcodes `true` again (its pre-K6 form), every one of these reddens.
+
+  test("a fresh resolution stays `true` — the pinned reading still holds", () => {
+    const db = newDb();
+    seedPair(db);
+    seedSpark(db, "s1", "a", "b");
+
+    expect(resolveDecision(db, "s1", accept).undoable).toBe(true);
+    expect(resolveDecision(db, "s1", accept).undoable).toBe(true); // the repeat, still inside the window
+  });
+
+  test("a later decision retires it — §5.4's 'no longer than until the next decision', global", () => {
+    const db = newDb();
+    seedPair(db);
+    seedSpark(db, "s1", "a", "b");
+    seedSecondPair(db);
+    seedSpark(db, "s2", "c", "d");
+    resolveDecision(db, "s1", accept);
+
+    // A second, unrelated card's swipe is the "next decision" — the window is the deck session's.
+    resolveDecision(db, "s2", { decision_id: "d2", kind: "DISMISS" });
+
+    expect(resolveDecision(db, "s1", accept).undoable).toBe(false);
+  });
+
+  test("a closed window retires it — server policy, `UNDO_WINDOW_SECONDS`", () => {
+    const db = newDb();
+    seedPair(db);
+    seedSpark(db, "s1", "a", "b");
+    resolveDecision(db, "s1", accept);
+    // Move the resolution past the window rather than wait it out.
+    db.prepare("UPDATE decision SET decided_at = ? WHERE id = 'd-accept'").run("2000-01-01T00:00:00Z");
+
+    expect(resolveDecision(db, "s1", accept).undoable).toBe(false);
+  });
+
+  test("an edited derived idea retires it — §5.4 retracts 'only if still unedited'", () => {
+    const db = newDb();
+    seedPair(db);
+    seedSpark(db, "s1", "a", "b");
+    const decision = resolveDecision(db, "s1", accept);
+
+    db.prepare("UPDATE idea SET current_version = 2, updated_at = 't2' WHERE id = ?").run(
+      decision.result_idea_id,
+    );
+
+    expect(resolveDecision(db, "s1", accept).undoable).toBe(false);
+  });
+
+  test("a deleted derived idea retires it — nothing left to retract", () => {
+    const db = newDb();
+    seedPair(db);
+    seedSpark(db, "s1", "a", "b");
+    const decision = resolveDecision(db, "s1", accept);
+
+    db.prepare("DELETE FROM idea WHERE id = ?").run(decision.result_idea_id);
+
+    expect(resolveDecision(db, "s1", accept).undoable).toBe(false);
+  });
+
+  test("a DISMISS has no idea to edit or lose — only the window and a later decision retire it", () => {
+    const db = newDb();
+    seedPair(db);
+    seedSpark(db, "s1", "a", "b");
+    resolveDecision(db, "s1", dismiss);
+
+    expect(resolveDecision(db, "s1", dismiss).undoable).toBe(true);
   });
 });
 
