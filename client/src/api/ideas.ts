@@ -1,8 +1,15 @@
 import { apiRequest } from "./client.ts";
-import type { CaptureInput, Idea, IdeaDetail, IdeaFields, VaultFilters } from "./types.ts";
+import type {
+  CaptureInput,
+  ForkFields,
+  Idea,
+  IdeaDetail,
+  IdeaFields,
+  VaultFilters,
+} from "./types.ts";
 
 /**
- * The vault endpoints the client uses (`docs/API.md` §4.2, §4.4, §4.5, §4.6, §4.8). Pure
+ * The vault endpoints the client uses (`docs/API.md` §4.2, §4.4, §4.5, §4.6, §4.7, §4.8). Pure
  * request/build functions — no React, no state — so the screens stay thin and this is tested directly.
  */
 
@@ -68,6 +75,25 @@ export function iterateIdea(id: string, fields: IdeaFields): Promise<Idea> {
       hypothesis: fields.hypothesis,
       problem: fields.problem,
       monetization: fields.monetization,
+      domain_tags: fields.domain_tags,
+    }),
+  });
+}
+
+/**
+ * `POST /v1/ideas/{id}/fork` (§4.7) — a **new**, addressable node, so `201` and the response is the
+ * fork itself (capture and fork create; iterate and delete do not — §4.6/§4.8).
+ *
+ * The body is the frozen two fields and nothing else: §4.7's request carries no text, and the fork
+ * copies the parent's `hypothesis` / `problem` / `monetization` verbatim (V4 `#15`). A blank delta is
+ * a `422`, and a `domain_tags` set **equal** to the parent's is a `409 conflict` — the client's cue
+ * to offer Iterate instead (a same-domain branch is a refinement, not a fork; T25).
+ */
+export function forkIdea(id: string, fields: ForkFields): Promise<Idea> {
+  return apiRequest<Idea>(`/v1/ideas/${encodeURIComponent(id)}/fork`, {
+    method: "POST",
+    body: JSON.stringify({
+      mutation_delta: fields.mutation_delta,
       domain_tags: fields.domain_tags,
     }),
   });

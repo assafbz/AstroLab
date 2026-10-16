@@ -10,11 +10,21 @@ import { HYPOTHESIS_MAX, counterText, validateCapture } from "../domain/capture.
 import type { CaptureDraft, CaptureErrors } from "../domain/capture.ts";
 import { completionPrompt, draftFromIdea } from "../domain/completion.ts";
 import { deleteWarning } from "../domain/delete-warning.ts";
-import { ideaHref } from "../router.ts";
+import { danglingParentId } from "../domain/lineage.ts";
+import { forkHref, ideaHref, iterateHref } from "../router.ts";
 
 /**
- * S4 Idea Detail (`FLOW.md` §2.1 T21, T26, T27) — one idea: the four fields, the lineage chain, muted
- * provenance, and the actions V8 and K8 give it (Delete; **Complete**).
+ * S4 Idea Detail (`FLOW.md` §2.1 T21, T22, T24, T26, T27) — one idea: the four fields, the lineage
+ * chain, muted provenance, and the actions it owns: **Iterate** (T22, → S6), **Fork** (T24, → S5),
+ * **Delete** (T26) and, on a `NEEDS_COMPLETION` idea, **Complete** (T27, S4 → S4).
+ *
+ * **Iterate and Fork are route changes, not writes** — each names its own screen, and that screen owns
+ * the request (§4.6 / §4.7). Nothing is forked or iterated from here.
+ *
+ * **The lineage chain shows a tombstone for a parent that is gone** (V8 `#19`'s carry). §4.8 leaves a
+ * deleted fork child holding its `lineage_parent_id` while §4.5's walk stops, so the chain can be empty
+ * for a `FORK`; rendering that as-is would claim the idea was always a root. `domain/lineage.ts` decides
+ * it, and the tombstone renders the id alone — never a link, never an invented title (D5).
  *
  * **Reference ids are rendered as the contract returns them, never resolved** (D5, the #80 carry).
  * §4.5 exposes ids only, resolving would cost a request per ref, and a ref that names a tombstone —
@@ -167,6 +177,8 @@ export function IdeaDetail(props: { id: string }) {
 
   const { idea, lineage, provenance, referenced_by } = state.detail;
   const warning = deleteWarning(referenced_by);
+  /** V8 `#19`'s carry — the parent id the chain cannot resolve, or `null` when the chain is whole. */
+  const tombstone = danglingParentId(idea, lineage);
   const completionErrors: CaptureErrors = draft !== null && attempted ? validateCapture(draft) : {};
   const over = draft !== null && draft.hypothesis.length > HYPOTHESIS_MAX;
 
@@ -304,6 +316,15 @@ export function IdeaDetail(props: { id: string }) {
               </a>
             </li>
           ))}
+          {/* V8 `#19`'s carry: a parent that was **deleted** leaves the id and nothing to read (§4.8).
+              Rendered first, where the parent would have stood, as the reference alone — no link, no
+              invented title (D5). */}
+          {tombstone === null ? null : (
+            <li className="chain__node chain__node--tombstone">
+              <span className="chain__id mono">{tombstone}</span>
+              <span className="chain__title">Deleted — the reference is kept.</span>
+            </li>
+          )}
           <li className="chain__node chain__node--current">
             <span className="chain__id mono">{idea.id}</span>
             <span className="chain__title">{idea.hypothesis}</span>
@@ -327,7 +348,15 @@ export function IdeaDetail(props: { id: string }) {
         </section>
       ) : null}
 
+      {/* The screen's actions (stitch §5): Iterate is S6 (T22) and Fork is S5 (T24) — both route
+          changes, each with its own screen owning the write; Delete is the destructive one. */}
       <div className="actionbar">
+        <a className="button button--ghost" href={iterateHref(idea.id)}>
+          Iterate
+        </a>
+        <a className="button" href={forkHref(idea.id)}>
+          Fork
+        </a>
         <button
           type="button"
           className="button button--destructive"

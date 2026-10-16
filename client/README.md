@@ -2,7 +2,7 @@
 
 The mobile-first PWA. S2 Capture, S3 Vault and S4 Idea Detail are built (V8, `#19`), S0 Onboarding
 (O3, `#23`), S1 Sparks' **E0 branch** (O4, `#24` — the deck is K2 `#36`) with its **S1b Spark Detail**
-(K3 `#37`); S5/S6 are still the shell's placeholders until their own issues land. S1 and S1b
+(K3 `#37`); S5 Fork and S6 Iterate are built as of V9 `#20`. S1 and S1b
 **resolve** sparks (ACCEPT / DISMISS through §4.13) as of K7 `#41`.
 
 - **Stack:** Vite + React + TypeScript (`docs/adr/0005-client-stack.md`).
@@ -28,14 +28,18 @@ labels.
 | S4 Idea detail | `#/ideas` | built (V8) — the bare path is a "choose an idea" landing |
 | S4 Idea detail | `#/ideas/<id>` | built (V8) — the per-id route |
 | S1b Spark detail | `#/sparks/<id>` | built (K3 `#37`) — the per-id route, reached by tapping a card |
-| S5 Fork | `#/fork` | placeholder |
-| S6 Iterate | `#/iterate` | placeholder |
+| S5 Fork | `#/fork` | built (V9 `#20`) — the bare path is E3's parent picker |
+| S5 Fork | `#/fork/<id>` | built (V9 `#20`) — seeded with the parent (T24) |
+| S6 Iterate | `#/iterate` | built (V9 `#20`) — the bare path composes a "choose an idea" landing |
+| S6 Iterate | `#/iterate/<id>` | built (V9 `#20`) — the node it edits (T22) |
 
-The per-id routes are resolved **before** `matchScreen`: neither `#/ideas/<id>` nor `#/sparks/<id>` is
-one of `SCREENS` (whose S4 entry is the bare `#/ideas`, and whose S1 entry is `/`), so the matcher alone
-would call them a not-found. The S4 paths leave the **Vault** tab active — S4 is reached from the Vault —
-and `#/sparks/<id>` leaves the **Sparks** tab active, since S1b is reached from the deck: a screen with
-no tab of its own must not read as "nowhere".
+The per-id routes are resolved **before** `matchScreen`: `#/ideas/<id>`, `#/sparks/<id>`,
+`#/capture/<spark_id>`, `#/fork/<id>` and `#/iterate/<id>` are each *not* one of `SCREENS` (whose S4
+entry is the bare `#/ideas`, whose S1 entry is `/`, and whose S2/S5/S6 entries are the bare `#/capture`,
+`#/fork` and `#/iterate`), so the matcher alone would call them a not-found. The S4 paths — and the
+S5/S6 routes reached from them — leave the **Vault** tab active, because that is where they are reached
+from; `#/sparks/<id>` leaves the **Sparks** tab active, since S1b is reached from the deck: a screen
+with no tab of its own must not read as "nowhere".
 
 ### The entry rule — where `/` goes
 
@@ -121,9 +125,44 @@ the Vault (T19/T20/T29), the lineage chain and muted provenance (T21), and the d
 
 S1b (Spark Detail) is not in S0–S6 and has no route yet; the deck and the engine's E0–E4 read are K2
 `#36` / W8 `#33` (so `#/` still shows the deck's placeholder wherever the gate is open), the seeded
-capture path (`origin_spark_id`/`decision_id`) needs the spark deck, and the S4 Iterate/Fork actions
-are V9 (`#20`). Self-hosted Geist / JetBrains Mono are deferred — the token file falls back to system stacks
+capture path (`origin_spark_id`/`decision_id`) needs the spark deck. (V9 `#20` has since landed the
+S4 Iterate/Fork actions, S5 Fork and S6 Iterate — see below.) Self-hosted Geist / JetBrains Mono are deferred — the token file falls back to system stacks
 until a screen needs the real faces.
+
+## Forking and iterating — S5 and S6 (V9 `#20`)
+
+- **A fork's request is the frozen two fields.** `POST /v1/ideas/{id}/fork` (§4.7) carries only
+  `mutation_delta` + `domain_tags`; the fork's `hypothesis` / `problem` / `monetization` are the
+  **parent's, copied server-side**. So S5 shows the parent (dimmed, labelled `PARENT`) and never an
+  editor for those three: what the user writes is what **changed**. A test pins the body to exactly the
+  two fields, because a third key would be a `422`.
+- **Same-domain is set equality, order- and duplicate-insensitive** (§4.7). The fork's domain set must
+  **differ** from the parent's, and a **superset differs** — that is the widening case the flywheel runs
+  on. `sameDomainSet` (`src/domain/capture.ts`) mirrors the server's own rule, so the screen makes the
+  decision *before* the request and answers a server `409` with the same **Iterate instead** offer: one
+  answer, two ways of arriving at it.
+- **Bare `#/fork` is E3's entry**, and §4.7 needs a parent — so it composes a **parent picker** over
+  §4.4, the same read the Vault renders. No second idea list, no second transport; an empty vault
+  composes an invitation, not a blank list.
+- **An iterate's request is the four mandatory fields verbatim** (§4.6), so S6's draft *is* the body:
+  it starts from the idea's own fields via `draftFromIdea`, the same function S4's completion editor
+  uses, rather than a second spelling of the four. A committed save **returns to S4** instead of
+  patching itself — the node's own read is the snapshot that cannot drift (§4.10's rule).
+- **"A refinement that changes nothing is not a version"** (`DESIGN.md` §8). `sameDraft` decides it:
+  `domain_tags` as a **set** (removing and re-adding a tag in another position is the same domains),
+  the three text fields **as typed** (a whitespace edit is a real change, because §4.6 stores what was
+  written). The CTA is disabled with the mono *"No changes yet"* while the form matches the current
+  version; otherwise it stays tappable, and validation runs on the first press then live — Capture's
+  rule (§5.2/T17), so the inline error can follow the tap.
+- **Version history is not lineage.** S6's rows are a **flat** list opening read-only: no brass node
+  markers, no connectors, and no *"iterate from this version"* affordance — that is a branch, and a
+  branch is Fork. The chain vocabulary belongs to LIVING LINEAGE on S4, and a version is not an ancestor
+  (`DESIGN.md` §8, L1).
+- **E3 composes three levers** (`DESIGN.md` §9): *Add idea* (S2) · *Fork an idea into a new domain*
+  (`#/fork`) · *Recompute*. `EmptyState`'s `tertiary` exists for that composition alone.
+- **Guards.** `src/domain/deck-interaction.test.ts` holds the vault-screen import rule — S2/S3/S4 **and**
+  the two screens this lane adds may not reach `api/sparks.ts` or the run policy, since a vault write
+  must succeed with the AI down (NFR-A1). Each guard in this lane was planted and watched red.
 
 ## Resolving a spark — S1 and S1b (K7 `#41`)
 

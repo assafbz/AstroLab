@@ -3,8 +3,12 @@ import { describe, expect, test } from "vitest";
 import {
   SCREENS,
   captureHref,
+  forkHref,
+  forkParentIdFromPath,
   ideaHref,
   ideaIdFromPath,
+  iterateHref,
+  iterateIdFromPath,
   matchScreen,
   routeHref,
   seedSparkIdFromPath,
@@ -143,4 +147,42 @@ describe("seedSparkIdFromPath", () => {
 test("captureHref is the hash form of a per-id path, and round-trips through seedSparkIdFromPath", () => {
   expect(captureHref("x")).toBe("#/capture/x");
   expect(seedSparkIdFromPath(captureHref("x").slice(1))).toBe("x");
+});
+
+describe("forkParentIdFromPath / iterateIdFromPath (V9 #20)", () => {
+  test("each resolves the id in its own per-id path", () => {
+    expect(forkParentIdFromPath("/fork/abc")).toBe("abc");
+    expect(iterateIdFromPath("/iterate/abc")).toBe("abc");
+  });
+
+  test("a trailing slash resolves — a pasted `#/fork/abc/` is not a not-found", () => {
+    expect(forkParentIdFromPath("/fork/abc/")).toBe("abc");
+    expect(iterateIdFromPath("/iterate/abc/")).toBe("abc");
+  });
+
+  test("the bare paths carry no id — S5 picks a parent, S6 asks which node", () => {
+    expect(forkParentIdFromPath("/fork")).toBeNull();
+    expect(forkParentIdFromPath("/fork/")).toBeNull();
+    expect(iterateIdFromPath("/iterate")).toBeNull();
+    expect(iterateIdFromPath("/iterate/")).toBeNull();
+  });
+
+  test("a further segment is not a route — the server answers a not-found envelope too (§2)", () => {
+    expect(forkParentIdFromPath("/fork/a/b")).toBeNull();
+    expect(iterateIdFromPath("/iterate/a/b")).toBeNull();
+  });
+
+  test("neither resolver claims the other's path", () => {
+    expect(forkParentIdFromPath("/iterate/abc")).toBeNull();
+    expect(iterateIdFromPath("/fork/abc")).toBeNull();
+    expect(forkParentIdFromPath("/")).toBeNull();
+    expect(iterateIdFromPath("")).toBeNull();
+  });
+});
+
+test("forkHref / iterateHref are the hash forms, and round-trip through their resolvers", () => {
+  expect(forkHref("x")).toBe("#/fork/x");
+  expect(forkParentIdFromPath(forkHref("x").slice(1))).toBe("x");
+  expect(iterateHref("x")).toBe("#/iterate/x");
+  expect(iterateIdFromPath(iterateHref("x").slice(1))).toBe("x");
 });

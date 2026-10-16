@@ -16,6 +16,12 @@ export function EmptyState(props: {
   action?: EmptyAction;
   /** A second action, drawn ghost; `undefined` renders the composition the single-action callers have. */
   secondary?: EmptyAction;
+  /**
+   * A third action, also ghost. Only `DESIGN.md` §9's **E3** composes three — *Add idea* (S2),
+   * *Fork an idea into a new domain* (S5) and *Recompute* — and the order here is the order it draws:
+   * the primary, then the two quiet levers left to right.
+   */
+  tertiary?: EmptyAction;
 }) {
   return (
     <section className="empty">
@@ -24,6 +30,7 @@ export function EmptyState(props: {
       <div className="empty__actions">
         <Action action={props.action} />
         <Action action={props.secondary} quiet />
+        <Action action={props.tertiary} quiet />
       </div>
     </section>
   );

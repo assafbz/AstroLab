@@ -139,6 +139,29 @@ test("a bare #/ideas composes a 'choose an idea' landing, never blank (D10)", ()
   expect(screen.queryByText(/not built yet/i)).toBeNull();
 });
 
+test("#/iterate/<id> renders S6 Iterate, before matchScreen — the Vault tab stays lit (V9 #20)", async () => {
+  renderAt("#/iterate/abc");
+
+  // The per-id route is resolved *before* `matchScreen` (S6's `SCREENS` entry is the bare
+  // `#/iterate`), and S6 is reached from S4, so the Vault tab stays the active one (D8).
+  expect(await screen.findByRole("heading", { level: 1, name: "Iterate" })).toBeTruthy();
+  expect(screen.getByText("abc")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Vault" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByText(/not built yet/i)).toBeNull();
+});
+
+test("a bare #/iterate composes a 'choose an idea' landing, never an editor over nothing (V9 #20)", () => {
+  renderAt("#/iterate");
+
+  // T22 is S4 → S6: with no id there is no node to refine, and a blank editor would claim otherwise.
+  expect(screen.getByText("Choose an idea to refine.")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Go to the vault" }).getAttribute("href")).toBe(
+    "#/vault",
+  );
+  expect(screen.getByRole("link", { name: "Vault" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByText(/not built yet/i)).toBeNull();
+});
+
 /** `#/` is S1 (home). Whichever entry brought the user there, a cold vault lands the E0 composition. */
 test("#/ renders S1, and a vault below the floor lands E0 Cold — not a placeholder", async () => {
   window.location.hash = "#/";
@@ -243,11 +266,21 @@ test("a bare #/sparks is still the not-found fallback — the deck is home, at #
   expect(screen.getByText("No screen at /sparks.")).toBeTruthy();
 });
 
-test("a screen V8 does not build still renders its placeholder", () => {
+test("#/fork renders S5's parent picker over the vault — the placeholder is gone (V9 #20)", async () => {
   renderAt("#/fork");
 
-  expect(screen.getByText("S5 · Fork")).toBeTruthy();
-  expect(screen.getByText(/not built yet/i)).toBeTruthy();
+  // E3's entry: bare `#/fork` has no parent, so S5 composes the picker rather than forking nothing.
+  expect(await screen.findByRole("link", { name: /A single sentence/ })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Vault" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByText(/not built yet/i)).toBeNull();
+});
+
+test("#/fork/<id> renders S5 seeded with the parent, before matchScreen (V9 #20)", async () => {
+  renderAt("#/fork/abc");
+
+  expect(await screen.findByLabelText("Parent idea")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Vault" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByText(/not built yet/i)).toBeNull();
 });
 
 test("an unknown path is still the not-found fallback, and the tab bar stays", () => {

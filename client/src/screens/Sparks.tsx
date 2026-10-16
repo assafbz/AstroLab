@@ -309,7 +309,8 @@ function Band(props: {
       )}
 
       {/* E3 is the composed empty; at exactly the floor it adds §9's widening nudge, and its levers are
-          Add idea + Recompute (§5.3; the Fork CTA lands with S5, which owns that route). */}
+          all three of §9's: **Add idea** (S2), **Fork an idea into a new domain** (S5, V9 `#20` — the
+          flywheel's own lever: a fork widens the vault) and **Recompute** (§5.3). */}
       {band.exhausted ? (
         <EmptyState
           title="No sparks left — for now."
@@ -319,7 +320,8 @@ function Band(props: {
               : "Fork an idea into a new domain, or recompute."
           }
           action={{ label: "Add idea", href: "#/capture" }}
-          secondary={{ label: "Recompute", onClick: props.onRun }}
+          secondary={{ label: "Fork an idea into a new domain", href: "#/fork" }}
+          tertiary={{ label: "Recompute", onClick: props.onRun }}
         />
       ) : null}
 

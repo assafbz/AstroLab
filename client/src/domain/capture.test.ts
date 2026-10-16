@@ -7,6 +7,7 @@ import {
   counterText,
   normalizeDomainTag,
   removeDomainTag,
+  sameDraft,
   seedToDraft,
   validateCapture,
 } from "./capture.ts";
@@ -119,4 +120,28 @@ test("a seeded draft is valid exactly when the user has supplied the missing mon
     monetization: "Monetization is required",
   });
   expect(validateCapture({ ...seedToDraft(SEED), monetization: "the value angle" })).toEqual({});
+});
+
+test("`sameDraft` compares the four fields — S6's *no changes yet* reads it (DESIGN §8, T23)", () => {
+  const current = { hypothesis: "h", problem: "p", monetization: "m", domain_tags: ["fintech"] };
+  expect(sameDraft(current, { ...current })).toBe(true);
+  expect(sameDraft(current, { ...current, hypothesis: "h " })).toBe(false);
+  expect(sameDraft(current, { ...current, problem: "P" })).toBe(false);
+  expect(sameDraft(current, { ...current, monetization: "" })).toBe(false);
+  expect(sameDraft(current, { ...current, domain_tags: [] })).toBe(false);
+});
+
+test("`sameDraft` compares tags as a set — re-adding one is not a new version (DESIGN §8)", () => {
+  const a = {
+    hypothesis: "h",
+    problem: "p",
+    monetization: "m",
+    domain_tags: ["fintech", "banking"],
+  };
+  // Position is not a refinement: the vault stores tags as a set (§4.4 matches a tag exactly), so a
+  // re-ordered pair would otherwise write an identical version row into the history.
+  expect(sameDraft(a, { ...a, domain_tags: ["banking", "fintech"] })).toBe(true);
+  expect(sameDraft(a, { ...a, domain_tags: ["banking"] })).toBe(false);
+  // A duplicate is a different list, not the same set — `addDomainTag` never produces one.
+  expect(sameDraft(a, { ...a, domain_tags: ["fintech", "fintech"] })).toBe(false);
 });
