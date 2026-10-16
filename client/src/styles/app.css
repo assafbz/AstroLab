@@ -987,3 +987,54 @@ a {
   margin: 0 0 0.25rem;
   color: var(--muted);
 }
+
+/* S5 Fork (V9 `#20`; docs/stitch-prompts.md §6) — the branching path. The parent is shown, dimmed and
+   **not editable**: §4.7 copies its three text fields server-side, so what the user writes here is what
+   changed. */
+.fork__head {
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.fork__head .screen__title {
+  margin: 0;
+}
+
+.fork__parent {
+  margin: 0 0 1.5rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+
+.fork__parent-id {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+
+.fork__parent-headline {
+  margin: 0.25rem 0 0.5rem;
+  color: var(--muted);
+}
+
+/* The suggestion row — the vault's own domains, minus the parent's. A convenience, never a
+   requirement: the tag field above takes anything typed. */
+.fork__suggest {
+  margin: 0 0 1rem;
+}
+
+.fork__record {
+  margin: 1rem 0 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+
+.fork__offer {
+  color: var(--brass-highlight);
+}

@@ -7,7 +7,7 @@
  * `api/src/capture.ts` exactly — trimming for emptiness, measuring the hypothesis as typed.
  */
 
-import type { InspireSeed } from "../api/types.ts";
+import type { Idea, InspireSeed } from "../api/types.ts";
 
 /** `docs/API.md` §4.2 — the hypothesis limit, mirroring the server's `MAX_HYPOTHESIS_LENGTH`. */
 export const HYPOTHESIS_MAX = 280;
@@ -117,9 +117,29 @@ export function sameDraft(a: CaptureDraft, b: CaptureDraft): boolean {
     a.hypothesis === b.hypothesis &&
     a.problem === b.problem &&
     a.monetization === b.monetization &&
-    a.domain_tags.length === b.domain_tags.length &&
-    a.domain_tags.every((tag) => b.domain_tags.includes(tag))
+    sameDomainSet(a.domain_tags, b.domain_tags)
   );
+}
+
+/**
+ * Whether two tag lists are the same **set** — order- and duplicate-insensitive, which is the rule
+ * §4.7 pins for a fork's domain set (`docs/API.md` §4.7: *"Same-domain is set equality, order- and
+ * duplicate-insensitive"*). Named after the server's own `sameDomainSet` (`api/src/fork.ts`) so the two
+ * mirrors cannot be read as different rules, and shared with `sameDraft` — one spelling of "the same
+ * domains", not two.
+ */
+export function sameDomainSet(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((tag) => b.includes(tag));
+}
+
+/**
+ * The distinct tags of a list of ideas, sorted — the vault's own palette. It is the only honest
+ * palette the client has (D6): no endpoint exposes the taxonomy, and `client` may not read `store`.
+ * Shared by S3's filter row and S5's domain suggestions, so the two cannot disagree about what the
+ * vault carries.
+ */
+export function distinctDomainTags(ideas: Idea[]): string[] {
+  return [...new Set(ideas.flatMap((idea) => idea.domain_tags))].sort();
 }
 
 /** The live mono counter (`FLOW.md` T17; `DESIGN.md` §3). */

@@ -266,11 +266,21 @@ test("a bare #/sparks is still the not-found fallback — the deck is home, at #
   expect(screen.getByText("No screen at /sparks.")).toBeTruthy();
 });
 
-test("a screen V8 does not build still renders its placeholder", () => {
+test("#/fork renders S5's parent picker over the vault — the placeholder is gone (V9 #20)", async () => {
   renderAt("#/fork");
 
-  expect(screen.getByText("S5 · Fork")).toBeTruthy();
-  expect(screen.getByText(/not built yet/i)).toBeTruthy();
+  // E3's entry: bare `#/fork` has no parent, so S5 composes the picker rather than forking nothing.
+  expect(await screen.findByRole("link", { name: /A single sentence/ })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Vault" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByText(/not built yet/i)).toBeNull();
+});
+
+test("#/fork/<id> renders S5 seeded with the parent, before matchScreen (V9 #20)", async () => {
+  renderAt("#/fork/abc");
+
+  expect(await screen.findByLabelText("Parent idea")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Vault" }).getAttribute("aria-current")).toBe("page");
+  expect(screen.queryByText(/not built yet/i)).toBeNull();
 });
 
 test("an unknown path is still the not-found fallback, and the tab bar stays", () => {

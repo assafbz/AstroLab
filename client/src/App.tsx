@@ -1,6 +1,7 @@
 import { EmptyState } from "./components/EmptyState.tsx";
 import {
   TABS,
+  forkParentIdFromPath,
   ideaIdFromPath,
   iterateIdFromPath,
   matchScreen,
@@ -10,6 +11,7 @@ import {
   useHashPath,
 } from "./router.ts";
 import { Capture } from "./screens/Capture.tsx";
+import { Fork } from "./screens/Fork.tsx";
 import { IdeaDetail } from "./screens/IdeaDetail.tsx";
 import { Iterate } from "./screens/Iterate.tsx";
 import { Onboarding } from "./screens/Onboarding.tsx";
@@ -22,11 +24,11 @@ import { Vault } from "./screens/Vault.tsx";
  *
  * V8 filled S2, S3 and S4 (plus the per-id S4 route), O3 filled S0, O4 `#24` gives S1 its E0
  * branch (`screens/Sparks.tsx`; the deck is K2 `#36`), K3 `#37` adds S1b (`#/sparks/<id>`), #119
- * adds the seeded S2 (`#/capture/<spark_id>`), and V9 `#20` adds S6's per-id route
- * (`#/iterate/<id>`; S5's `#/fork/<id>` is its next slice). All four per-id routes are resolved
- * **first**: `#/ideas/<id>`, `#/sparks/<id>`, `#/capture/<id>` and `#/iterate/<id>` are each not one
- * of `SCREENS` (whose S4 entry is the bare `#/ideas`, whose S1 entry is `/`, and whose S2/S6 entries
- * are the bare `#/capture` and `#/iterate`), so `matchScreen` alone would call them a not-found.
+ * adds the seeded S2 (`#/capture/<spark_id>`), and V9 `#20` adds S5's and S6's per-id routes
+ * (`#/fork/<id>`, `#/iterate/<id>`). All five per-id routes are resolved **first**: `#/ideas/<id>`,
+ * `#/sparks/<id>`, `#/capture/<id>`, `#/fork/<id>` and `#/iterate/<id>` are each not one of `SCREENS`
+ * (whose S4 entry is the bare `#/ideas`, whose S1 entry is `/`, and whose S2/S5/S6 entries are the bare
+ * `#/capture`, `#/fork` and `#/iterate`), so `matchScreen` alone would call them a not-found.
  */
 export function App() {
   const path = useHashPath();
@@ -34,19 +36,26 @@ export function App() {
   const sparkId = sparkIdFromPath(path);
   const seedId = seedSparkIdFromPath(path);
   const iterateId = iterateIdFromPath(path);
+  const forkParentId = forkParentIdFromPath(path);
   const screen = matchScreen(path);
 
   // D8 — S4 is reached from the Vault, so the Vault tab is the active tab on `#/ideas`,
-  // `#/ideas/<id>`, and the S6 routes reached from it (`#/iterate`, `#/iterate/<id>` — V9 `#20`),
-  // the bare composition included, since it is the same "choose one from the vault" landing the bare
-  // `#/ideas` is: a screen with no tab of its own must not read as "nowhere". S1b follows the same rule towards the deck it was
+  // `#/ideas/<id>`, and the S5/S6 routes reached from it (`#/fork`, `#/fork/<id>`, `#/iterate`,
+  // `#/iterate/<id>` — V9 `#20`), the bare compositions included, since each is the same "choose one
+  // from the vault" landing the bare `#/ideas` is: a screen with no tab of its own must not read as
+  // "nowhere". S1b follows the same rule towards the deck it was
   // opened from — the Sparks tab stays lit — and the seeded S2 keeps the Capture tab lit, since it is S2.
   //
   // S0 is the exception and deliberately so: it is the **first-run entry**, reached before home
   // (`FLOW.md` T01/T05), so no tab is active on it — the tab bar stays usable, but lighting "Sparks"
   // or "Add" while the user is still onboarding would claim a position in the app they have not taken.
   const vaultScreen =
-    ideaId !== null || iterateId !== null || screen?.id === "S4" || screen?.id === "S6";
+    ideaId !== null ||
+    iterateId !== null ||
+    forkParentId !== null ||
+    screen?.id === "S4" ||
+    screen?.id === "S5" ||
+    screen?.id === "S6";
   const activeTab =
     sparkId !== null
       ? TABS.find((tab) => tab.id === "S1")
@@ -67,6 +76,8 @@ export function App() {
           <IdeaDetail id={ideaId} />
         ) : iterateId !== null ? (
           <Iterate id={iterateId} />
+        ) : forkParentId !== null ? (
+          <Fork parentId={forkParentId} />
         ) : screen?.id === "S0" ? (
           <Onboarding />
         ) : screen?.id === "S1" ? (
@@ -85,6 +96,10 @@ export function App() {
               action={{ label: "Go to the vault", href: "#/vault" }}
             />
           </>
+        ) : screen?.id === "S5" ? (
+          // E3's entry: bare `#/fork` carries no parent, so S5 composes the parent picker rather than
+          // forking nothing (§4.7 needs a parent id).
+          <Fork />
         ) : screen?.id === "S6" ? (
           <>
             <h1 className="screen__title">Iterate</h1>

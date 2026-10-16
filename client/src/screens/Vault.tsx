@@ -5,6 +5,7 @@ import { listIdeas } from "../api/ideas.ts";
 import type { Idea, VaultFilters } from "../api/types.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { Shimmer } from "../components/Shimmer.tsx";
+import { distinctDomainTags } from "../domain/capture.ts";
 import { completionPrompt } from "../domain/completion.ts";
 import { ideaHref } from "../router.ts";
 
@@ -21,11 +22,6 @@ import { ideaHref } from "../router.ts";
  * link (the card tap opens S4, where the field is supplied), never a nested control: an `<a>` inside
  * an `<a>` is invalid, and the card is already the affordance.
  */
-
-/** The distinct tags of one list, sorted. The Vault's own tags are the only honest palette (D6). */
-function distinctDomains(ideas: Idea[]): string[] {
-  return [...new Set(ideas.flatMap((idea) => idea.domain_tags))].sort();
-}
 
 const LINEAGES: ReadonlyArray<Idea["lineage_kind"]> = ["ROOT", "FORK"];
 
@@ -45,7 +41,8 @@ export function Vault() {
       // endpoint is wired in V8, and rebuilding it from a filtered result would make the chips
       // vanish exactly when they are needed to undo the filter. This guard *is* the capture-once
       // rule — a second `current.length > 0` guard inside it would mask this one.
-      if (filters.domain == null && filters.lineage == null) setDomains(distinctDomains(list));
+      // The palette is the vault's own distinct tags (`domain/capture.ts`), the only honest one (D6).
+      if (filters.domain == null && filters.lineage == null) setDomains(distinctDomainTags(list));
     } catch (err) {
       // Non-destructive (T29, NFR-D1): the loaded list stays; only the banner changes.
       setError(
