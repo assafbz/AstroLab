@@ -3,7 +3,7 @@ import { expect, test, vi } from "vitest";
 import { ApiError } from "../api/client.ts";
 import type { Decision } from "../api/types.ts";
 import type { ResolutionKind } from "./deck-interaction.ts";
-import { createDecisionResolver } from "./decision.ts";
+import { createDecisionResolver, isRetryable } from "./decision.ts";
 
 const DECISION: Decision = {
   decision_id: "id-1",
@@ -19,10 +19,9 @@ const DECISION: Decision = {
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 /**
- * A `post` whose outcome each call chooses, and whose arguments the test can read back. The call log is
- * the evidence: the whole point of the module is *which* `decision_id` reaches the wire, so every
- * assertion below is about the ids in `post.mock.calls`, not about a returned value the seam (void)
- * never carries.
+ * A `post` whose outcome each call chooses, and whose arguments the test reads back. The call log is the
+ * evidence: the module's whole job is *which* `decision_id` reaches the wire, and *how many* requests
+ * carry it — the seam itself is `void`, so nothing here asserts on a return value.
  */
 type PostImpl = (
   sparkId: string,
@@ -45,34 +44,39 @@ function harness(impl: PostImpl, ids: string[] = ["id-1", "id-2", "id-3"]) {
   return { post, onResolved, onFailed, resolver };
 }
 
-/** A deferred promise the test settles by hand — for the raced-twin case. */
-function deferred() {
-  let settle!: (decision: Decision | null) => void;
-  let fail!: (error: unknown) => void;
-  const promise = new Promise<Decision | null>((resolve, reject) => {
-    settle = resolve;
-    fail = reject;
-  });
-  return { promise, settle, fail };
-}
-
 /** The `decision_id` each post carried, in call order. */
 function idsPosted(post: ReturnType<typeof vi.fn>): string[] {
   return post.mock.calls.map((call) => call[1] as string);
 }
 
-test("a second press for one spark reuses the id — keyed on the spark, not the kind (§2.2, §4.3)", async () => {
-  // §4.3's raced swipe + tap: both reach the seam identically (§5.5), and the client must not mint a
-  // second key — with two ids the server records **two** decisions, which is the defect the key exists
-  // to remove. The kinds differ here on purpose: the key is the *spark's*, not the kind's.
+test("a press while a request is out is coalesced — one send, and the first kind wins (§4.3, §5.5)", async () => {
+  // §4.3's raced swipe + tap: both reach the seam (§5.5 pins that they do), and they are **one**
+  // decision. The key is held per spark, and the module does not send a second request while the first
+  // is out — the in-flight one already carries the outcome. The kinds differ here on purpose: the
+  // decision is the *spark's*, and a disagreement between the two calls is out of spec (§5.5's parity
+  // says they are the same command), so the first kind stands.
   const { post, resolver } = harness(() => Promise.resolve(DECISION));
 
   resolver.resolve("s1", "ACCEPT");
   resolver.resolve("s1", "DISMISS");
   await flush();
 
-  expect(post).toHaveBeenCalledTimes(2);
-  expect(idsPosted(post)).toEqual(["id-1", "id-1"]);
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(post.mock.calls[0]).toEqual(["s1", "id-1", "ACCEPT"]);
+});
+
+test("the coalesced pair reports one failure, never two — one decision, one outcome (§4.3)", async () => {
+  const error = new ApiError("network", 0, "dropped");
+  const { post, onResolved, onFailed, resolver } = harness(() => Promise.reject(error));
+
+  resolver.resolve("s1", "ACCEPT");
+  resolver.resolve("s1", "ACCEPT");
+  await flush();
+
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(onFailed).toHaveBeenCalledTimes(1);
+  expect(onFailed).toHaveBeenCalledWith("s1", error);
+  expect(onResolved).not.toHaveBeenCalled();
 });
 
 test("distinct sparks get distinct ids — one decision per spark, not one per session", async () => {
@@ -108,7 +112,29 @@ test("a success reports the Decision and spends the key — the next press is a 
   expect(idsPosted(post)).toEqual(["id-1", "id-2"]);
 });
 
-test("a failure keeps the key and reports it — T29's notice needs the error and the Retry needs the id", async () => {
+test("a success ends the decision — nothing re-issues the key, so no failure can follow one (F)", async () => {
+  // The ordering invariant's forbidden case: a failure emitted **after** a success for the same id.
+  // It cannot arise here because the success removes the record before it is reported — so a later
+  // retry has nothing to re-issue. The stub fails every send *after* the first, so an implementation
+  // that kept the record on success would re-send and report a failure for a decision already recorded.
+  let call = 0;
+  const { post, onFailed, resolver } = harness(() => {
+    call += 1;
+    return call === 1
+      ? Promise.resolve(DECISION)
+      : Promise.reject(new ApiError("internal_error", 500, "boom"));
+  });
+
+  resolver.resolve("s1", "ACCEPT");
+  await flush();
+  resolver.retry("s1");
+  await flush();
+
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(onFailed).not.toHaveBeenCalled();
+});
+
+test("a failure keeps the key and reports it — T29's notice needs the error, the Retry needs the id", async () => {
   const error = new ApiError("network", 0, "Could not reach the API");
   const { post, onResolved, onFailed, resolver } = harness(() => Promise.reject(error));
 
@@ -125,7 +151,24 @@ test("a failure keeps the key and reports it — T29's notice needs the error an
   expect(idsPosted(post)).toEqual(["id-1", "id-1"]);
 });
 
-test("a retry that succeeds reports the Decision and spends the key", async () => {
+test("a press after a failure is the same decision too — the same key, with the user's latest kind", async () => {
+  const error = new ApiError("internal_error", 500, "boom");
+  const { post, resolver } = harness(() => Promise.reject(error));
+
+  resolver.resolve("s1", "ACCEPT");
+  await flush();
+  // Not a Retry, and not a second decision: the failed attempt never committed, so the record is still
+  // live and the press re-issues it — with the kind the user last chose.
+  resolver.resolve("s1", "DISMISS");
+  await flush();
+
+  expect(post.mock.calls).toEqual([
+    ["s1", "id-1", "ACCEPT"],
+    ["s1", "id-1", "DISMISS"],
+  ]);
+});
+
+test("a retry that succeeds reports the Decision, once each — a retry is the same decision", async () => {
   const error = new ApiError("internal_error", 500, "boom");
   let attempt = 0;
   const { onResolved, onFailed, resolver } = harness(() => {
@@ -139,8 +182,9 @@ test("a retry that succeeds reports the Decision and spends the key", async () =
 
   resolver.retry("s1");
   await flush();
+  // Failure then success is legal (a lost response, recovered by Retry); a success then failure is not,
+  // and is covered above. Each is reported once.
   expect(onResolved).toHaveBeenCalledWith("s1", DECISION);
-  // Reported once each, in order — a retry is the same decision, not a second one.
   expect(onFailed).toHaveBeenCalledTimes(1);
   expect(onResolved).toHaveBeenCalledTimes(1);
 });
@@ -158,43 +202,51 @@ test("a retry with nothing pending is a no-op — a decision that committed is n
   expect(post).toHaveBeenCalledTimes(1);
 });
 
-test("one decision, one outcome — a twin's late failure after the commit is not a failure (§4.3)", async () => {
-  // The raced swipe + tap post the same key twice; if one twin's response is lost, reporting it would
-  // show a Retry for a decision already recorded — a notice the server would answer 200 to. The
-  // *decision* resolved, so no failure is reported for that spark.
-  const second = deferred();
-  let call = 0;
-  const { onResolved, onFailed, resolver } = harness(() => {
-    call += 1;
-    return call === 1 ? Promise.resolve(DECISION) : second.promise;
-  });
+test("a retry while a request is out is coalesced too — the in-flight request carries the outcome", async () => {
+  const error = new ApiError("network", 0, "dropped");
+  const { post, resolver } = harness(() => Promise.reject(error));
 
   resolver.resolve("s1", "ACCEPT");
-  resolver.resolve("s1", "ACCEPT");
+  resolver.retry("s1");
   await flush();
-  expect(onResolved).toHaveBeenCalledTimes(1);
 
-  second.fail(new ApiError("network", 0, "dropped"));
-  await flush();
-  expect(onFailed).not.toHaveBeenCalled();
+  expect(post).toHaveBeenCalledTimes(1);
 });
 
 test("a `null` post is not a resolution — nothing is reported and nothing is kept (§4.14's INSPIRED)", async () => {
   // `postDecision` answers `null` for the one kind that is not a resolution (§4.14 writes no `decision`
-  // row). Neither callback fires: there is no `Decision` to re-read for and no failed commit to retry.
-  const { onResolved, onFailed, resolver } = harness(() => Promise.resolve(null));
+  // row). Neither callback fires, and no record is kept: there is no `Decision` to re-read for and no
+  // failed commit to retry.
+  const { post, onResolved, onFailed, resolver } = harness(() => Promise.resolve(null));
 
   resolver.resolve("s1", "INSPIRED");
   await flush();
-
   expect(onResolved).not.toHaveBeenCalled();
   expect(onFailed).not.toHaveBeenCalled();
+
+  // Nothing kept: a later press is a fresh decision, minting a fresh key.
+  resolver.resolve("s1", "ACCEPT");
+  await flush();
+  expect(idsPosted(post)).toEqual(["id-1", "id-2"]);
 });
 
-test("the resolver holds no id across sparks or across outcomes — every key is minted or reused, never invented", async () => {
-  // The non-vacuity of `newId`: over the whole flow the module mints exactly as many ids as there were
-  // *decisions*, and the ids in the log are a subset of the ids it minted — so a test that pins reuse
-  // cannot pass by the module never calling `newId` at all.
+test("only a failure that can differ on a second try is retryable — a `409` is a statement, not a blip", () => {
+  // T29's surface is Retry, and Retry re-issues the *same* request. A `409` says the spark is not
+  // `OFFERED`; a `not_found` says the id is unknown; `validation_failed`/`unauthorized` say the request
+  // or the token is wrong. Re-issuing any of them draws the same answer, so none may offer Retry.
+  expect(isRetryable(new ApiError("network", 0, "dropped"))).toBe(true);
+  expect(isRetryable(new ApiError("internal_error", 500, "boom"))).toBe(true);
+
+  expect(isRetryable(new ApiError("conflict", 409, "not OFFERED"))).toBe(false);
+  expect(isRetryable(new ApiError("not_found", 404, "no such spark"))).toBe(false);
+  expect(isRetryable(new ApiError("validation_failed", 422, "kind"))).toBe(false);
+  expect(isRetryable(new ApiError("unauthorized", 401, "no token"))).toBe(false);
+});
+
+test("the resolver mints one key per decision and invents none — the ids on the wire are the ids it minted", async () => {
+  // Non-vacuity for `newId`: over a flow with two decisions the module mints exactly two keys, and every
+  // key it sends is one it minted. A test pinning reuse therefore cannot pass by the module never
+  // minting at all.
   const error = new ApiError("network", 0, "dropped");
   const minted: string[] = [];
   const post = vi.fn((spark: string, id: string, kind: ResolutionKind) => {
@@ -216,11 +268,13 @@ test("the resolver holds no id across sparks or across outcomes — every key is
   });
 
   resolver.resolve("s1", "ACCEPT");
+  await flush();
   resolver.retry("s1");
-  resolver.retry("s1");
+  await flush();
   resolver.resolve("s2", "ACCEPT");
   await flush();
 
   expect(minted).toEqual(["id-1", "id-2"]);
+  expect(idsPosted(post)).toEqual(["id-1", "id-1", "id-2"]);
   for (const id of idsPosted(post)) expect(minted).toContain(id);
 });
