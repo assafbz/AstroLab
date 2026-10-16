@@ -2,10 +2,12 @@ import { describe, expect, test } from "vitest";
 
 import {
   SCREENS,
+  captureHref,
   ideaHref,
   ideaIdFromPath,
   matchScreen,
   routeHref,
+  seedSparkIdFromPath,
   sparkHref,
   sparkIdFromPath,
 } from "./router.ts";
@@ -110,4 +112,35 @@ describe("sparkIdFromPath", () => {
 test("sparkHref is the hash form of a per-id path, and round-trips through sparkIdFromPath", () => {
   expect(sparkHref("x")).toBe("#/sparks/x");
   expect(sparkIdFromPath(sparkHref("x").slice(1))).toBe("x");
+});
+
+describe("seedSparkIdFromPath", () => {
+  test("resolves the id in a per-id path", () => {
+    expect(seedSparkIdFromPath("/capture/abc")).toBe("abc");
+  });
+
+  test("a trailing slash resolves, so a pasted `#/capture/abc/` is not a not-found", () => {
+    expect(seedSparkIdFromPath("/capture/abc/")).toBe("abc");
+  });
+
+  test("the bare S2 path has no id — the Add tab opens a blank capture, not a seeded one", () => {
+    // `#/capture` is `SCREENS`' own S2 entry (a blank capture); the seeded one is a per-id route.
+    expect(seedSparkIdFromPath("/capture")).toBeNull();
+    expect(seedSparkIdFromPath("/capture/")).toBeNull();
+  });
+
+  test("a further segment is not a route — the server answers a not-found envelope too (§2)", () => {
+    expect(seedSparkIdFromPath("/capture/a/b")).toBeNull();
+  });
+
+  test("any other path is not a per-id route", () => {
+    expect(seedSparkIdFromPath("/sparks/abc")).toBeNull();
+    expect(seedSparkIdFromPath("/")).toBeNull();
+    expect(seedSparkIdFromPath("")).toBeNull();
+  });
+});
+
+test("captureHref is the hash form of a per-id path, and round-trips through seedSparkIdFromPath", () => {
+  expect(captureHref("x")).toBe("#/capture/x");
+  expect(seedSparkIdFromPath(captureHref("x").slice(1))).toBe("x");
 });

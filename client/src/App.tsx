@@ -4,6 +4,7 @@ import {
   ideaIdFromPath,
   matchScreen,
   routeHref,
+  seedSparkIdFromPath,
   sparkIdFromPath,
   useHashPath,
 } from "./router.ts";
@@ -18,20 +19,23 @@ import { Vault } from "./screens/Vault.tsx";
  * The shell — the bottom nav, the shared frame, and the route table.
  *
  * V8 filled S2, S3 and S4 (plus the per-id S4 route), O3 filled S0, O4 `#24` gives S1 its E0
- * branch (`screens/Sparks.tsx`; the deck is K2 `#36`), and K3 `#37` adds S1b (`#/sparks/<id>`). S5/S6
- * stay placeholders until their own issues land. Both per-id routes are resolved **first**:
- * `#/ideas/<id>` and `#/sparks/<id>` are each not one of `SCREENS` (whose S4 entry is the bare
- * `#/ideas`, and whose S1 entry is `/`), so `matchScreen` alone would call them a not-found.
+ * branch (`screens/Sparks.tsx`; the deck is K2 `#36`), K3 `#37` adds S1b (`#/sparks/<id>`), and #119
+ * adds the seeded S2 (`#/capture/<spark_id>`). S5/S6 stay placeholders until their own issues land. All
+ * three per-id routes are resolved **first**: `#/ideas/<id>`, `#/sparks/<id>` and `#/capture/<id>` are
+ * each not one of `SCREENS` (whose S4 entry is the bare `#/ideas`, whose S1 entry is `/`, and whose S2
+ * entry is the bare `#/capture`), so `matchScreen` alone would call them a not-found.
  */
 export function App() {
   const path = useHashPath();
   const ideaId = ideaIdFromPath(path);
   const sparkId = sparkIdFromPath(path);
+  const seedId = seedSparkIdFromPath(path);
   const screen = matchScreen(path);
 
   // D8 — S4 is reached from the Vault, so the Vault tab is the active tab on both `#/ideas` and
   // `#/ideas/<id>`: a screen with no tab of its own must not read as "nowhere". S1b follows the same
-  // rule towards the deck it was opened from — the Sparks tab stays lit.
+  // rule towards the deck it was opened from — the Sparks tab stays lit — and the seeded S2 keeps the
+  // Capture tab lit, since it is S2.
   //
   // S0 is the exception and deliberately so: it is the **first-run entry**, reached before home
   // (`FLOW.md` T01/T05), so no tab is active on it — the tab bar stays usable, but lighting "Sparks"
@@ -40,15 +44,19 @@ export function App() {
   const activeTab =
     sparkId !== null
       ? TABS.find((tab) => tab.id === "S1")
-      : onS4
-        ? TABS.find((tab) => tab.id === "S3")
-        : screen;
+      : seedId !== null
+        ? TABS.find((tab) => tab.id === "S2")
+        : onS4
+          ? TABS.find((tab) => tab.id === "S3")
+          : screen;
 
   return (
     <div className="app">
       <main className="screen">
         {sparkId !== null ? (
           <SparkDetail id={sparkId} />
+        ) : seedId !== null ? (
+          <Capture sparkId={seedId} />
         ) : ideaId !== null ? (
           <IdeaDetail id={ideaId} />
         ) : screen?.id === "S0" ? (

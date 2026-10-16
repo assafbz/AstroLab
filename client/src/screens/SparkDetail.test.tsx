@@ -271,6 +271,23 @@ test("a `409` returns to the deck and offers no Retry — the spark is not OFFER
   expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 });
 
+test("Make it mine opens the seeded Capture and writes nothing — it is a route, not a resolution (§2.2, T09)", async () => {
+  const mock = stubFetch();
+  const seam = vi.fn();
+  render(<SparkDetail id={DETAIL.id} onResolve={seam} />);
+  await screen.findByRole("heading", { level: 1, name: DETAIL.direction });
+
+  fireEvent.click(screen.getByRole("button", { name: "Make it mine" }));
+
+  // §4.13's third kind posts nothing (`api/decisions.ts`) and §4.14 writes nothing: INSPIRE is a
+  // route change, and the spark stays OFFERED until a committed seeded save (§4.3 / B). So the CTA
+  // reaches the router — never the seam — and one read plus zero writes is the whole of it.
+  expect(window.location.hash).toBe("#/capture/1a2b");
+  expect(seam).not.toHaveBeenCalled();
+  expect(decisionCalls(mock)).toHaveLength(0);
+  expect(mock.mock.calls.map((call) => call[0])).toEqual(["/v1/sparks/1a2b"]);
+});
+
 test("an injected seam overrides the screen's own — the parity path is still the seam's (K7)", async () => {
   // What `onResolve` is *for* now: the §5.5 parity checks compare the two screens' commands through it,
   // so the shape stays one per screen even though each screen owns its resolver.

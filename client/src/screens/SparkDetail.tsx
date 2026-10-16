@@ -8,6 +8,7 @@ import { EmptyState } from "../components/EmptyState.tsx";
 import { Shimmer } from "../components/Shimmer.tsx";
 import type { ResolutionKind, ResolveSeam } from "../domain/deck-interaction.ts";
 import { createDecisionResolver, isRetryable, resolutionNotice } from "../domain/decision.ts";
+import { captureHref } from "../router.ts";
 
 /**
  * S1b Spark Detail (`FLOW.md` §2.1; `docs/stitch-prompts.md` §2) — one spark, expanded: the idea as
@@ -28,8 +29,13 @@ import { createDecisionResolver, isRetryable, resolutionNotice } from "../domain
  * their own, and the screen wires its own resolver from the same module the deck does, so the two
  * screens cannot drift into two payloads. A commit returns to the deck (call 4(a)); a `409` re-reads
  * the deck rather than retrying (call 4(b)); only `network` / `internal_error` draw T29's notice.
- * An injected `onResolve` still overrides the seam — that is what the parity tests hold. `Make it mine`
- * needs §4.14 and the seeded Capture, which nothing has built yet (#119), so no lever is drawn for it.
+ * An injected `onResolve` still overrides the seam — that is what the parity tests hold.
+ *
+ * **`Make it mine` is the third path, and it is not a resolution** (K5 `#39` + #119). §2.2's INSPIRE
+ * opens S2 *seeded*; the spark stays `OFFERED` while Capture is open, and the CTA itself writes nothing
+ * — it is a route change to `#/capture/<id>`, which is exactly why it stays **off** the seam (the
+ * one-call-site guard below counts the resolutions, and an INSPIRE routed through `dispatch` would
+ * redden it). The resolution happens in S2, on a committed seeded save (§4.2/§4.3).
  */
 
 type State =
@@ -138,9 +144,15 @@ export function SparkDetail(props: { id: string; onResolve?: ResolveSeam }) {
 
   // The ONE resolution path out of this screen (§5.5's parity, one screen over): both buttons reach the
   // seam through it, and a second, inline dispatch is the divergence the structural guard in
-  // `deck-interaction.test.ts` exists for.
+  // `deck-interaction.test.ts` exists for. `Make it mine` deliberately does **not** come through here.
   function dispatch(kind: ResolutionKind): void {
     resolve(sparkId, kind);
+  }
+
+  // T09 — the third path. A route change to the **seeded** S2, which reads §4.14 itself; nothing is
+  // resolved and nothing is posted, so the spark stays `OFFERED` until the save commits there (§4.3/B).
+  function openCapture(): void {
+    window.location.hash = captureHref(sparkId);
   }
 
   return (
@@ -196,10 +208,13 @@ export function SparkDetail(props: { id: string; onResolve?: ResolveSeam }) {
         </p>
       )}
 
-      {/* §2's bottom paths, the two S1b draws: **Not for me** and **Good**, both through the one
-          `dispatch`. `Make it mine` is deliberately absent — it needs §4.14's seed and the seeded
-          Capture, and a lever that points at nothing is worse than no lever (#119). */}
+      {/* §2's sticky bottom, its three paths in its order: **Make it mine** (ghost, brass text) opens
+          the seeded S2 — a route change, not a resolution, so it stays off `dispatch` — then the two
+          the seam also draws. */}
       <div className="actionbar">
+        <button type="button" className="button button--ghost" onClick={openCapture}>
+          Make it mine
+        </button>
         <button type="button" className="button" onClick={() => dispatch("ACCEPT")}>
           Good
         </button>
