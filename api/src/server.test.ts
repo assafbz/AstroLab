@@ -144,6 +144,7 @@ test("no path under /v1 answers anything but 401 without a valid token", async (
     "/v1/sparks/9f1c",
     "/v1/sparks/9f1c/decision",
     "/v1/sparks/9f1c/inspire",
+    "/v1/decisions/9f1c/undo",
     "/v1/vault/summary",
     "/v1/export",
     "/v1/nope",
@@ -183,13 +184,10 @@ test("an authorized but unimplemented /v1 route is the not_found envelope — ne
   // `/v1/sparks` a route, V6 (#17) makes `/v1/export` one, #118 makes `GET /v1/sparks/{id}` one,
   // K4 (#38) makes `POST /v1/sparks/{id}/decision` one and K5 (#39) makes `POST /v1/sparks/{id}/inspire`
   // one; each entry that pinned their *absence* is removed here as it lands (each has its own coverage
-  // below). The entry is replaced by the next *unclaimed* shape — §4.15's
-  // `POST /v1/decisions/{decision_id}/undo` (K6 `#40`) — so the envelope stays pinned for the shape
+  // below). K6 (#40) makes `POST /v1/decisions/{decision_id}/undo` one, and §4.15 was the **last
+  // unwritten §4 endpoint** — so no absence-pin successor remains, and the list keeps only the shapes
   // still without a route.
-  for (const [method, path] of [
-    ["POST", "/v1/decisions/9f1c/undo"],
-    ["GET", "/v1"],
-  ] as const) {
+  for (const [method, path] of [["GET", "/v1"]] as const) {
     expectEnvelope(
       await call(method, path, { authorization: `Bearer ${TOKEN}` }),
       404,
