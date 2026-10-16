@@ -27,7 +27,7 @@ import { acceptedByMonth, acceptedLandingNewDomainByMonth, newDomainByMonth } fr
  * | 2 | §4.7's fork records it **vault**-relative, not parent-relative | the fork row's `new_domain` | fork into a domain covered by a *third* idea → `0`, though the parent does not carry it (T25's `409` only compares the fork to its parent) |
  * | 3 | §4.6's iterate records it, against the vault *as it stood*, and a recorded `1` is **durable** | the row's `new_domain` after the call | iterate onto a fresh domain → `1`; a text-only re-save of the same domain → `0` (the case a "no other row" rule gets wrong); a recorded `1` survives a later text-only re-save (the case an overwrite gets wrong) |
  * | 4 | §4.13's ACCEPT records **nothing** — the reading there is constant-false | the ACCEPT-born root's `new_domain` | the roots are `NULL`, never `0`: a naive compute-inside-`insertRootIdea` would store `0` and this reddens |
- * | 5 | the producers are **exactly** the three write sites, and each assigns the column | a scan of the shipped sources | a fourth `INSERT`/`UPDATE` of `idea` that never mentions `new_domain` |
+ * | 5 | the producers are **exactly** the three write sites, and each assigns the column | a scan of the three `src` trees (`api`, `worker`, `store`) | a fourth `INSERT`/`UPDATE` of `idea` that never mentions `new_domain` |
  * | 6 | `acceptedByMonth` — §4.13's accepted sparks, by accept month | `decision`, `kind = 'ACCEPT'`, bucket `[from, to)` on `decided_at` | the `DISMISS`/`INSPIRED` rows in the same month are not counted (`kind = 'ACCEPT'`, not "all decisions") |
  * | 7 | `newDomainByMonth` — ideas that widened, by birth month | `idea.new_domain = 1`, bucket on `created_at` | the `0` **and** the `NULL` rows in the same month are absent — the "not recorded" state is not a zero |
  * | 8 | `acceptedLandingNewDomainByMonth` — NFR-Q1's literal sentence | `decision` (ACCEPT) ⋈ `idea` on `result_idea_id` | a root written in a later month than its accept still counts in the **accept's** bucket; a root deleted since its accept is absent (inner join) |
@@ -245,12 +245,15 @@ describe("§4.13 ACCEPT records nothing (claim 4)", () => {
  * nothing in them fails if a fourth writer appears tomorrow and silently drops the instrument.
  *
  * Method is `api/src/nfr-u1.test.ts`'s (the same walk, the same extension union), applied to a
- * different claim: **every shipped module that writes `idea` must assign `new_domain`.** Both halves are
- * asserted — the writer *set* (an addition and a removal both fail) and the assignment — and the
- * matcher's own boundary and the walk's non-vacuity are pinned, so the guard cannot quietly scan
- * nothing or the wrong table.
+ * different claim: **every module the walk scans — the `api`, `worker` and `store` `src` trees — that
+ * writes `idea` must assign `new_domain`.** Both halves are asserted — the writer *set* (an addition
+ * and a removal both fail) and the assignment — and the matcher's own boundary and the walk's
+ * non-vacuity are pinned, so the guard cannot quietly scan nothing or the wrong table.
  *
- * Residual, stated rather than implied: the matcher keys on the statement (`INSERT INTO idea` / `UPDATE
+ * Residual, stated rather than implied: the walk is scoped to those three `src` trees, so a writer
+ * outside them is not scanned — `scripts/w9-c5-fixture.ts:96` and `scripts/w9-calibrate.ts:121` insert
+ * `idea` rows and assign no instrument, and their rows land `NULL` ("not recorded"), so the metric is
+ * unaffected. The matcher keys on the statement (`INSERT INTO idea` / `UPDATE
  * idea SET`), so a writer that reached the row some other way — a `REPLACE INTO`, an `INSERT` with the
  * table name quoted and spelled differently — would be missed, exactly as #123 found for the sibling
  * canary. `new_domain`'s own spelling is the second half of the check, and it is a text match: a writer
