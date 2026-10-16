@@ -2,7 +2,8 @@
 
 The mobile-first PWA. S2 Capture, S3 Vault and S4 Idea Detail are built (V8, `#19`), S0 Onboarding
 (O3, `#23`), S1 Sparks' **E0 branch** (O4, `#24` — the deck is K2 `#36`) with its **S1b Spark Detail**
-(K3 `#37`); S5/S6 are still the shell's placeholders until their own issues land.
+(K3 `#37`); S5/S6 are still the shell's placeholders until their own issues land. S1 and S1b
+**resolve** sparks (ACCEPT / DISMISS through §4.13) as of K7 `#41`.
 
 - **Stack:** Vite + React + TypeScript (`docs/adr/0005-client-stack.md`).
 - **Design tokens:** `src/styles/tokens.css`, lifted from `DESIGN.md` §2 (colour and geometry) and §5 (layout).
@@ -123,3 +124,35 @@ S1b (Spark Detail) is not in S0–S6 and has no route yet; the deck and the engi
 capture path (`origin_spark_id`/`decision_id`) needs the spark deck, and the S4 Iterate/Fork actions
 are V9 (`#20`). Self-hosted Geist / JetBrains Mono are deferred — the token file falls back to system stacks
 until a screen needs the real faces.
+
+## Resolving a spark — S1 and S1b (K7 `#41`)
+
+- **One module, two screens.** `src/domain/decision.ts` owns §2.2's decision identity — one
+  `decision_id` per decision, minted once, reused on a retry, never regenerated — and
+  `src/api/decisions.ts` is §4.13's transport. Each screen wires its **own** resolver, so the deck's
+  re-read stays in the screen that owns the deck, and the seam stays **`void`**: the outcome reaches the
+  screen only through `onResolved` / `onFailed`. An injected `onResolve` overrides it — that seam is how
+  S1b's §5.5 parity check compares the two screens' commands.
+- **A raced swipe + tap is one *request*.** §4.3 resolves them to one decision, and §5.5 makes them the
+  same command, so the module **coalesces**: while a request for a spark's decision is out, a further
+  press does not send. Only one request per key is ever in flight, and a success retires the record
+  before it is reported — so a failure can only be emitted by its own settling request and never follows
+  a success.
+- **A commit re-reads; nothing is removed locally.** The ladder and the deck are the server's (§4.10,
+  §4.9), so the screen re-reads both and renders whatever they answer — a card shown as resolved before
+  the server says so would be exactly the drift §4.10 exists to prevent.
+- **A failure is non-destructive (T29).** A **retryable** one (`network` / `internal_error`;
+  `isRetryable`) keeps the card and draws a notice whose one lever is **Retry**, re-issuing the *same*
+  `decision_id`. Anything else is the server **stating** something — a `409` that the spark is not
+  `OFFERED`, a `404`, a bad token — so the screen **re-reads** rather than offering a Retry that could
+  only loop.
+- **S1b returns to the deck.** On a commit the detail goes back to `#/`: the card is gone from §4.9, so
+  a detail of a just-resolved spark would show what the server no longer offers. A `409` goes there too,
+  rather than retrying.
+- **`INSPIRED` posts nothing.** It is §4.14's *seeded capture*, not a resolution — it writes no
+  `decision` row — so the transport's `INSPIRED` arm is a no-op and S1b draws no lever for it (#119
+  owns that half).
+- **The one `api/ → domain/` edge is a *type*.** `api/decisions.ts` imports the seam's `ResolutionKind`
+  as `import type`, so the union has **one** declaration rather than a second spelling in the transport.
+  `src/api/boundary.test.ts` holds the line: every other edge in the client runs `domain/ → api/`, and a
+  *value* import back the other way would make the two packages mutually dependent at runtime.
