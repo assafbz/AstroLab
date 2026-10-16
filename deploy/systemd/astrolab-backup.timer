@@ -1,0 +1,12 @@
+[Unit]
+Description=AstroLab — nightly vault backup
+
+[Timer]
+# 02:20 UTC — off the hour, so it does not collide with the rest of the estate's timers.
+OnCalendar=*-*-* 02:20:00
+# A host that was asleep or down at 02:20 still gets its backup once it is back.
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

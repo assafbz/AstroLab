@@ -32,6 +32,14 @@ cp "$DB_PATH" "astrolab-$(date -u +%Y-%m-%dT%H%M%SZ).sqlite"
 - For a **guaranteed point-in-time** copy, stop the API and the worker first, then checkpoint and copy.
 - **Verify the copy before trusting it** (§4). A backup you have not opened is a hypothesis.
 
+**On a deployed host this runs itself.** `astrolab-backup.timer` (→ `astrolab-backup.service` →
+`deploy/backup.sh`) takes a copy nightly into `/opt/astrolab/backups` and keeps 14 days. It uses
+**`.backup` — SQLite's online backup API** — rather than checkpoint-then-copy: both writers are live on
+that host, and `.backup` yields a point-in-time file without stopping them, which a checkpoint followed
+by a copy does not. The manual procedure above stands unchanged, and its *guaranteed* variant is still
+"stop the processes, then checkpoint and copy". Either way the copy is verified before it is trusted
+(§4). The deployed paths are in `docs/DEPLOY.md`.
+
 ## 2. Restore
 
 The reverse: stop both processes, put the file back, start — boot runs migrations forward.
@@ -48,6 +56,16 @@ rm -f "$DB_PATH-wal" "$DB_PATH-shm"     # a stale -wal beside a replaced file is
   rather than guessing, so restore a file whose `user_version` is ≤ the running build's.
 - **No committed idea is lost** on this path (`ARCHITECTURE.md` §8) — every idea, version, lineage and
   provenance edge, and every decision is in the file.
+
+**On a deployed host.** Stop the stack first, then replace the file, then start it — the boot re-runs
+`migrate` exactly as the manual path does:
+
+```sh
+systemctl stop astrolab
+cp /opt/astrolab/backups/astrolab-2026-10-15T051405Z.sqlite /opt/astrolab/data/astrolab.sqlite
+rm -f /opt/astrolab/data/astrolab.sqlite-wal /opt/astrolab/data/astrolab.sqlite-shm
+systemctl start astrolab
+```
 
 ## 3. Export (the open, portable path)
 
