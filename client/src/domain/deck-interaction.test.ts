@@ -70,6 +70,16 @@ test("the card resolves through exactly one call site — a second, inline dispa
   expect(sites).toHaveLength(1);
 });
 
+test("#129 — the card opens through exactly one call site — a second, inline `onOpen` reddens this", () => {
+  // Wired — the guard must not be satisfiable by zero. T08's open leaves the card two ways (the
+  // pointer tap and the heading button), but through the one `open()` helper.
+  expect(CARD_SOURCE).toMatch(/onOpen\s*\?:/);
+
+  const sites = CARD_SOURCE.match(/onOpen\?\.\(/g) ?? [];
+  // Plant: give the heading button its own inline `onOpen?.(spark.id)` beside `open()` → 2 → red.
+  expect(sites).toHaveLength(1);
+});
+
 test("the card reaches no resolution API — the call is K4's, the card only holds the seam", () => {
   // "The adapter has no DB access" was asserted in prose once and never checked; this is the checked
   // form for this card. Only a *value* import can post anything, so a `type`-only `../api/` import is

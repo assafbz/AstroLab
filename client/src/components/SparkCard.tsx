@@ -34,12 +34,22 @@ import type { ResolveSeam } from "../domain/deck-interaction.ts";
  * hazard is that the pointer stream is **shared**: the `pointerup` that ends a press on the *Good*
  * button bubbles to this card's own handler, so the tap carries two guards — it must be a press that
  * stayed put on both axes (not a scroll), and it must not have landed on a control.
+ *
+ * **The same open is reachable from the keyboard** (#129): the idea heading is a real `<button>`, so
+ * Tab focuses it and **Enter/Space** are the browser's own activation — no hand-rolled `onKeyDown`
+ * that could drift from the pointer tap. It is a **sibling** of `Good` / `Not for me`, not their
+ * container: activating one of those never reaches the heading, which is the keyboard form of the
+ * *"landed on a control"* guard — and there is no `isTap` travel guard to carry here, because a
+ * keydown has no travel to measure. The pointer tap keeps the article; both arms call the one `open()`.
  */
 export function SparkCard(props: {
   spark: Spark;
   /** The one resolution path out of the card (§5.5). Supplied by the screen. */
   onResolve: ResolveSeam;
-  /** T08 — the tap that opens `#/sparks/<id>`. Supplied by the screen; absent, the card never opens. */
+  /**
+   * T08 — the open that leads to `#/sparks/<id>` (the pointer tap and #129's keyboard arm). Supplied
+   * by the screen; absent, the card renders the idea as plain text and never opens.
+   */
   onOpen?: (id: string) => void;
   /** §6's gesture threshold; a test narrows it rather than fabricating a page-sized drag. */
   swipeDistance?: number;
@@ -53,6 +63,12 @@ export function SparkCard(props: {
   // inline `onResolve` is the divergence the structural guard exists for.
   function dispatch(kind: ResolutionKind): void {
     onResolve(spark.id, kind);
+  }
+
+  // The ONE open path (T08), shared by the pointer tap and the heading button (#129): a second inline
+  // open call is the divergence the structural guard exists for.
+  function open(): void {
+    onOpen?.(spark.id);
   }
 
   return (
@@ -77,11 +93,21 @@ export function SparkCard(props: {
         if (!isTap(from.x, from.y, event.clientX, event.clientY)) return;
         if (event.target instanceof Element && event.target.closest(CONTROL_SELECTOR) !== null)
           return;
-        onOpen?.(spark.id);
+        open();
       }}
     >
       <p className="section__label">THE IDEA</p>
-      <h2 className="sparkcard__idea">{spark.direction}</h2>
+      {/* #129: the heading is the keyboard arm of T08. With no `onOpen` it renders as plain text —
+          the card never opens, so the app path cannot invent an open if a wiring is dropped. */}
+      <h2 className="sparkcard__idea">
+        {onOpen === undefined ? (
+          spark.direction
+        ) : (
+          <button type="button" className="sparkcard__idea-open" onClick={open}>
+            {spark.direction}
+          </button>
+        )}
+      </h2>
       <p className="section__label">THE CLAIM</p>
       <p className="sparkcard__claim">{spark.claim}</p>
       {/* The card's third element, in §1's order — between THE CLAIM and the chips. A `null` is a
