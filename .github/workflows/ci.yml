@@ -54,7 +54,7 @@ jobs:
           fi
 
   citations:
-    name: citation ref-lint — §X.Y item N form
+    name: citation ref-lint — §X.Y item N form (v2 probe)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
