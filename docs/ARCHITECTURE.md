@@ -314,6 +314,11 @@ Basis on record: `W9_CALIBRATION.md` §6; the field set stays **CONFIRMED** (§1
 - An **accepted** pair is retired from the deck; only **one live offer per pair** exists (`spark` unique key).
 - Ideas with `status = NEEDS_COMPLETION` or **no domain** are excluded from candidate generation
   (`PRD.md` §2).
+- A **pair** whose two ideas are **lineage-related** — one is the other's ancestor or descendant on the
+  single-parent `lineage_parent_id` chain (`lineage_kind = FORK`) — is excluded from candidate
+  generation (`#141`). A fork copies its parent's mechanism text verbatim (§4.7) while refusing a
+  same-domain fork, so the pair clears both thresholds *by construction* and would otherwise present as
+  a fake cross-domain spark. Siblings (two forks of one parent) are not related and may still pair.
 
 ---
 

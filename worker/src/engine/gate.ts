@@ -41,12 +41,16 @@ import type { MechanismCache } from "./mechanism.js";
  * bounded by **distinct tags**, never by pair count. `gate.test.ts` asserts that in call-count terms,
  * independently of how many pairs the scan visits.
  *
- * ## Two deliberate properties
+ * ## Three deliberate properties
  *
  * - **The distance axis runs on clusters post-normalisation (Q2, accepted).** By gate time W4 has
  *   already normalised any provisional tag, so `between` sees clusters, not raw tags. That is intended
  *   behaviour, not an artifact: the distance axis measures *domain*, and a raw tag has none until
  *   resolved.
+ * - **A pair is never lineage-related (§3.5, `#141`).** An idea and its own ancestor/descendant is the
+ *   same idea copied, so a fork of its parent would clear both axes by construction (§4.7 copies the
+ *   text, refuses the same domain). `sameLineage` drops such a pair at candidate generation, beside
+ *   `NEEDS_COMPLETION` / domain-less, before the distance axis runs.
  * - **No write.** The gate reads `idea` (as `cutVault` does) and writes nothing — no `spark`, no
  *   `suppressed_pair`, no revision bump. Recording an outcome is W7/W8.
  */
@@ -93,6 +97,43 @@ function candidates(db: DatabaseSync, cut: VaultCut): Array<{ id: string; tags: 
 }
 
 /**
+ * The lineage relation among a pair of idea ids (§3.5, `#141`). `idea.lineage_parent_id` is a
+ * **single-parent** chain (`lineage_kind = FORK`, only a fork carries one), so "x is an ancestor of y"
+ * is a membership test on y's parent walk. A pair where either id is the other's **ancestor or
+ * descendant** is the same idea copied — §4.7 copies the parent's mechanism text verbatim while
+ * refusing a same-domain fork, so such a pair clears both thresholds *by construction* and would
+ * present as a fake cross-domain spark. It is excluded alongside §3.5's `NEEDS_COMPLETION` /
+ * domain-less exclusions, before the distance axis is asked.
+ *
+ * The walk reads the whole `idea` table, not just the cut: an intermediate generation may be
+ * `NEEDS_COMPLETION` (or otherwise outside the candidate window) and still bridge an ancestor to a
+ * descendant. `memo` is shared across the run's pairs so each id's chain is walked once.
+ */
+function sameLineage(
+  parentOf: { get(id: string): unknown },
+  memo: Map<string, Set<string>>,
+  x: string,
+  y: string,
+): boolean {
+  const ancestorsOf = (id: string): Set<string> => {
+    const cached = memo.get(id);
+    if (cached !== undefined) return cached;
+    const chain = new Set<string>([id]); // self, so a direct child's walk contains its parent
+    let current = id;
+    for (;;) {
+      const row = parentOf.get(current) as { parent: string | null } | undefined;
+      const parent = row?.parent ?? null;
+      if (parent === null || chain.has(parent)) break; // `chain.has` guards a malformed cycle
+      chain.add(parent);
+      current = parent;
+    }
+    memo.set(id, chain);
+    return chain;
+  };
+  return ancestorsOf(x).has(y) || ancestorsOf(y).has(x);
+}
+
+/**
  * The **candidate ids** at a cut (§3.5) — the same predicate `gatedPairs`'s Stage 1 uses, since a
  * sweep that read a *different* set would retract an offer whose idea the gate would still consider.
  *
@@ -123,11 +164,20 @@ export function createGate(
         materialised.push({ id: candidate.id, descriptor, tags: candidate.tags });
       }
 
+      // The lineage exclusion (§3.5, #141) reads `lineage_parent_id` from the whole table — a chain
+      // can pass through a node outside the cut. The statement and the per-id chain memo are built
+      // once per run; the pairwise loop itself stays AI-free and unadjudicated.
+      const parentOf = db.prepare("SELECT lineage_parent_id AS parent FROM idea WHERE id = ?");
+      const lineageMemo = new Map<string, Set<string>>();
+
       const pairs: GatedPair[] = [];
       for (let i = 0; i < materialised.length; i++) {
         for (let j = i + 1; j < materialised.length; j++) {
           const a = materialised[i]!;
           const b = materialised[j]!;
+          // A copy of an idea is not a cross-domain discovery: drop it before the distance axis is
+          // asked (both orders of the ancestor relation), and never offer it as a spark.
+          if (sameLineage(parentOf, lineageMemo, a.id, b.id)) continue;
           const gap = await distance.between(a.tags, b.tags);
           const alignment = descriptorSimilarity(a.descriptor, b.descriptor);
           // D2: `null` is farthest, never 0; both axes must clear.
