@@ -49,11 +49,19 @@ The proxy contract the client needs (this is the interface to Ari's config, not 
 | `/assets/*` | serve file, `Cache-Control: public, max-age=31536000, immutable` | Vite hashes asset names, so the bytes at a name never change |
 | `/icon.svg`, `/manifest.webmanifest` | serve file; `manifest` short-TTL | install metadata; not content-hashed |
 | `/healthz` | proxy to `api:8080`, **not gated** | `docs/API.md` §1: liveness must not depend on the secret |
-| `/v1/*` | proxy to `api:8080`; **do not buffer**; do not gzip the stream | the deck subscribes to `GET /v1/sparks/events` (SSE) — proxy buffering or gzip turns a live stream into a stalled response |
+| `/v1/*` | proxy to `api:8080` **verbatim** (no URI rewrite); **do not buffer**; do not gzip the stream | the deck subscribes to `GET /v1/sparks/events` (SSE) — proxy buffering or gzip turns a live stream into a stalled response; and a rewritten prefix moves the auth gate off the route |
 | `*` (anything else) | `404` | hash routing means no screen needs a server path |
 
-Three integration notes that bite in practice (examples use nginx; the contract is proxy-agnostic):
+Four integration notes that bite in practice (examples use nginx; the contract is proxy-agnostic):
 
+- **Forward `/v1/*` verbatim — never rewrite or strip the prefix.** nginx: `proxy_pass http://api:8080;`
+  with **no URI part**. A trailing slash (`proxy_pass http://api:8080/;`) strips `/v1`, so the API sees
+  `/ideas` and answers `not_found`; a `rewrite` on `/v1/*` does the same. The API's own path normaliser —
+  decode, *then* collapse repeated slashes — is the single authority its auth gate and its router both
+  consult (`api/src/server.ts`), and it exists precisely because `//v1/ideas` and `/v1%2Fideas` once walked
+  past the gate. Keep normalisation in one place: let the proxy match on the path it normalises, but hand
+  the API the original URI (which `proxy_pass` without a URI part does). Max's G2.3 gates exactly these
+  spellings.
 - **Any access gate (§4) is scoped to the static paths — never to `/v1` or `/healthz`.** This is not a
   preference. The client sends `Authorization: Bearer <token>` on *every* `/v1` call (`client/src/api/client.ts:70`),
   and a browser does not attach cached Basic credentials to a request that already carries an
