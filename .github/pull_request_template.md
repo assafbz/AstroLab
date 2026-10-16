@@ -4,8 +4,9 @@ Closes #<n>
 First line on purpose, and inert on purpose: an unreplaced `#<n>` closes
 nothing. Replace `<n>` with the issue number **only** on the PR that completes
 the issue — a held-lane PR, the one that deliberately must *not* close it yet,
-leaves the placeholder untouched. The same rule sits beside the merge rule in
-`AGENTS.md`.
+leaves the placeholder untouched **and carries no other literal closing keyword**
+(`Closes`/`Fixes`/`Resolves` + a `#<n>`-style reference) anywhere in its body;
+write `Part of #<n>`. The same rule sits beside the merge rule in `AGENTS.md`.
 -->
 
 ## Evidence
