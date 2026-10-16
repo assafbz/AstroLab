@@ -12,6 +12,7 @@ import {
   parseIdeaFields,
   ValidationError,
 } from "./capture.js";
+import { parseDecisionInput, resolveDecision } from "./decision.js";
 import { deleteIdea } from "./delete.js";
 import { engineState } from "./engine-state.js";
 import { exportVault } from "./export.js";
@@ -230,6 +231,16 @@ async function handleRequest(
       return handleSparkDetail(res, db, sparkId);
     }
 
+    // §4.13 — the resolution (S1's ACCEPT/DISMISS, K4 `#38`). Matched *after* the exact spark routes
+    // and after the one-segment `{id}` shape, whose matcher refuses this deeper path; a nested id
+    // (`…/decision/x`) or a non-`POST` method falls to the envelope below (§2). The write is the
+    // envelope's other half: `422` for the body, `404` for an unknown spark, `409` for a spark that is
+    // not a live offer or a `decision_id` committed elsewhere.
+    const decisionSparkId = sparkDecisionPath(path);
+    if (decisionSparkId !== null && method === "POST") {
+      return await handleDecision(req, res, db, decisionSparkId);
+    }
+
     // §4.17 — the open, complete export (V6 `#17`; NFR-D1, ARCH §8). A `GET` only: the document is the
     // whole vault in one read, so there is nothing to validate and no body is read. The read is the
     // export's own — one `BEGIN`…`COMMIT` snapshot inside `exportVault` (§4.5's shared `readSnapshot`),
@@ -353,6 +364,33 @@ function handleSparkDetail(res: ServerResponse, db: DatabaseSync, id: string): v
 }
 
 /**
+ * `POST /v1/sparks/{id}/decision` (docs/API.md §4.13): validate, then resolve — both failures the
+ * envelope. The body is validated **before** the id is consulted, as at §4.2/§4.6/§4.7, so a malformed
+ * body on an unknown spark is `422` and not `404`; the write then answers `404` (unknown spark) before
+ * `409` (not a live offer, or a `decision_id` committed to another spark). The order is recorded in
+ * §4.13 and §6, and pinned in `server.test.ts` so it cannot silently flip.
+ */
+async function handleDecision(
+  req: IncomingMessage,
+  res: ServerResponse,
+  db: DatabaseSync,
+  id: string,
+): Promise<void> {
+  let body: unknown;
+  try {
+    body = await readJsonBody(req);
+  } catch (err) {
+    if (err instanceof ValidationError) {
+      return sendError(res, "validation_failed", err.message);
+    }
+    throw err;
+  }
+  const input = parseDecisionInput(body); // ValidationError → the outer catch → the 422 envelope
+  const decision = resolveDecision(db, id, input); // NotFoundError → 404; ConflictError → 409
+  sendJson(res, 200, decision);
+}
+
+/**
  * `DELETE /v1/ideas/{id}` (docs/API.md §4.8): orphan-with-warning, so the server never blocks and
  * never asks — §4.5's `referenced_by` is the client's warning, and the delete proceeds either way. An
  * unknown id is the `not_found` envelope, which is also what a repeat delete answers: the id is
@@ -381,16 +419,41 @@ function ideaPath(path: string): { id: string; action: "iterate" | "fork" | null
 
 /**
  * The `{id}` shape under `/v1/sparks/`, read from the **normalised** path like `ideaPath` (#118,
- * §4.12). Exactly one non-empty segment. The reserved exact routes (`state` / `events` / `run`) are
- * matched by the router *before* this is consulted, so they can never be read as a detail id; a further
- * segment (`…/decision`, §4.13) and an empty id (`/v1/sparks/`) are not defined routes, which §2
- * answers as `not_found`.
+ * §4.12). Exactly one non-empty segment, and never a **reserved** one: `state` (§4.10), `events`
+ * (§4.11) and `run` (§4.16) are routes, so no reserved name is ever read as a spark id — on *any*
+ * method. (#118's clause claimed that; it held for `POST /run` only, because `state`/`events`/`run`
+ * were matched by the router ahead of this shape and `run` is claimed for `POST` alone. Max found it
+ * at #127's review: `GET /v1/sparks/run` read `run` as an id. Refusing the segment here is what makes
+ * the clause literally true, and it costs only the accident it removes — ids are `randomUUID()`.)
+ *
+ * A further segment (`…/decision`, §4.13 — matched separately below) and an empty id (`/v1/sparks/`)
+ * are not defined routes, which §2 answers as `not_found`.
  */
 const SPARK_DETAIL_PREFIX = "/v1/sparks/";
+const RESERVED_SPARK_SEGMENTS: ReadonlySet<string> = new Set(["state", "events", "run"]);
+
 function sparkPath(path: string): string | null {
   if (!path.startsWith(SPARK_DETAIL_PREFIX)) return null;
   const [id, ...extra] = path.slice(SPARK_DETAIL_PREFIX.length).split("/");
-  return id === undefined || id === "" || extra.length > 0 ? null : id;
+  if (id === undefined || id === "" || extra.length > 0) return null;
+  return RESERVED_SPARK_SEGMENTS.has(id) ? null : id;
+}
+
+/**
+ * §4.13's `POST /v1/sparks/{id}/decision` (K4 `#38`) — one non-empty, unreserved segment and the
+ * exact action. `/v1/sparks/{id}/decision/x`, `/v1/sparks/decision` and `/v1/sparks/run/decision` are
+ * not this route; each falls to the envelope (§2), the `not_found` rule the deeper shapes already
+ * follow.
+ */
+const SPARK_DECISION_ACTION = "/decision";
+
+function sparkDecisionPath(path: string): string | null {
+  if (!path.startsWith(SPARK_DETAIL_PREFIX)) return null;
+  const rest = path.slice(SPARK_DETAIL_PREFIX.length);
+  if (!rest.endsWith(SPARK_DECISION_ACTION)) return null;
+  const id = rest.slice(0, -SPARK_DECISION_ACTION.length);
+  if (id === "" || id.includes("/") || RESERVED_SPARK_SEGMENTS.has(id)) return null;
+  return id;
 }
 
 /** A capture body is a few hundred bytes; a megabyte is a ceiling, not a target. */

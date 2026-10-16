@@ -142,6 +142,7 @@ test("no path under /v1 answers anything but 401 without a valid token", async (
     "/v1/sparks/state",
     "/v1/sparks/events",
     "/v1/sparks/9f1c",
+    "/v1/sparks/9f1c/decision",
     "/v1/vault/summary",
     "/v1/export",
     "/v1/nope",
@@ -178,13 +179,13 @@ test("authorized, the encoded spellings route to the same place or the envelope 
 
 test("an authorized but unimplemented /v1 route is the not_found envelope — never a 200", async () => {
   // W8 (#33) implemented `GET /v1/sparks/state` and `POST /v1/sparks/run`, K1 (#35) makes bare
-  // `/v1/sparks` a route, V6 (#17) makes `/v1/export` one, and #118 makes `GET /v1/sparks/{id}` one;
-  // each entry that pinned their *absence* is removed here as it lands (each has its own coverage
-  // below). The `{id}` entry is replaced by the next *unclaimed* spark shape — §4.13's
-  // `POST /v1/sparks/{id}/decision` (K6 #39) — so the envelope stays pinned for the shape still
-  // without a route.
+  // `/v1/sparks` a route, V6 (#17) makes `/v1/export` one, #118 makes `GET /v1/sparks/{id}` one and
+  // K4 (#38) makes `POST /v1/sparks/{id}/decision` one; each entry that pinned their *absence* is
+  // removed here as it lands (each has its own coverage below). The entry is replaced by the next
+  // *unclaimed* spark shape — §4.14's `POST /v1/sparks/{id}/inspire` (K5 `#39`) — so the envelope
+  // stays pinned for the shape still without a route.
   for (const [method, path] of [
-    ["POST", "/v1/sparks/9f1c/decision"],
+    ["POST", "/v1/sparks/9f1c/inspire"],
     ["GET", "/v1"],
   ] as const) {
     expectEnvelope(
@@ -389,15 +390,14 @@ test("GET /v1/sparks/{id} is status-blind — a resolved spark answers 200; only
   );
 });
 
-test("the {id} shape claims exactly one segment — §4.13's `{id}/decision` and an empty id stay the envelope", async () => {
+test("the {id} shape claims exactly one segment, and never a reserved name — the envelope cases stay the envelope", async () => {
   // Seed a **real** spark, so a greedy matcher (which read `s1` out of `s1/decision`) would answer 200
   // here and this test would catch it; without the row both spellings 404 for the wrong reason.
   seedSparkDetail("s1", "OFFERED", true);
   const auth = { authorization: `Bearer ${TOKEN}` };
 
   expect((await call("GET", "/v1/sparks/s1", auth)).status).toBe(200);
-  // K6 #39 owns `POST /v1/sparks/{id}/decision`; until it lands, a further segment is not a route.
-  expectEnvelope(await call("POST", "/v1/sparks/s1/decision", auth), 404, "not_found");
+  // §4.13 is a route now, but only for POST: a `GET` on it is not a detail read of `s1`.
   expectEnvelope(await call("GET", "/v1/sparks/s1/decision", auth), 404, "not_found");
   // The bare path with a trailing slash is neither the deck route nor a detail id.
   expectEnvelope(await call("GET", "/v1/sparks/", auth), 404, "not_found");
@@ -405,6 +405,179 @@ test("the {id} shape claims exactly one segment — §4.13's `{id}/decision` and
   const state = await call("GET", "/v1/sparks/state", auth);
   expect(state.status).toBe(200);
   expect(state.body).toMatchObject({ state: "E0" });
+});
+
+test("`run` is never read as an id — Max's #127 nit, closed in the matcher", async () => {
+  // `run` is claimed for `POST` only, so before this `GET /v1/sparks/run` read `run` as a detail id and
+  // answered `spark run not found`. Storing a spark **under** that id is the only state in which the
+  // two behaviours differ — with an empty vault both are a 404 for the wrong reason (the #118 lesson).
+  seedSparkDetail("run", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+
+  // Non-vacuity: the row is really there and live — the deck sees it, so the envelopes below are the
+  // reservation and not an unknown id.
+  expect((await call("GET", "/v1/sparks?state=offered", auth)).body).toEqual({
+    sparks: [
+      {
+        id: "run",
+        direction: "a direction",
+        claim: "a claim",
+        first_step: "a first step",
+        domain_tags: ["fintech", "health"],
+        created_at: "2026-01-01T00:00:00Z",
+      },
+    ],
+  });
+  expectEnvelope(await call("GET", "/v1/sparks/run", auth), 404, "not_found");
+  expectEnvelope(await call("POST", "/v1/sparks/run/decision", auth), 404, "not_found");
+});
+
+/** K4 (#38) — `POST /v1/sparks/{id}/decision` (§4.13, §3.5). */
+test("POST /v1/sparks/{id}/decision resolves an ACCEPT — §3.5's Decision, and the derived ROOT idea (§4.13)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+
+  const result = await call("POST", "/v1/sparks/s1/decision", {
+    ...auth,
+    json: { decision_id: "d1", kind: "ACCEPT" },
+  });
+
+  expect(result.status).toBe(200);
+  expect(result.contentType).toBe(JSON_UTF8);
+  expect(result.body).toEqual({
+    decision_id: "d1",
+    spark_id: "s1",
+    kind: "ACCEPT",
+    result_idea_id: expect.any(String),
+    spark_status: "RESOLVED-ACCEPTED",
+    decided_at: expect.any(String),
+    undoable: true,
+  });
+
+  // §4.3 step 1–4 over HTTP: a ROOT idea prefilled from the spark, `NEEDS_COMPLETION` because a spark
+  // carries no monetization (T27 by construction, not a defect).
+  const idea = db
+    .prepare(
+      `SELECT hypothesis, problem, monetization, domain_tags, lineage_kind, lineage_parent_id, status
+         FROM idea WHERE id = ?`,
+    )
+    .get((result.body as { result_idea_id: string }).result_idea_id);
+  expect(idea).toEqual({
+    hypothesis: "a direction",
+    problem: "a claim",
+    monetization: "",
+    domain_tags: JSON.stringify(["fintech", "health"]),
+    lineage_kind: "ROOT",
+    lineage_parent_id: null,
+    status: "NEEDS_COMPLETION",
+  });
+  expect(db.prepare("SELECT status FROM spark WHERE id = 's1'").get()).toEqual({
+    status: "RESOLVED-ACCEPTED",
+  });
+  // The resolution is a vault mutation: the revision advanced and exactly one run is queued.
+  expect(db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get()).toEqual({ revision: 1 });
+  expect(db.prepare("SELECT COUNT(*) AS n FROM spark_run").get()).toEqual({ n: 1 });
+  // §4.12 stays status-blind, so the resolved card still answers on a tap-back.
+  expect((await call("GET", "/v1/sparks/s1", auth)).status).toBe(200);
+});
+
+test("POST /v1/sparks/{id}/decision DISMISSes — the negative signal, and no vault node (§4.13)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const ideas = db.prepare("SELECT COUNT(*) AS n FROM idea").get();
+
+  const result = await call("POST", "/v1/sparks/s1/decision", {
+    ...auth,
+    json: { decision_id: "d-dismiss", kind: "DISMISS" },
+  });
+
+  expect(result.status).toBe(200);
+  expect(result.body).toEqual({
+    decision_id: "d-dismiss",
+    spark_id: "s1",
+    kind: "DISMISS",
+    result_idea_id: null,
+    spark_status: "RESOLVED-DISMISSED",
+    decided_at: expect.any(String),
+    undoable: true,
+  });
+  expect(db.prepare("SELECT COUNT(*) AS n FROM idea").get()).toEqual(ideas);
+  expect(db.prepare("SELECT pair_key, reason FROM suppressed_pair").all()).toEqual([
+    { pair_key: "a|b|s1", reason: "DISMISSED" },
+  ]);
+});
+
+test("POST /v1/sparks/{id}/decision needs a token like every /v1 route (§1)", async () => {
+  expectEnvelope(await call("POST", "/v1/sparks/s1/decision"), 401, "unauthorized");
+});
+
+test("the body is validated before the id — `422` on a known and an unknown spark alike (§4.13/§6)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+
+  // §4.2/§4.6/§4.7's order, pinned at this endpoint too: one malformed request cannot be *sometimes*
+  // `422` and *sometimes* `404`, decided by whether the id happened to exist.
+  for (const path of ["/v1/sparks/nope/decision", "/v1/sparks/s1/decision"]) {
+    for (const json of [
+      { kind: "ACCEPT" },
+      { decision_id: "", kind: "ACCEPT" },
+      { decision_id: "d", kind: "INSPIRED" },
+      { decision_id: "d", kind: "accept" },
+      null,
+    ]) {
+      expectEnvelope(await call("POST", path, { ...auth, json }), 422, "validation_failed");
+    }
+    // No body at all is a missing mandatory field, not a parse error.
+    expectEnvelope(await call("POST", path, auth), 422, "validation_failed");
+  }
+  // …and the unknown id is still `404` once the body is well-formed.
+  expectEnvelope(
+    await call("POST", "/v1/sparks/nope/decision", {
+      ...auth,
+      json: { decision_id: "d1", kind: "ACCEPT" },
+    }),
+    404,
+    "not_found",
+  );
+});
+
+test("a state conflict is `409` — a second decision on a resolved spark, or a key that names another (§4.13)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  seedSparkDetail("s2", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const json = { decision_id: "d1", kind: "ACCEPT" };
+
+  expect((await call("POST", "/v1/sparks/s1/decision", { ...auth, json })).status).toBe(200);
+  // The same spark, a *different* key: only a live offer may resolve.
+  expectEnvelope(
+    await call("POST", "/v1/sparks/s1/decision", {
+      ...auth,
+      json: { decision_id: "d2", kind: "DISMISS" },
+    }),
+    409,
+    "conflict",
+  );
+  // A different spark, the *same* key: one client id must not alias two decisions.
+  expectEnvelope(await call("POST", "/v1/sparks/s2/decision", { ...auth, json }), 409, "conflict");
+});
+
+test("the wrong method, or a deeper segment, on `{id}/decision` is the envelope (§2)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const json = { decision_id: "d1", kind: "ACCEPT" };
+
+  expectEnvelope(await call("GET", "/v1/sparks/s1/decision", auth), 404, "not_found");
+  expectEnvelope(
+    await call("POST", "/v1/sparks/s1/decision/x", { ...auth, json }),
+    404,
+    "not_found",
+  );
+  expectEnvelope(await call("POST", "/v1/sparks/decision", { ...auth, json }), 404, "not_found");
+  expectEnvelope(
+    await call("DELETE", "/v1/sparks/s1/decision", { ...auth, json }),
+    404,
+    "not_found",
+  );
 });
 
 test("a path outside /v1 is the envelope, and needs no token", async () => {
