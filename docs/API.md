@@ -162,7 +162,7 @@ delta. The detail adds **only** `what_it_takes` — the expanded view's extra.
 `kind` ∈ `ACCEPT | DISMISS | INSPIRED`. `spark_status` is terminal and is `FLOW.md` §3's verbatim:
 `RESOLVED-ACCEPTED | RESOLVED-DISMISSED | RESOLVED-INSPIRED` (never a bare `ACCEPTED`). `result_idea_id`
 is the ROOT created by `ACCEPT` or by a committed seeded save; `null` for `DISMISS`. `undoable`
-reflects server-side reversibility (§5.4) at response time.
+reflects server-side reversibility (§5.4) at response time, computed from §4.15's predicate.
 
 ### 3.6 `EngineState` (`FLOW.md` §4.1)
 ```json
@@ -205,8 +205,9 @@ Request:
   tag resolves deterministically (no AI); a typed lane is provisional (`ARCHITECTURE.md` §3.2, §6;
   `FLOW.md` r3.3).
 
-Response `201` → `Idea`. A seeded save's `Decision` is retrievable at `{decision_id}` via the undo
-route (§4.15).
+Response `201` → `Idea`. A committed seeded save carries its **own** `decision_id` and is **undoable**
+by the same §5.4 path as a deck decision — `POST /v1/decisions/{decision_id}/undo` (§4.15)
+(`FLOW.md` §2.2, §5.4 / N3).
 
 Readings this doc had not pinned (settled in K5 `#39`):
 
@@ -536,9 +537,12 @@ Readings this doc had not pinned (settled in K4 `#38`):
   because the second connection read the committed row. The lock half is SQLite's own `BEGIN
   IMMEDIATE`, and only a genuinely concurrent caller — two OS processes on one file, which no test here
   is — would exercise it. Recorded rather than left implied.
-- **`undoable` is `true` on a fresh resolution.** `FLOW.md` §5.4 leaves the window unspecified and §4.15
-  is K6 `#40`'s; until it lands no window has closed, so the flag reports what is true rather than
-  standing in for a policy that does not exist yet.
+- **`undoable` is `true` on a fresh resolution, and computed from §4.15's predicate at response time.**
+  A fresh resolution — and a repeat inside the window — is `true`; a repeat of a decision a later swipe,
+  a closed window, or an edit/deletion has retired is `false`. §4.13 and §4.15 read the **same** export
+  (`decision.ts`'s `undoableAt` / `undoRefusal`), so the client's flag and the route's answer cannot
+  drift. Pinned in `api/src/decision.test.ts` by reading `undoable: false` back through the repeat path
+  in each state the predicate forbids (a later decision, a closed window, an edited idea, a deleted one).
 - **This shape is `POST` only.** A `GET`/`DELETE` on it, and any deeper segment (`…/decision/x`), are
   §2's `not_found` envelope like every other route/method pair that is not defined.
 
@@ -585,6 +589,44 @@ Covers all three resolving paths: deck **ACCEPT**, deck **DISMISS**, and a **com
 (`retracted_idea_id` is `null` for a DISMISS undo). Not reversible → **`409 conflict`** envelope. The
 undo window is server-side policy (`FLOW.md` §5.4 leaves its duration unspecified); the response's
 `undoable` (§3.5) is the client's signal for whether to show the affordance.
+
+Readings this doc had not pinned (settled in K6 `#40`):
+
+- **The shape is `POST` only, and it is the `/v1/decisions/` prefix's only route** — one non-empty
+  `{decision_id}` plus the exact `undo`, matched by the **same** `{id}/<action>` matcher §4.13/§4.14
+  share (so the reserved-segment refusal stays single-sourced; `ideaPath` is a different shape and is
+  deliberately not folded in). A deeper segment (`…/undo/x`), a bare `/v1/decisions/{id}`, an empty id,
+  and a non-`POST` method are §2's `not_found` envelope. **No body is read** — the `decision_id` is the
+  path, so a body is ignored, not validated and not echoed (§4.16's posture).
+- **An unknown `decision_id` is `404`, ahead of every `409`** — parallel to §4.13's unknown spark. The
+  undo is **not idempotent**: a repeat *after* success also `404`s, because the row it names is gone.
+- **The four `409` arms, in this order: a later decision, then the window, then ACCEPT/INSPIRED's idea.**
+  (a) *superseded* — a **later** `decision` exists: §5.4's "no longer than until the next decision" is
+  the deck session's next swipe, **either card**, so the test is global and ordered by `rowid`
+  (`decided_at` is second-granular and ties, §1). (b) *expired* — the window closed. (c) *edited* — an
+  ACCEPT / committed seeded save whose derived idea is past version 1 ("only if still unedited"). (d)
+  *missing* — the derived idea is already gone (deleted inside the window): a retract with nothing to
+  retract is not the undo §5.4 describes. A DISMISS created no idea, so (c)/(d) never apply to it. The
+  `404` sits ahead of all four, and the retract runs only after every guard passes, so a refused undo
+  writes nothing — no stamp, no run (the §4.13 no-churn rule).
+- **The window is a named server constant, `UNDO_WINDOW_SECONDS = 300`, not `config`.** §4.15 delegates
+  it verbatim; `config` is the gate-threshold surface (§3.4). Promote it only if the window should be
+  operator-tunable.
+- **The retract is V5's delete semantics, and re-offering is safe.** An ACCEPT / seeded-save undo
+  deletes the derived idea — the cascade takes its version history and its provenance edges, so "clear
+  its provenance" *is* the cascade — and drops any **live offer** built from it, mirroring §4.8's
+  retraction (a live offer is a promise made from the vault's current state, and the state just
+  changed). A DISMISS undo clears its `suppressed_pair` negative signal instead. Both then return the
+  spark to `OFFERED` and delete the `decision` row. The re-offer cannot collide with `ux_spark_live`:
+  while the decision stood the pair was settled — by the resolved `spark` row (ACCEPT / INSPIRED) or by
+  `suppressed_pair` (DISMISS) — so the engine could not have offered it.
+- **One `vaultMutation`.** The route deletes a `decision` row and touches `idea`/`provenance_edge`, so
+  it is candidate-affecting and stamps the revision and enqueues one run, in the same transaction
+  (`ARCHITECTURE.md` §4).
+- **`undoable` (§3.5) is this endpoint's predicate, at response time.** §4.15 is the "server policy"
+  §4.13's reading deferred to: `decision.ts` exports one `undoRefusal`/`undoableAt`, §4.13's response
+  computes its flag from it and this handler consults the same export, so one state cannot be described
+  two ways. Pinned in `api/src/undo.test.ts` and `api/src/server.test.ts` across all four arms.
 
 ### 4.16 `POST /v1/sparks/run` — enqueue a run (Recompute)
 `202` → `{ "run_id": "…", "vault_revision": 42 }`. Enqueues an async run (→ `E1`); the request never
@@ -669,7 +711,9 @@ rather than left to the implementation:
   derived ideas") needs *reverse* references; the contract exposes them on detail rather than inventing
   a dry-run delete.
 - **`undoable` + the 409 rule (§3.5, §4.15)** — `FLOW.md` §5.4 leaves the undo window unspecified;
-  the contract treats it as server policy and exposes only the resulting `undoable` flag.
+  the contract treats it as server policy and exposes only the resulting `undoable` flag. *(Settled in
+  K6 `#40`: the window is `UNDO_WINDOW_SECONDS`, and `undoable` and the route's `409` read one shared
+  predicate.)*
 - **Auth ordering, and the unknown path / method rule (settled in F4 `#11`)** — auth is checked
   **before** routing, for the whole `/v1` namespace (§1), and any path or method that is not a defined
   route is the `not_found` envelope (`404`): there is no third case. Both are observable behaviour
@@ -795,6 +839,14 @@ rather than left to the implementation:
   the spark stays `OFFERED`; only the committed save (`§4.2`) resolves it. That is why §4.14 can be
   status-blind (it gates nothing) while §4.2's guard is where a resolved spark is refused — the division
   is deliberate, not an omission.
+
+- **The undo route (settled in K6 `#40`)** — §4.15's readings live at the endpoint. One generalises:
+  **the reversibility predicate is one export, shared by the client's signal and the route.** §3.5's
+  `undoable` and §4.15's `409` are the *same* `undoRefusal`/`undoableAt` in `decision.ts`; a second
+  copy in the route is exactly the drift §4.13's "one predicate" rule forbids, and the four arms
+  (superseded / expired / edited / missing) are pinned on **both** surfaces so a cut in the wiring
+  reddens rather than passing vacuously. §4.15 was the last unwritten §4 endpoint, so no
+  absence-pin successor remains.
 
 ---
 
