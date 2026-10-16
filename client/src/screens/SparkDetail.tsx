@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { ApiError } from "../api/client.ts";
+import { postDecision } from "../api/decisions.ts";
 import { sparkDetail } from "../api/sparks.ts";
 import type { SparkDetail as SparkDetailData } from "../api/types.ts";
 import { EmptyState } from "../components/EmptyState.tsx";
 import { Shimmer } from "../components/Shimmer.tsx";
 import type { ResolutionKind, ResolveSeam } from "../domain/deck-interaction.ts";
+import { createDecisionResolver, isRetryable, resolutionNotice } from "../domain/decision.ts";
 
 /**
  * S1b Spark Detail (`FLOW.md` §2.1; `docs/stitch-prompts.md` §2) — one spark, expanded: the idea as
@@ -21,12 +23,13 @@ import type { ResolutionKind, ResolveSeam } from "../domain/deck-interaction.ts"
  * a stale in-memory card must not be able to shadow the server. A `null` field is a legacy row and is
  * rendered **absent** — no label over nothing (the #115 treatment, §3.3/§3.4).
  *
- * **The decision seat is here, wired inert, and the call module is K7 `#41`'s.** The detail's Good /
- * Not for me consume the **deck's own** `ResolveSeam` (`domain/deck-interaction.ts`) rather than a
- * second type of their own, so K7 has one shape to plug into per screen and the two screens cannot
- * drift into two payloads. Until K7 lands, a press resolves nothing rather than inventing a request —
- * the seat K2 shipped on the card. `Make it mine` needs §4.14 and the seeded Capture, which nothing has
- * built yet (#119), so no lever is drawn for it.
+ * **The decision seam is the screen's own, and it is live (K7 `#41`).** The detail's Good / Not for me
+ * consume the **deck's own** `ResolveSeam` (`domain/deck-interaction.ts`) rather than a second type of
+ * their own, and the screen wires its own resolver from the same module the deck does, so the two
+ * screens cannot drift into two payloads. A commit returns to the deck (call 4(a)); a `409` re-reads
+ * the deck rather than retrying (call 4(b)); only `network` / `internal_error` draw T29's notice.
+ * An injected `onResolve` still overrides the seam — that is what the parity tests hold. `Make it mine`
+ * needs §4.14 and the seeded Capture, which nothing has built yet (#119), so no lever is drawn for it.
  */
 
 type State =
@@ -36,12 +39,47 @@ type State =
   | { kind: "missing" }
   | { kind: "error"; message: string };
 
-/** The seat until K7's call module lands: a press reaches it, and it posts nothing. */
-const inertResolve: ResolveSeam = () => {};
+/** `#/` is the home, S1 Sparks — the deck a resolution returns to (K7 `#41`, call 4(a)). */
+function backToDeck(): void {
+  window.location.hash = "#/";
+}
 
 export function SparkDetail(props: { id: string; onResolve?: ResolveSeam }) {
   const { id } = props;
   const [state, setState] = useState<State>({ kind: "loading" });
+  /** T29's notice for a resolution that did not commit — its own surface, never the read's error. */
+  const [failure, setFailure] = useState<string | null>(null);
+
+  /**
+   * S1b's **resolution seam** (K7 `#41`), the same shape as the deck's: the screen wires its own
+   * resolver from `domain/decision.ts` and §4.13's transport, and the seam stays `void`.
+   *
+   * Two calls this screen adds, both rulings recorded in #41's plan:
+   *
+   * - **(a) a commit returns to the deck.** The card is gone from §4.9, so a detail of the spark the
+   *   user just resolved would show what the server no longer offers. `FLOW.md` pins the resolution's
+   *   destination as S1 (T10/T11) and gives S1b none.
+   * - **(b) a `409` is not retryable.** It is the server stating the spark is not `OFFERED` — resolved
+   *   in another tab, or the second of two kinds on one card — so the screen **re-reads the deck**
+   *   rather than offering a Retry that could only loop. Only `network` / `internal_error` carry Retry.
+   */
+  const [resolver] = useState(() =>
+    createDecisionResolver({
+      post: postDecision,
+      onResolved: () => {
+        setFailure(null);
+        backToDeck();
+      },
+      onFailed: (_sparkId, error) => {
+        if (isRetryable(error)) {
+          setFailure(resolutionNotice(error));
+          return;
+        }
+        setFailure(null);
+        backToDeck();
+      },
+    }),
+  );
 
   const load = useCallback(async () => {
     setState({ kind: "loading" });
@@ -94,7 +132,9 @@ export function SparkDetail(props: { id: string; onResolve?: ResolveSeam }) {
   }
 
   const { id: sparkId, direction, claim, what_it_takes, first_step, domain_tags } = state.detail;
-  const resolve = props.onResolve ?? inertResolve;
+  // The screen's own resolver is the app path; an injected seam overrides it (the parity tests, and any
+  // future shell wiring), so the two screens keep one shape per screen (K3's ruling, §5.5).
+  const resolve = props.onResolve ?? resolver.resolve;
 
   // The ONE resolution path out of this screen (§5.5's parity, one screen over): both buttons reach the
   // seam through it, and a second, inline dispatch is the divergence the structural guard in
@@ -136,6 +176,24 @@ export function SparkDetail(props: { id: string; onResolve?: ResolveSeam }) {
           <h2 className="section__label">FIRST STEP</h2>
           <p className="detail__body">{first_step}</p>
         </section>
+      )}
+
+      {/* T29 — a resolution that did not commit. The detail stays (nothing is removed locally), and this
+          notice composes with it: non-destructive, and its one lever is Retry, which re-issues the same
+          `decision_id` (§2.2). A `409` never reaches here — it re-reads the deck instead (call 4(b)). */}
+      {failure === null ? null : (
+        <p className="banner">
+          <span className="banner__body" role="status">
+            {failure}
+          </span>
+          <button
+            type="button"
+            className="button button--ghost"
+            onClick={() => resolver.retry(sparkId)}
+          >
+            Retry
+          </button>
+        </p>
       )}
 
       {/* §2's bottom paths, the two S1b draws: **Not for me** and **Good**, both through the one

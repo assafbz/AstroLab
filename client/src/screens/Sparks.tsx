@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { ApiError } from "../api/client.ts";
 import { postDecision } from "../api/decisions.ts";
 import { enqueueRun, engineState, offeredSparks, subscribeEngineEvents } from "../api/sparks.ts";
 import type { EngineState, Spark, VaultSummary } from "../api/types.ts";
@@ -12,7 +11,7 @@ import { SparkCard } from "../components/SparkCard.tsx";
 import { deckBand, type DeckBand } from "../domain/deck-state.ts";
 import { createDeckStream, type DeckStream } from "../domain/deck-stream.ts";
 import type { ResolveSeam } from "../domain/deck-interaction.ts";
-import { createDecisionResolver, isRetryable } from "../domain/decision.ts";
+import { createDecisionResolver, isRetryable, resolutionNotice } from "../domain/decision.ts";
 import { createRunTrigger } from "../domain/run-trigger.ts";
 import { sparkHref } from "../router.ts";
 
@@ -100,7 +99,7 @@ export function Sparks() {
       },
       onFailed: (sparkId, error) => {
         if (isRetryable(error)) {
-          setFailure({ sparkId, message: resolutionMessage(error) });
+          setFailure({ sparkId, message: resolutionNotice(error) });
           return;
         }
         setFailure(null);
@@ -308,18 +307,6 @@ function Band(props: {
 interface ResolutionFailure {
   sparkId: string;
   message: string;
-}
-
-/**
- * T29's copy. A `network` failure is the client's own — the request never left — so it says so; any
- * other retryable failure is the server's, and the deck does not surface §2's non-normative `message`
- * (it is not written for the user). Both carry the one fact that makes the surface non-destructive:
- * **nothing was recorded.**
- */
-function resolutionMessage(error: ApiError): string {
-  return error.code === "network"
-    ? "Could not reach the engine. Nothing was recorded — try again."
-    : "That didn't go through. Nothing was recorded — try again.";
 }
 
 /**

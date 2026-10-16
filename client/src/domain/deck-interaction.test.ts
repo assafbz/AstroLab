@@ -20,6 +20,15 @@ const CARD_PATH = fileURLToPath(new URL("../components/SparkCard.tsx", import.me
 const CARD_SOURCE = readFileSync(CARD_PATH, "utf8");
 const DETAIL_PATH = fileURLToPath(new URL("../screens/SparkDetail.tsx", import.meta.url));
 const DETAIL_SOURCE = readFileSync(DETAIL_PATH, "utf8");
+const SPARKS_PATH = fileURLToPath(new URL("../screens/Sparks.tsx", import.meta.url));
+const SPARKS_SOURCE = readFileSync(SPARKS_PATH, "utf8");
+
+/** The `../api/<file>` specifiers a screen's source imports — the shape every allow-list below reads. */
+function apiImports(source: string): string[] {
+  return [...source.matchAll(/^import\s+(?:type\s+)?[^;]*from\s+"\.\.\/api\/([^"]+)";/gm)].map(
+    (match) => match[1]!,
+  );
+}
 
 test("the gesture's axis: right is ACCEPT, left is DISMISS (§2.2)", () => {
   expect(swipeKind(0, 200)).toBe("ACCEPT");
@@ -82,16 +91,50 @@ test("S1b resolves through exactly one call site too — the same shape K7 plugs
   expect(sites).toHaveLength(1);
 });
 
-test("S1b reaches no decision API — the call module is K7 #41's, the screen holds the seam", () => {
-  // The detail legitimately reads §4.12, so unlike the card it does import a §api/ value. The guard is
-  // therefore the allow-list: the read, the error type, and the shapes. A `decisions.ts` (K7's module)
-  // arriving here reddens this.
-  const apiImports = [
-    ...DETAIL_SOURCE.matchAll(/^import\s+(?:type\s+)?[^;]*from\s+"\.\.\/api\/([^"]+)";/gm),
-  ];
-  expect(apiImports.map((match) => match[1]).sort()).toEqual([
+test("S1b's api imports are an allow-list — the read, the shapes, the error type, the transport (K7)", () => {
+  // The detail legitimately reads §4.12 and, as of K7 `#41`, posts §4.13 through the transport the
+  // previous list named as the one that would redden it. So the list gains `decisions.ts` rather than
+  // being deleted; anything beyond these four is a screen reaching an API of its own.
+  // Residual: name-based — it reads the *specifier*, not whether the module does what its name says.
+  expect(apiImports(DETAIL_SOURCE).sort()).toEqual([
     "client.ts",
+    "decisions.ts",
     "sparks.ts",
     "types.ts",
   ]);
+});
+
+test("the deck and S1b resolve through one module — two screens, one shape (§5.5, K7)", () => {
+  // Each screen wires its **own** resolver (so §4.10's re-read stays in the screen that owns the deck),
+  // and the seam is `void` — so the two must come from the same module or the commands could drift into
+  // two payloads, the divergence §5.5's parity forbids.
+  const seamImport = /^import\s+[^;]*from\s+"\.\.\/domain\/decision\.ts";$/m;
+  expect(SPARKS_SOURCE).toMatch(seamImport);
+  expect(DETAIL_SOURCE).toMatch(seamImport);
+  // Residual: name-based. It proves both screens import that module; that each *calls* its `resolve`
+  // through one call site is what the two `resolve(` counts above (and the screen tests) hold.
+});
+
+test("a vault screen reaches no engine or run module — its request never waits on a run (K7 #41)", () => {
+  // The criterion's *"no vault request waits on a run"*. It is a property of the **files**, so it is
+  // checked here rather than asserted in prose: none of S2/S3/S4 may import the engine surface
+  // (`api/sparks.ts`: §4.9/§4.10/§4.11/§4.16) or the run policy (`domain/run-trigger.ts`,
+  // `domain/deck-stream.ts`). Vault writes are vault writes and must succeed with the AI down (NFR-A1).
+  const vaultScreens = ["Capture.tsx", "Vault.tsx", "IdeaDetail.tsx"].map((name) => ({
+    name,
+    source: readFileSync(fileURLToPath(new URL(`../screens/${name}`, import.meta.url)), "utf8"),
+  }));
+  // Non-vacuity: it must actually be looking at the three files, and each must import *something* —
+  // a walk that read nothing would pass this guard for the wrong reason.
+  expect(vaultScreens.map((screen) => screen.name)).toEqual([
+    "Capture.tsx",
+    "Vault.tsx",
+    "IdeaDetail.tsx",
+  ]);
+
+  for (const screen of vaultScreens) {
+    expect(screen.source).toMatch(/^import\s/m);
+    expect(apiImports(screen.source)).not.toContain("sparks.ts");
+    expect(screen.source).not.toMatch(/from\s+"\.\.\/domain\/(run-trigger|deck-stream)\.ts";/m);
+  }
 });

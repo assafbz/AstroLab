@@ -150,3 +150,18 @@ export function createDecisionResolver(deps: DecisionResolverDeps): DecisionReso
 export function isRetryable(error: ApiError): boolean {
   return error.code === "network" || error.code === "internal_error";
 }
+
+/**
+ * T29's notice copy for a failed resolution.
+ *
+ * A `network` failure is the client's own — the request never left — so it says so; any other retryable
+ * failure is the server's, and §2's `message` is non-normative and not written for the user, so neither
+ * screen surfaces it. Both carry the one fact that makes the surface **non-destructive**: *nothing was
+ * recorded*. One definition, so the deck and S1b cannot say different things about the same event (the
+ * same reason `isRetryable` lives here).
+ */
+export function resolutionNotice(error: ApiError): string {
+  return error.code === "network"
+    ? "Could not reach the engine. Nothing was recorded — try again."
+    : "That didn't go through. Nothing was recorded — try again.";
+}
