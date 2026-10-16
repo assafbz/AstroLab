@@ -698,7 +698,10 @@ test("§4.14 is POST only, and only the exact shape — the rest is the envelope
   expectEnvelope(await call("DELETE", "/v1/sparks/s1/inspire", auth), 404, "not_found");
   expectEnvelope(await call("POST", "/v1/sparks/s1/inspire/x", auth), 404, "not_found");
   expectEnvelope(await call("POST", "/v1/sparks/inspire", auth), 404, "not_found");
-  expectEnvelope(await call("POST", "/v1/sparks/run/inspire", auth), 404, "not_found");
+  // The shared matcher refuses every reserved segment, on this action too.
+  for (const reserved of ["state", "events", "run"]) {
+    expectEnvelope(await call("POST", `/v1/sparks/${reserved}/inspire`, auth), 404, "not_found");
+  }
   // Non-vacuity: both rows are live and on the deck, so the envelopes above are the shape rules and
   // not an unknown id.
   expect((await call("GET", "/v1/sparks?state=offered", auth)).body).toEqual({

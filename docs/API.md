@@ -208,6 +208,28 @@ Request:
 Response `201` → `Idea`. A seeded save's `Decision` is retrievable at `{decision_id}` via the undo
 route (§4.15).
 
+Readings this doc had not pinned (settled in K5 `#39`):
+
+- **The seeded save's check order is §4.13's, on this key.** body `422` → a repeat for **this** spark
+  `201` → unknown spark `404` → `409` for a `decision_id` recorded for **another** spark → `409` for a
+  spark that is not `OFFERED`. The repeat is hoisted above both state checks for §4.13's reason — the
+  first save leaves its spark `RESOLVED-INSPIRED`, so a state check ahead of the repeat would `409` a
+  legal retry — and the `404` sits ahead of the cross-spark `409`, the `422 → 404 → 409` order
+  §4.2/§4.6/§4.7 established. The key is **global**: one client id must not silently alias two saves,
+  which is what this endpoint did before `#39` (its lookup was keyed on `decision_id` alone and answered
+  a request for a *different* spark with the first `Idea`). Both state checks run **inside** the
+  transaction, so a refused save writes nothing. Pinned in `api/src/capture.test.ts` and
+  `api/src/server.test.ts`, in both directions.
+- **A committed seeded save is `ACTIVE` by construction — never `NEEDS_COMPLETION`.** All four
+  mandatory fields arrive in the request and are server-validated (§4.2's `422`), so there is no
+  prefill gap to land in. `NEEDS_COMPLETION` is **ACCEPT's** (settled at §4.13; `FLOW.md` §4.3 step 4 /
+  T27): a `spark` carries no `monetization` and `PRD.md` §2 makes it mandatory, so a one-tap Good is
+  saved and flagged. The two paths never share a status; the lifecycle is the decision path's contract,
+  with its surfaces in K8 `#42`.
+- **The response is `201` on the repeat too.** §4.2's response is its only named success, and §6
+  (settled in V1 `#12`) already records that a repeat on `decision_id` returns the first `Idea` with the
+  same `201`. §4.13's `200` is that endpoint's own reading and does not carry over.
+
 ### 4.3 `GET /v1/vault/summary` — S0 progress / spread gate
 `200` → `VaultSummary` (§3.2). Deterministic; **never** blocks on the provider.
 
@@ -530,6 +552,26 @@ Readings this doc had not pinned (settled in K4 `#38`):
 resolves only when a seeded save commits (`FLOW.md` §4.3 / B). Abandoning Capture leaves the spark
 `OFFERED`.
 
+Readings this doc had not pinned (settled in K5 `#39`):
+
+- **The body is §3.4's exact projection under the payload's key names.** §3.3's six fields — §3.4's
+  `what_it_takes` included — minus `created_at`, with `id` presented as `spark_id` (the client keys the
+  seed by the spark it came from). The selection internals (`mechanism`, the two scores, the source idea
+  ids) sit in the row and never in the body, as at §4.12. A legacy row's `what_it_takes` is `null` —
+  **absent, not `""`** (§3.4's rule; the #115 treatment for `first_step`), so a client renders nothing
+  rather than an empty block.
+- **The read is status-blind by id — §4.12's reading, and not §4.9's.** There is no `status` filter: the
+  `{id}` **is** the filter, so a spark the user already resolved still seeds, and no `status` is in the
+  payload. This is why INSPIRE is safe as a read — it gates nothing; the seeded save's `409` (settled at
+  §4.2) is where an already-resolved spark is refused.
+- **It is a read: no `vaultMutation`, no revision stamp, no run, no provider.** The seed answers with
+  the engine down (NFR-A1), like §4.9/§4.12. An unknown id is §2's `not_found`.
+- **The shape is `POST` only, and it is one non-empty, unreserved segment plus the exact action** —
+  §4.13's `{id}/<action>` matcher, shared by the two actions so the reserved-segment refusal cannot
+  drift between them. `GET`/`DELETE` on the shape, a deeper segment (`…/inspire/x`), a bare
+  `/v1/sparks/inspire`, and the reserved spellings (`/v1/sparks/run/inspire`, `/v1/sparks/state/inspire`,
+  `/v1/sparks/events/inspire`) are all the §2 `not_found` envelope.
+
 ### 4.15 `POST /v1/decisions/{decision_id}/undo` — one step
 Covers all three resolving paths: deck **ACCEPT**, deck **DISMISS**, and a **committed seeded save**
 (`FLOW.md` §5.4 / T12, N3).
@@ -560,10 +602,11 @@ Readings this doc had not pinned (settled in W8 `#33`):
   `run_id` rather than adding a second row.
 - **The bare `/v1/sparks/{id}` is a route; the *deeper* `{id}` shapes are not.** The implemented paths
   under the prefix are bare `/v1/sparks` (§4.9), `/v1/sparks/state` (§4.10), `/v1/sparks/events`
-  (§4.11), this one, `/v1/sparks/{id}` (§4.12) and `/v1/sparks/{id}/decision` (§4.13) — a single
-  segment each. Beyond §4.13's own action the prefix is still the `not_found` envelope (`…/decision/x`,
-  and the reserved-segment spellings §4.12 records), so a deeper shape answers the envelope rather than
-  a partial read. (This bullet once read *"exactly two routes exist … the unwritten §4.17"* — stale as
+  (§4.11), this one, `/v1/sparks/{id}` (§4.12), `/v1/sparks/{id}/decision` (§4.13) and
+  `/v1/sparks/{id}/inspire` (§4.14) — a single segment each, or one `{id}/<action>` shape. Beyond those
+  two actions the prefix is still the `not_found` envelope (`…/decision/x`, `…/inspire/x`, and the
+  reserved-segment spellings §4.12 records), so a deeper shape answers the envelope rather than a
+  partial read. (This bullet once read *"exactly two routes exist … the unwritten §4.17"* — stale as
   §4.9 and §4.17 landed — then *"§4.12 defined but not served"* — stale as #118 landed — then *"§4.13 …
   not served until K6 `#39`"* — stale as K4 `#38` landed.)
 
@@ -738,6 +781,21 @@ rather than left to the implementation:
   loser's transaction sees the committed row and answers `200`. A handler for the unreachable case would
   be a guard that cannot fail in the state it forbids.
 
+- **The INSPIRE read, and the seeded save's guards (settled in K5 `#39`)** — §4.14's readings live at
+  the endpoint, and the seeded save's at §4.2. One thing generalises: **the `decision_id` key is global
+  on both keyed writes, and both order their refusals the same way.** §4.13 records it for the
+  resolution; `#39` closed the same hole at §4.2, where the lookup was keyed on `decision_id` alone and
+  answered a request for a *different* spark with the first `Idea`. A key committed to another spark is
+  a `409` on both paths, a spark that is not `OFFERED` is a `409` on both, the repeat-for-*this*-spark
+  return is hoisted above both state checks on both, and the `404`-ahead-of-the-cross-spark-`409` order
+  is shared.
+
+  Recorded here rather than at the endpoints: **INSPIRE is a read, and the pair `{INSPIRE read, seeded
+  save}` is the one place a spark's resolution is split across two requests.** §4.14 writes nothing and
+  the spark stays `OFFERED`; only the committed save (`§4.2`) resolves it. That is why §4.14 can be
+  status-blind (it gates nothing) while §4.2's guard is where a resolved spark is refused — the division
+  is deliberate, not an omission.
+
 ---
 
 *Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`;
@@ -747,4 +805,5 @@ branch `feat/v2-vault-read-api`; by **O2** (`#22`), branch `feat/o2-vault-summar
 (`#33`), branch `feat/w8-run-surface`; by **K1** (`#35`), branch `feat/k1-sparks-read`;
 by **#118**, branch `feat/118-spark-detail`;
 by **K4** (`#38`), branch `feat/k4-decision`;
+by **K5** (`#39`), branch `feat/k5-inspire`;
 and by the **#94 docs pass**, branch `docs/94-e0-definition-scope`.*
