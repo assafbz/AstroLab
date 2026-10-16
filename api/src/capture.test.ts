@@ -1,6 +1,9 @@
 import { MIGRATIONS, migrate, openStore } from "@astrolab/store";
 import { beforeEach, describe, expect, test } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import {
   ConflictError,
@@ -8,9 +11,11 @@ import {
   NotFoundError,
   ValidationError,
   captureIdea,
+  derivedStatus,
   isoTimestamp,
   parseCaptureInput,
   type CaptureInput,
+  type IdeaFields,
 } from "./capture.js";
 
 /** A fresh migrated in-memory vault, the same schema `main` ships (`0001_init` + `0002`). */
@@ -125,6 +130,76 @@ describe("parseCaptureInput — docs/API.md §4.2 validation", () => {
   test("ignores unknown fields (§1)", () => {
     const parsed = parseCaptureInput({ ...valid, scores: 0.9, mechanism: "internal" });
     expect(parsed).not.toHaveProperty("scores");
+  });
+});
+
+describe("derivedStatus — the one status predicate (§4.13 mints it, §4.6 clears it)", () => {
+  const complete: IdeaFields = {
+    hypothesis: "H",
+    problem: "P",
+    monetization: "M",
+    domain_tags: ["fintech"],
+  };
+
+  test("all four supplied → ACTIVE", () => {
+    expect(derivedStatus(complete)).toBe("ACTIVE");
+  });
+
+  test("the ACCEPT case — a spark carries no monetization → NEEDS_COMPLETION (K4)", () => {
+    expect(derivedStatus({ ...complete, monetization: "" })).toBe("NEEDS_COMPLETION");
+  });
+
+  test.each([
+    ["hypothesis", ""],
+    ["problem", ""],
+    ["monetization", ""],
+  ] as const)("a blank %s → NEEDS_COMPLETION", (field, value) => {
+    expect(derivedStatus({ ...complete, [field]: value })).toBe("NEEDS_COMPLETION");
+  });
+
+  test("whitespace is not a supplied field", () => {
+    expect(derivedStatus({ ...complete, problem: "   " })).toBe("NEEDS_COMPLETION");
+  });
+
+  test("no domain tag → NEEDS_COMPLETION (§5 invariant 1)", () => {
+    expect(derivedStatus({ ...complete, domain_tags: [] })).toBe("NEEDS_COMPLETION");
+  });
+});
+
+/**
+ * The status rule is **one rule**. `derivedStatus` is defined once and both paths that touch the
+ * status call it — §4.13's ACCEPT mints it (K4), §4.6's iterate clears it (#42). A second, inline copy
+ * of the rule is the failure this guards: it would let the mint and the clear disagree. Structural, so
+ * each scan carries its own non-vacuity assertion.
+ */
+describe("derivedStatus — one definition site, and the rule spelled once", () => {
+  const SRC = fileURLToPath(new URL(".", import.meta.url));
+  const sources = readdirSync(SRC).filter(isShippedSource).sort();
+
+  test("the scan reaches this package's real sources", () => {
+    // Non-vacuity: a walk that saw nothing would make both assertions below pass for free.
+    expect(sources.length).toBeGreaterThan(10);
+    expect(sources).toEqual(expect.arrayContaining(["capture.ts", "decision.ts", "iterate.ts"]));
+  });
+
+  test("is defined once (capture.ts) and called by both paths that touch the status", () => {
+    const definitions: string[] = [];
+    const callers: string[] = [];
+    for (const name of sources) {
+      const text = readFileSync(join(SRC, name), "utf8");
+      if (/^export function derivedStatus\b/m.test(text)) definitions.push(name);
+      else if (/\bderivedStatus\(/.test(text)) callers.push(name);
+    }
+
+    expect(definitions).toEqual(["capture.ts"]);
+    expect(callers).toEqual(["decision.ts", "iterate.ts"]);
+  });
+
+  test("the four-field completeness test is spelled once — a second inline copy is the fork", () => {
+    const spelling = /\bmonetization\.trim\(\)\s*!==\s*""/;
+    const sites = sources.filter((name) => spelling.test(readFileSync(join(SRC, name), "utf8")));
+
+    expect(sites).toEqual(["capture.ts"]);
   });
 });
 
@@ -408,3 +483,11 @@ describe("captureIdea", () => {
     expect(count(db, "idea")).toBe(ideas);
   });
 });
+
+/** The shipped-source extension union, mirroring `worker/src/provider/boundary.test.ts` (tests are out). */
+const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
+const TEST_FILE = /\.test\.[cm]?[jt]sx?$/;
+
+function isShippedSource(name: string): boolean {
+  return SOURCE_EXTENSIONS.some((ext) => name.endsWith(ext)) && !TEST_FILE.test(name);
+}

@@ -33,6 +33,24 @@ export interface IdeaFields {
 }
 
 /**
+ * `FLOW.md` §4.3 step 4 / T27, executed rather than hard-coded: an idea is `ACTIVE` only when every
+ * mandatory field arrived, and `NEEDS_COMPLETION` otherwise. **One predicate owns the status**, so the
+ * two paths that touch it cannot disagree — §4.13's ACCEPT **mints** it from a spark's prefill, and
+ * §4.6's iterate **clears** it by the same call. Today a spark carries no `monetization`, so every
+ * ACCEPT lands `NEEDS_COMPLETION`; a validated iterate request always carries all four (§4.2's `422`),
+ * so it always lands `ACTIVE`. Assert the ACCEPT side (`decision.test.ts`) and adding a prefill
+ * reddens it rather than silently changing what the vault holds.
+ */
+export function derivedStatus(fields: IdeaFields): "ACTIVE" | "NEEDS_COMPLETION" {
+  const supplied =
+    fields.hypothesis.trim() !== "" &&
+    fields.problem.trim() !== "" &&
+    fields.monetization.trim() !== "" &&
+    fields.domain_tags.length > 0;
+  return supplied ? "ACTIVE" : "NEEDS_COMPLETION";
+}
+
+/**
  * The fields §4.2 accepts. `origin_spark_id`/`decision_id` are **both-or-neither**: both null is a
  * blank capture, both set is a seeded one (`parseCaptureInput` rejects exactly one).
  */

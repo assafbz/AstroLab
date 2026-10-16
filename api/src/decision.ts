@@ -12,6 +12,7 @@ import {
 
 import {
   ConflictError,
+  derivedStatus,
   insertProvenance,
   insertRootIdea,
   NotFoundError,
@@ -194,21 +195,6 @@ function accept(db: DatabaseSync, spark: DecisionSpark, now: string): string {
   insertProvenance(db, idea.id, spark.idea_a_id, spark.id);
   insertProvenance(db, idea.id, spark.idea_b_id, spark.id);
   return idea.id;
-}
-
-/**
- * `FLOW.md` §4.3 step 4 / T27, executed rather than hard-coded: the derived idea is `ACTIVE` only when
- * every mandatory field came across, and `NEEDS_COMPLETION` otherwise. Today `monetization` never
- * does, so every ACCEPT lands `NEEDS_COMPLETION` — assert it, and adding a prefill reddens the test
- * rather than silently changing what the vault holds.
- */
-function derivedStatus(fields: IdeaFields): "ACTIVE" | "NEEDS_COMPLETION" {
-  const supplied =
-    fields.hypothesis.trim() !== "" &&
-    fields.problem.trim() !== "" &&
-    fields.monetization.trim() !== "" &&
-    fields.domain_tags.length > 0;
-  return supplied ? "ACTIVE" : "NEEDS_COMPLETION";
 }
 
 /**

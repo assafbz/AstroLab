@@ -2,7 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import { isoTimestamp, vaultMutation } from "@astrolab/store";
 
-import { NotFoundError, type IdeaFields } from "./capture.js";
+import { NotFoundError, derivedStatus, type IdeaFields } from "./capture.js";
 import { toIdea, type Idea, type IdeaRow } from "./idea.js";
 
 /**
@@ -10,8 +10,9 @@ import { toIdea, type Idea, type IdeaRow } from "./idea.js";
  *
  * An iteration is the **same node** with a new version: it appends one `idea_version` row, replaces the
  * four mandatory fields and bumps `current_version`, and creates **no** lineage edge and **no** new
- * `idea` row (`FLOW.md` §2.3, L1). `status` is deliberately untouched — completing a
- * `NEEDS_COMPLETION` idea is `FLOW.md` T27's path (K8), not this one.
+ * `idea` row (`FLOW.md` §2.3, L1). `status` is **re-derived, not left stale** — supplying the four
+ * mandatory fields *is* `FLOW.md` T27's completion path (K8), so the one predicate that mints the flag
+ * (§4.13 ACCEPT's `derivedStatus`) clears it here, and the two paths cannot disagree.
  *
  * One transaction, and the ARCH §4 trigger comes from `vaultMutation` rather than a call here: the new
  * version, the node update and the revision stamp + enqueue commit together or not at all. An unknown
@@ -27,6 +28,9 @@ export function iterateIdea(db: DatabaseSync, id: string, fields: IdeaFields): I
     const version = row.current_version + 1;
     const now = isoTimestamp();
     const tags = JSON.stringify(fields.domain_tags);
+    // The §4.2 validator guarantees all four arrived, so this is always `ACTIVE` — but the status is
+    // *derived* here, not hard-coded, so the mint (§4.13) and the clear stay one rule.
+    const status = derivedStatus(fields);
 
     db.prepare(
       `INSERT INTO idea_version (idea_id, version, hypothesis, problem, monetization, domain_tags, created_at)
@@ -35,9 +39,9 @@ export function iterateIdea(db: DatabaseSync, id: string, fields: IdeaFields): I
 
     db.prepare(
       `UPDATE idea SET hypothesis = ?, problem = ?, monetization = ?, domain_tags = ?,
-                       current_version = ?, updated_at = ?
+                       status = ?, current_version = ?, updated_at = ?
        WHERE id = ?`,
-    ).run(fields.hypothesis, fields.problem, fields.monetization, tags, version, now, id);
+    ).run(fields.hypothesis, fields.problem, fields.monetization, tags, status, version, now, id);
 
     return toIdea({
       ...row,
@@ -45,6 +49,7 @@ export function iterateIdea(db: DatabaseSync, id: string, fields: IdeaFields): I
       problem: fields.problem,
       monetization: fields.monetization,
       domain_tags: tags,
+      status,
       current_version: version,
       updated_at: now,
     });
