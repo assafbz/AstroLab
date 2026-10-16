@@ -144,6 +144,7 @@ test("no path under /v1 answers anything but 401 without a valid token", async (
     "/v1/sparks/9f1c",
     "/v1/sparks/9f1c/decision",
     "/v1/sparks/9f1c/inspire",
+    "/v1/decisions/9f1c/undo",
     "/v1/vault/summary",
     "/v1/export",
     "/v1/nope",
@@ -183,13 +184,10 @@ test("an authorized but unimplemented /v1 route is the not_found envelope — ne
   // `/v1/sparks` a route, V6 (#17) makes `/v1/export` one, #118 makes `GET /v1/sparks/{id}` one,
   // K4 (#38) makes `POST /v1/sparks/{id}/decision` one and K5 (#39) makes `POST /v1/sparks/{id}/inspire`
   // one; each entry that pinned their *absence* is removed here as it lands (each has its own coverage
-  // below). The entry is replaced by the next *unclaimed* shape — §4.15's
-  // `POST /v1/decisions/{decision_id}/undo` (K6 `#40`) — so the envelope stays pinned for the shape
+  // below). K6 (#40) makes `POST /v1/decisions/{decision_id}/undo` one, and §4.15 was the **last
+  // unwritten §4 endpoint** — so no absence-pin successor remains, and the list keeps only the shapes
   // still without a route.
-  for (const [method, path] of [
-    ["POST", "/v1/decisions/9f1c/undo"],
-    ["GET", "/v1"],
-  ] as const) {
+  for (const [method, path] of [["GET", "/v1"]] as const) {
     expectEnvelope(
       await call(method, path, { authorization: `Bearer ${TOKEN}` }),
       404,
@@ -709,6 +707,154 @@ test("§4.14 is POST only, and only the exact shape — the rest is the envelope
   });
   // The reserved id is refused on §4.12's detail shape too, on any method.
   expectEnvelope(await call("GET", "/v1/sparks/run", auth), 404, "not_found");
+});
+
+/** K6 (#40) — `POST /v1/decisions/{decision_id}/undo` (§4.15, FLOW §5.4 / T12 / N3). */
+test("POST /v1/decisions/{id}/undo retracts an ACCEPT and re-offers the spark (§4.15)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const decided = await call("POST", "/v1/sparks/s1/decision", {
+    ...auth,
+    json: { decision_id: "d1", kind: "ACCEPT" },
+  });
+  const derived = (decided.body as { result_idea_id: string }).result_idea_id;
+
+  const result = await call("POST", "/v1/decisions/d1/undo", auth);
+
+  expect(result.status).toBe(200);
+  expect(result.contentType).toBe(JSON_UTF8);
+  expect(result.body).toEqual({
+    undone: true,
+    spark_id: "s1",
+    spark_status: "OFFERED",
+    retracted_idea_id: derived,
+  });
+  // The retract is V5's delete semantics, and the card is back in the deck with the resolution gone.
+  expect(db.prepare("SELECT COUNT(*) AS n FROM idea WHERE id = ?").get(derived)).toEqual({ n: 0 });
+  expect(db.prepare("SELECT COUNT(*) AS n FROM provenance_edge").get()).toEqual({ n: 0 });
+  expect(db.prepare("SELECT COUNT(*) AS n FROM decision").get()).toEqual({ n: 0 });
+  expect(db.prepare("SELECT status FROM spark WHERE id = 's1'").get()).toEqual({
+    status: "OFFERED",
+  });
+  // The re-offered card is on the deck again (§4.9).
+  expect((await call("GET", "/v1/sparks?state=offered", auth)).body).toEqual({
+    sparks: [expect.objectContaining({ id: "s1" })],
+  });
+});
+
+test("POST /v1/decisions/{id}/undo clears a DISMISS's negative signal (§4.15)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  await call("POST", "/v1/sparks/s1/decision", {
+    ...auth,
+    json: { decision_id: "d1", kind: "DISMISS" },
+  });
+
+  const result = await call("POST", "/v1/decisions/d1/undo", auth);
+
+  expect(result.status).toBe(200);
+  expect(result.body).toEqual({
+    undone: true,
+    spark_id: "s1",
+    spark_status: "OFFERED",
+    retracted_idea_id: null,
+  });
+  expect(db.prepare("SELECT COUNT(*) AS n FROM suppressed_pair").get()).toEqual({ n: 0 });
+  expect(db.prepare("SELECT status FROM spark WHERE id = 's1'").get()).toEqual({
+    status: "OFFERED",
+  });
+});
+
+test("POST /v1/decisions/{id}/undo reverses a committed seeded save (§4.15 / N3)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const saved = await call("POST", "/v1/ideas", {
+    ...auth,
+    json: { ...VALID, origin_spark_id: "s1", decision_id: "d-insp" },
+  });
+  const idea = (saved.body as { id: string }).id;
+
+  const result = await call("POST", "/v1/decisions/d-insp/undo", auth);
+
+  expect(result.status).toBe(200);
+  expect(result.body).toEqual({
+    undone: true,
+    spark_id: "s1",
+    spark_status: "OFFERED",
+    retracted_idea_id: idea,
+  });
+  expect(db.prepare("SELECT COUNT(*) AS n FROM idea WHERE id = ?").get(idea)).toEqual({ n: 0 });
+  expect(db.prepare("SELECT status FROM spark WHERE id = 's1'").get()).toEqual({
+    status: "OFFERED",
+  });
+});
+
+test("§4.15 reads no body — the id is the path (§4.16's posture)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  await call("POST", "/v1/sparks/s1/decision", {
+    ...auth,
+    json: { decision_id: "d1", kind: "ACCEPT" },
+  });
+
+  // A body is ignored, not validated and not echoed — the undo still answers.
+  const result = await call("POST", "/v1/decisions/d1/undo", { ...auth, json: { nonsense: true } });
+  expect(result.status).toBe(200);
+  expect(result.body).toMatchObject({ undone: true, spark_id: "s1" });
+});
+
+test("an unknown decision id on §4.15 is the not_found envelope, and writes nothing", async () => {
+  const before = db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get();
+  expectEnvelope(
+    await call("POST", "/v1/decisions/nope/undo", { authorization: `Bearer ${TOKEN}` }),
+    404,
+    "not_found",
+  );
+  expect(db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get()).toEqual(before);
+  expect(db.prepare("SELECT COUNT(*) AS n FROM spark_run").get()).toEqual({ n: 0 });
+});
+
+test("§4.15 refuses a decision the window closed — 409, and nothing churns (§4.15 / §5.4)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  await call("POST", "/v1/sparks/s1/decision", {
+    ...auth,
+    json: { decision_id: "d1", kind: "ACCEPT" },
+  });
+  db.prepare("UPDATE decision SET decided_at = '2000-01-01T00:00:00Z' WHERE id = 'd1'").run();
+  const before = db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get();
+
+  expectEnvelope(await call("POST", "/v1/decisions/d1/undo", auth), 409, "conflict");
+
+  expect(db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get()).toEqual(before);
+  expect(db.prepare("SELECT COUNT(*) AS n FROM decision").get()).toEqual({ n: 1 });
+});
+
+test("§4.15 needs a token like every /v1 route (§1)", async () => {
+  expectEnvelope(await call("POST", "/v1/decisions/d1/undo"), 401, "unauthorized");
+});
+
+test("§4.15 is POST only, and only the exact shape — the rest is the envelope (§2)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  await call("POST", "/v1/sparks/s1/decision", {
+    ...auth,
+    json: { decision_id: "d1", kind: "ACCEPT" },
+  });
+
+  expectEnvelope(await call("GET", "/v1/decisions/d1/undo", auth), 404, "not_found");
+  expectEnvelope(await call("DELETE", "/v1/decisions/d1/undo", auth), 404, "not_found");
+  for (const path of [
+    "/v1/decisions/d1/undo/x", // a deeper segment
+    "/v1/decisions/undo", // no id
+    "/v1/decisions/", // an empty id
+    "/v1/decisions/d1", // the bare id, no action
+    "/v1/decisions/d1/inspire", // the spark actions do not apply on this prefix
+  ]) {
+    expectEnvelope(await call("POST", path, auth), 404, "not_found");
+  }
+  // Non-vacuity: the decision is really undoable, so the envelopes above are the shape rules.
+  expect((await call("POST", "/v1/decisions/d1/undo", auth)).status).toBe(200);
 });
 
 test("a path outside /v1 is the envelope, and needs no token", async () => {
