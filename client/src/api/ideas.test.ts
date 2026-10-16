@@ -3,6 +3,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import {
   createIdea,
   deleteIdea,
+  forkIdea,
   getIdeaDetail,
   iterateIdea,
   listIdeas,
@@ -131,5 +132,23 @@ test("iterateIdea POSTs the four mandatory fields to {id}/iterate — K8 #42, §
   expect(init!.method).toBe("POST");
   expect(new Headers(init!.headers).get("content-type")).toBe("application/json");
   // Exactly the four — §4.6's request is `IdeaFields` verbatim, with no extra key to 422 on.
+  expect(JSON.parse(init!.body as string)).toEqual(fields);
+});
+
+test("forkIdea POSTs exactly §4.7's two fields to {id}/fork — the frozen request (V9 #20)", async () => {
+  const fork = { ...IDEA, id: "new", lineage_kind: "FORK" as const, lineage_parent_id: "9f1c" };
+  const fetchMock = stubFetch(() => Promise.resolve(json(fork, 201)));
+  const fields = {
+    mutation_delta: "Forking this into a compliance scheduler",
+    domain_tags: ["compliance"],
+  };
+
+  await expect(forkIdea("a b", fields)).resolves.toEqual(fork);
+  const [url, init] = fetchMock.mock.calls[0]!;
+  expect(url).toBe("/v1/ideas/a%20b/fork");
+  expect(init!.method).toBe("POST");
+  expect(new Headers(init!.headers).get("content-type")).toBe("application/json");
+  // Exactly the two — no `hypothesis`/`problem`/`monetization` key. §4.7 carries no text: the fork's
+  // three text fields are the parent's, copied server-side, and a third key here would be a `422`.
   expect(JSON.parse(init!.body as string)).toEqual(fields);
 });
