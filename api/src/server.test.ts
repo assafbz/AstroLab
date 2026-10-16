@@ -541,6 +541,46 @@ test("the body is validated before the id — `422` on a known and an unknown sp
   );
 });
 
+test("a repeat on `decision_id` returns the first Decision unchanged — 200, never a second idea (§4.13, N4)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  const json = { decision_id: "d1", kind: "ACCEPT" };
+  const first = await call("POST", "/v1/sparks/s1/decision", { ...auth, json });
+  const ideas = db.prepare("SELECT COUNT(*) AS n FROM idea").get();
+  const revision = db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get();
+
+  // The retry of an interrupted commit: the same key, on a spark the first attempt already resolved.
+  const second = await call("POST", "/v1/sparks/s1/decision", { ...auth, json });
+
+  expect(second.status).toBe(200);
+  expect(second.body).toEqual(first.body);
+  expect(db.prepare("SELECT COUNT(*) AS n FROM idea").get()).toEqual(ideas);
+  expect(db.prepare("SELECT COUNT(*) AS n FROM decision").get()).toEqual({ n: 1 });
+  expect(db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get()).toEqual(revision);
+});
+
+test("a raced swipe + tap on one `decision_id` resolves once — both 200, one decision, one idea (FLOW §2.2/N4)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const init = {
+    method: "POST",
+    headers: { authorization: `Bearer ${TOKEN}`, "content-type": "application/json" },
+    body: JSON.stringify({ decision_id: "race", kind: "ACCEPT" }),
+  };
+
+  const [a, b] = await Promise.all([
+    fetch(`${base}/v1/sparks/s1/decision`, init),
+    fetch(`${base}/v1/sparks/s1/decision`, init),
+  ]);
+  const [first, second] = (await Promise.all([a.json(), b.json()])) as [unknown, unknown];
+
+  expect([a.status, b.status]).toEqual([200, 200]);
+  expect(second).toEqual(first);
+  expect(db.prepare("SELECT COUNT(*) AS n FROM decision").get()).toEqual({ n: 1 });
+  expect(db.prepare("SELECT COUNT(*) AS n FROM idea WHERE id NOT IN ('a', 'b')").get()).toEqual({
+    n: 1,
+  });
+});
+
 test("a state conflict is `409` — a second decision on a resolved spark, or a key that names another (§4.13)", async () => {
   seedSparkDetail("s1", "OFFERED", true);
   seedSparkDetail("s2", "OFFERED", true);

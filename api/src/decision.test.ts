@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
 import { MIGRATIONS, migrate, openStore } from "@astrolab/store";
@@ -5,7 +8,6 @@ import { describe, expect, test } from "vitest";
 
 import { ConflictError, NotFoundError, ValidationError } from "./capture.js";
 import { parseDecisionInput, resolveDecision, type DecisionInput } from "./decision.js";
-
 /**
  * K4 (`#38`) — `POST /v1/sparks/{id}/decision` (`docs/API.md` §4.13, `§3.5`), at the layer that owns
  * the write. Four properties here are *checks*, not readings, and each is mutable:
@@ -314,6 +316,37 @@ describe("resolveDecision — idempotency on `decision_id` (§4.13, FLOW §2.2/N
     expect(count(db, "decision")).toBe(0);
     expect(count(db, "suppressed_pair")).toBe(0);
     expect(revision(db)).toBe(before);
+  });
+
+  test("one key, two connections to one file — the resolution is the store's, and the second sees it", () => {
+    // The falsifiable form of the "no `SQLITE_CONSTRAINT` handler" claim (ruled at #38's slice 1).
+    // `vaultMutation` opens `BEGIN IMMEDIATE`, so a second connection blocks at `BEGIN` until the first
+    // commits; its transaction then *reads* the committed row, which is why the primary-key path never
+    // fires and no bespoke handler is shipped. Delete the step-1 return and this reddens with a `409`
+    // (the key-conflict branch, reached only because the second connection *did* read the committed
+    // row), so the argument is checked rather than asserted.
+    const dir = mkdtempSync(join(tmpdir(), "astrolab-k4-"));
+    const path = join(dir, "vault.sqlite");
+    const first = openStore(path);
+    try {
+      migrate(first, MIGRATIONS);
+      seedPair(first);
+      seedSpark(first, "s1", "a", "b");
+      // A **second handle on the file** — `:memory:` would be a different database (the W8 lesson).
+      const second = openStore(path);
+
+      const committed = resolveDecision(first, "s1", accept);
+      const replayed = resolveDecision(second, "s1", accept);
+
+      expect(replayed).toEqual(committed);
+      expect(count(second, "decision")).toBe(1);
+      expect(count(second, "idea")).toBe(3); // the two sources + the one derived ROOT
+      expect(count(second, "spark_run")).toBe(1);
+      second.close();
+    } finally {
+      first.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
