@@ -143,6 +143,7 @@ test("no path under /v1 answers anything but 401 without a valid token", async (
     "/v1/sparks/events",
     "/v1/sparks/9f1c",
     "/v1/sparks/9f1c/decision",
+    "/v1/sparks/9f1c/inspire",
     "/v1/vault/summary",
     "/v1/export",
     "/v1/nope",
@@ -179,13 +180,14 @@ test("authorized, the encoded spellings route to the same place or the envelope 
 
 test("an authorized but unimplemented /v1 route is the not_found envelope — never a 200", async () => {
   // W8 (#33) implemented `GET /v1/sparks/state` and `POST /v1/sparks/run`, K1 (#35) makes bare
-  // `/v1/sparks` a route, V6 (#17) makes `/v1/export` one, #118 makes `GET /v1/sparks/{id}` one and
-  // K4 (#38) makes `POST /v1/sparks/{id}/decision` one; each entry that pinned their *absence* is
-  // removed here as it lands (each has its own coverage below). The entry is replaced by the next
-  // *unclaimed* spark shape — §4.14's `POST /v1/sparks/{id}/inspire` (K5 `#39`) — so the envelope
-  // stays pinned for the shape still without a route.
+  // `/v1/sparks` a route, V6 (#17) makes `/v1/export` one, #118 makes `GET /v1/sparks/{id}` one,
+  // K4 (#38) makes `POST /v1/sparks/{id}/decision` one and K5 (#39) makes `POST /v1/sparks/{id}/inspire`
+  // one; each entry that pinned their *absence* is removed here as it lands (each has its own coverage
+  // below). The entry is replaced by the next *unclaimed* shape — §4.15's
+  // `POST /v1/decisions/{decision_id}/undo` (K6 `#40`) — so the envelope stays pinned for the shape
+  // still without a route.
   for (const [method, path] of [
-    ["POST", "/v1/sparks/9f1c/inspire"],
+    ["POST", "/v1/decisions/9f1c/undo"],
     ["GET", "/v1"],
   ] as const) {
     expectEnvelope(
@@ -618,6 +620,92 @@ test("the wrong method, or a deeper segment, on `{id}/decision` is the envelope 
     404,
     "not_found",
   );
+});
+
+/** K5 (#39) — `POST /v1/sparks/{id}/inspire` (§4.14): the S2 seed, and it is **not** a resolution. */
+test("POST /v1/sparks/{id}/inspire answers §4.14's seed payload (§4.14)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+
+  const result = await call("POST", "/v1/sparks/s1/inspire", {
+    authorization: `Bearer ${TOKEN}`,
+  });
+
+  expect(result.status).toBe(200);
+  expect(result.contentType).toBe(JSON_UTF8);
+  // Exact: §3.4's fields under the payload's key names — `id` as `spark_id`, no `created_at`, and the
+  // selection internals (mechanism, the two scores, the source idea ids) absent, as at §4.12.
+  expect(result.body).toEqual({
+    spark_id: "s1",
+    direction: "a direction",
+    claim: "a claim",
+    what_it_takes: "what it takes",
+    first_step: "a first step",
+    domain_tags: ["fintech", "health"],
+  });
+});
+
+test("INSPIRE writes nothing — no `decision`, and the spark stays `OFFERED` (#39's done criterion)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  const before = db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get();
+
+  const result = await call("POST", "/v1/sparks/s1/inspire", {
+    authorization: `Bearer ${TOKEN}`,
+  });
+  expect(result.status).toBe(200);
+
+  // The seed is a read: no decision row, no resolution, and no revision stamp (so no run).
+  expect(db.prepare("SELECT COUNT(*) AS n FROM decision").get()).toEqual({ n: 0 });
+  expect(db.prepare("SELECT status FROM spark WHERE id = 's1'").get()).toEqual({
+    status: "OFFERED",
+  });
+  expect(db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get()).toEqual(before);
+  expect(db.prepare("SELECT COUNT(*) AS n FROM spark_run").get()).toEqual({ n: 0 });
+});
+
+test('INSPIRE is status-blind, and a legacy `what_it_takes` reads `null` — not `""` (§4.12\'s reading)', async () => {
+  seedSparkDetail("s-res", "RESOLVED-INSPIRED", false);
+
+  const result = await call("POST", "/v1/sparks/s-res/inspire", {
+    authorization: `Bearer ${TOKEN}`,
+  });
+  expect(result.status).toBe(200);
+  // The id is the filter, so a resolved spark still seeds; the payload carries no `status`.
+  expect(result.body).toMatchObject({ spark_id: "s-res", what_it_takes: null });
+});
+
+test("an unknown id on §4.14 is the not_found envelope, and writes nothing", async () => {
+  const before = db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get();
+  expectEnvelope(
+    await call("POST", "/v1/sparks/9f1c-missing/inspire", { authorization: `Bearer ${TOKEN}` }),
+    404,
+    "not_found",
+  );
+  expect(db.prepare("SELECT revision FROM vault_meta WHERE id = 1").get()).toEqual(before);
+});
+
+test("§4.14 needs a token like every /v1 route (§1)", async () => {
+  expectEnvelope(await call("POST", "/v1/sparks/s1/inspire"), 401, "unauthorized");
+});
+
+test("§4.14 is POST only, and only the exact shape — the rest is the envelope (§2)", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+  // A live spark *under* the reserved id `run` too: the id reservation, not absence, is what refuses
+  // `/run/inspire` (with an empty vault the envelope would be true for the wrong reason — #118's lesson).
+  seedSparkDetail("run", "OFFERED", true);
+  const auth = { authorization: `Bearer ${TOKEN}` };
+
+  expectEnvelope(await call("GET", "/v1/sparks/s1/inspire", auth), 404, "not_found");
+  expectEnvelope(await call("DELETE", "/v1/sparks/s1/inspire", auth), 404, "not_found");
+  expectEnvelope(await call("POST", "/v1/sparks/s1/inspire/x", auth), 404, "not_found");
+  expectEnvelope(await call("POST", "/v1/sparks/inspire", auth), 404, "not_found");
+  expectEnvelope(await call("POST", "/v1/sparks/run/inspire", auth), 404, "not_found");
+  // Non-vacuity: both rows are live and on the deck, so the envelopes above are the shape rules and
+  // not an unknown id.
+  expect((await call("GET", "/v1/sparks?state=offered", auth)).body).toEqual({
+    sparks: [expect.objectContaining({ id: "s1" }), expect.objectContaining({ id: "run" })],
+  });
+  // The reserved id is refused on §4.12's detail shape too, on any method.
+  expectEnvelope(await call("GET", "/v1/sparks/run", auth), 404, "not_found");
 });
 
 test("a path outside /v1 is the envelope, and needs no token", async () => {
