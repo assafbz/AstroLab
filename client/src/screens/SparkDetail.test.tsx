@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { SparkCard } from "../components/SparkCard.tsx";
@@ -30,18 +30,55 @@ function json(body: unknown, status = 200): Response {
 }
 
 /**
- * A `fetch` stub that answers **only** §4.12 — anything else is a `not_found`, so a screen that also
- * read §4.9 (or took the card's payload as a prop) would not render at all.
+ * §4.13's request body, read off the stub's `init` — the decision id is what the tests read back.
  */
-function stubFetch(impl?: (url: string) => Promise<Response>) {
-  const mock = vi.fn((url: string) => (impl ? impl(url) : Promise.resolve(json(DETAIL))));
+function bodyOf(init?: RequestInit): { decision_id: string; kind: string } {
+  return JSON.parse(String(init?.body ?? "{}")) as { decision_id: string; kind: string };
+}
+
+/** The `Decision` (§3.5) the server would record for a §4.13 body. */
+function decisionResponse(url: string, body: { decision_id: string; kind: string }) {
+  const sparkId = url.split("/v1/sparks/")[1]!.split("/")[0]!;
+  return {
+    decision_id: body.decision_id,
+    spark_id: sparkId,
+    kind: body.kind,
+    result_idea_id: body.kind === "ACCEPT" ? "9f1c" : null,
+    spark_status: body.kind === "ACCEPT" ? "RESOLVED-ACCEPTED" : "RESOLVED-DISMISSED",
+    decided_at: "2026-10-16T09:00:00Z",
+    undoable: true,
+  };
+}
+
+/**
+ * A `fetch` stub that answers **only** §4.12 and §4.13 — anything else is a `not_found`, so a screen
+ * that also read §4.9 (or took the card's payload as a prop) would not render at all.
+ */
+function stubFetch(impl?: (url: string, init?: RequestInit) => Promise<Response>) {
+  const mock = vi.fn((url: string, init?: RequestInit) =>
+    impl
+      ? impl(url, init)
+      : Promise.resolve(
+          json(url.includes("/decision") ? decisionResponse(url, bodyOf(init)) : DETAIL),
+        ),
+  );
   vi.stubGlobal("fetch", mock);
   return mock;
+}
+
+/** Every §4.13 call the screen made, with the body it carried — in call order. */
+function decisionCalls(mock: ReturnType<typeof stubFetch>) {
+  return mock.mock.calls
+    .filter((call) => String(call[0]).includes("/decision"))
+    .map((call) => ({ url: String(call[0]), body: bodyOf(call[1]) }));
 }
 
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  // The resolution's one side effect is the route change (back to the deck); leaving it set would leak
+  // into the next test, the same way it would for the tap in `Sparks.test.tsx`.
+  window.location.hash = "";
 });
 
 /** The labels the screen drew, in document order — the composition's own order, read off the DOM. */
@@ -162,13 +199,88 @@ test("Not for me is the second kind on the same path — and it is not the first
   expect(detailSeam.mock.calls).toEqual([[DETAIL.id, "DISMISS"]]);
 });
 
-test("the seat is inert with no seam supplied — the app path invents no request (K7 fills it)", async () => {
+test("with no seam supplied the screen resolves through its own module — the press posts §4.13 (K7)", async () => {
   const mock = stubFetch();
   render(<SparkDetail id={DETAIL.id} />);
 
   fireEvent.click(await screen.findByRole("button", { name: "Good" }));
 
-  // Nothing posts and nothing navigates: the press reaches the inert seam, and the only call the screen
-  // made is §4.12's read. A screen that resolved on its own would show up here as a second call.
-  expect(mock.mock.calls.map((call) => call[0])).toEqual(["/v1/sparks/1a2b"]);
+  // K3's seat was inert because nothing could post; K7 wires the **screen's own** resolver, so the app
+  // path (no `onResolve` supplied) is the one that resolves: §4.12's read, then §4.13's write, nothing
+  // else. The injected seam below still overrides it, which is what keeps the parity check honest.
+  await waitFor(() => expect(decisionCalls(mock)).toHaveLength(1));
+  expect(mock.mock.calls.map((call) => call[0])).toEqual([
+    "/v1/sparks/1a2b",
+    "/v1/sparks/1a2b/decision",
+  ]);
+});
+
+test("a commit returns to the deck — the card is gone, so the detail would show what is not offered (4a)", async () => {
+  const mock = stubFetch();
+  render(<SparkDetail id={DETAIL.id} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Good" }));
+
+  await waitFor(() => expect(window.location.hash).toBe("#/"));
+  // A real client-generated key (§2.2), not a literal — the id a Retry would have to re-issue.
+  expect(decisionCalls(mock)[0]!.body.decision_id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-/);
+});
+
+test("a retryable failure keeps the detail and draws T29's notice; Retry re-issues the same id (K7)", async () => {
+  let decisions = 0;
+  const mock = stubFetch((url, init) => {
+    if (!url.includes("/decision")) return Promise.resolve(json(DETAIL));
+    decisions += 1;
+    // §2 gives a rejected `fetch` the `network` code — the T29 case the surface exists for.
+    return decisions === 1
+      ? Promise.reject(new Error("dropped"))
+      : Promise.resolve(json(decisionResponse(url, bodyOf(init))));
+  });
+  render(<SparkDetail id={DETAIL.id} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Good" }));
+
+  const notice = (await screen.findByText(/Nothing was recorded/)).closest("p")!;
+  // The detail stays: no read ran, and the spark is still drawn.
+  expect(screen.getByRole("heading", { level: 1, name: DETAIL.direction })).toBeTruthy();
+  expect(window.location.hash).not.toBe("#/");
+
+  fireEvent.click(within(notice).getByRole("button", { name: "Retry" }));
+
+  await waitFor(() => expect(decisionCalls(mock)).toHaveLength(2));
+  // §2.2: the retry carries the same key, so a commit the response lost is answered by §4.13's repeat.
+  expect(decisionCalls(mock)[1]!.body.decision_id).toBe(decisionCalls(mock)[0]!.body.decision_id);
+  // …and when it commits, the deck is where the user lands.
+  await waitFor(() => expect(window.location.hash).toBe("#/"));
+});
+
+test("a `409` returns to the deck and offers no Retry — the spark is not OFFERED, so a Retry would loop (4b)", async () => {
+  stubFetch((url) =>
+    url.includes("/decision")
+      ? Promise.resolve(json({ error: { code: "conflict", message: "spark is not OFFERED" } }, 409))
+      : Promise.resolve(json(DETAIL)),
+  );
+  render(<SparkDetail id={DETAIL.id} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Good" }));
+
+  // The server stated a truth; the client re-reads the deck (the route change mounts S1, which reads
+  // §4.10 + §4.9) rather than retrying against it.
+  await waitFor(() => expect(window.location.hash).toBe("#/"));
+  expect(screen.queryByText(/Nothing was recorded/)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+});
+
+test("an injected seam overrides the screen's own — the parity path is still the seam's (K7)", async () => {
+  // What `onResolve` is *for* now: the §5.5 parity checks compare the two screens' commands through it,
+  // so the shape stays one per screen even though each screen owns its resolver.
+  const mock = stubFetch();
+  const seam = vi.fn();
+  render(<SparkDetail id={DETAIL.id} onResolve={seam} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "Good" }));
+
+  expect(seam.mock.calls).toEqual([[DETAIL.id, "ACCEPT"]]);
+  // The injected seam is the path: nothing reaches §4.13 through the screen's own resolver.
+  expect(decisionCalls(mock)).toHaveLength(0);
 });

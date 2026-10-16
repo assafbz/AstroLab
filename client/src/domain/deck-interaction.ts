@@ -15,7 +15,7 @@
  * deciding it — and it stays off the seam, so the one-call-site count above is untouched by it.
  */
 
-/** `docs/API.md` §3.6 — a decision's `kind`, verbatim. */
+/** `docs/API.md` §3.5 — a decision's `kind`, verbatim. */
 export type ResolutionKind = "ACCEPT" | "DISMISS" | "INSPIRED";
 
 /**

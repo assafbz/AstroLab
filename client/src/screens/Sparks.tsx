@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { postDecision } from "../api/decisions.ts";
 import { enqueueRun, engineState, offeredSparks, subscribeEngineEvents } from "../api/sparks.ts";
 import type { EngineState, Spark, VaultSummary } from "../api/types.ts";
 import { vaultSummary } from "../api/vault.ts";
@@ -10,6 +11,7 @@ import { SparkCard } from "../components/SparkCard.tsx";
 import { deckBand, type DeckBand } from "../domain/deck-state.ts";
 import { createDeckStream, type DeckStream } from "../domain/deck-stream.ts";
 import type { ResolveSeam } from "../domain/deck-interaction.ts";
+import { createDecisionResolver, isRetryable, resolutionNotice } from "../domain/decision.ts";
 import { createRunTrigger } from "../domain/run-trigger.ts";
 import { sparkHref } from "../router.ts";
 
@@ -66,6 +68,46 @@ export function Sparks() {
     createRunTrigger(() => enqueueRun().finally(() => void load())),
   );
 
+  /**
+   * The deck's **resolution seam** (K7 `#41`): card → `resolve` → `domain/decision.ts` → §4.13. This is
+   * what the inert seat was waiting for; the seam is still `void`, so the screen learns the outcome
+   * through the wiring below, never from a return value.
+   *
+   * **Success re-reads; it never removes the card locally.** The ladder and the deck are the server's
+   * (§4.10, §4.9) — a count that drifts is the defect §4.10 exists to prevent, and a card shown as
+   * resolved before the server says so is a committed idea the client pretends about (`FLOW.md` §4.3).
+   * So a commit fires the same `load()` the run trigger uses, and whatever §4.10 + §4.9 answer is what
+   * renders.
+   *
+   * **Failure is non-destructive (T29) and the card stays.** A retryable failure — `network` /
+   * `internal_error`, the two that can differ on a second try (`isRetryable`) — raises a notice whose
+   * one lever is **Retry**, re-issuing the *same* `decision_id` through the same module. Anything else
+   * is the server **stating** something (`conflict` that the spark is not `OFFERED`, `not_found`, a bad
+   * token): the screen **re-reads** and lets the read show the truth rather than offer a Retry that
+   * could only loop.
+   */
+  const [failure, setFailure] = useState<ResolutionFailure | null>(null);
+  const [resolver] = useState(() =>
+    createDecisionResolver({
+      post: postDecision,
+      onResolved: (sparkId) => {
+        // The notice belongs to **its** decision: the lost-response → Retry path ends in a success for
+        // that spark, so the notice must go when it settles — a notice left under a card the re-read has
+        // already taken away is a stale surface (S3's ruling).
+        setFailure((current) => (current !== null && current.sparkId === sparkId ? null : current));
+        void load();
+      },
+      onFailed: (sparkId, error) => {
+        if (isRetryable(error)) {
+          setFailure({ sparkId, message: resolutionNotice(error) });
+          return;
+        }
+        setFailure(null);
+        void load();
+      },
+    }),
+  );
+
   useEffect(() => {
     const stream = createDeckStream({
       subscribe: subscribeEngineEvents,
@@ -120,6 +162,11 @@ export function Sparks() {
       view={view}
       onToggleView={() => setView((current) => (current === "deck" ? "list" : "deck"))}
       onRun={() => void runTrigger.fire()}
+      onResolve={resolver.resolve}
+      failure={failure}
+      onRetryResolution={() => {
+        if (failure !== null) resolver.retry(failure.sparkId);
+      }}
     />
   );
 }
@@ -154,6 +201,12 @@ function Band(props: {
   view: DeckView;
   onToggleView: () => void;
   onRun: () => void;
+  /** The deck's one resolution seam — the card's, supplied by the screen (§5.5). */
+  onResolve: ResolveSeam;
+  /** A resolution that did not commit, and can be re-issued (T29); `null` otherwise. */
+  failure: ResolutionFailure | null;
+  /** Re-issue the pending decision — the same `decision_id` (§2.2). */
+  onRetryResolution: () => void;
 }) {
   const { band } = props;
   /** The read's head — the card the deck shows one at a time (§4.9's order, untouched). */
@@ -191,18 +244,33 @@ function Band(props: {
         <ul className="list">
           {band.cards.map((spark) => (
             <li key={spark.id}>
-              <SparkCard spark={spark} onResolve={resolve} onOpen={openSpark} />
+              <SparkCard spark={spark} onResolve={props.onResolve} onOpen={openSpark} />
             </li>
           ))}
         </ul>
       ) : head ? (
-        <SparkCard spark={head} onResolve={resolve} onOpen={openSpark} />
+        <SparkCard spark={head} onResolve={props.onResolve} onOpen={openSpark} />
       ) : null}
 
       {/* E1 sits *with* the cards — in-flight work, never a full-screen takeover. Nothing about a
           dropped stream changes that: the fallback re-reads, and until it answers the band is the last
           truth the server gave. */}
       {band.shimmer ? <Shimmer label="Computing sparks…" /> : null}
+
+      {/* T29 — a resolution that did not commit. The card above **stays** (nothing is removed locally,
+          §4.10/§4.9), and this notice composes *around* it, the E4 pattern: non-destructive, and its one
+          lever is Retry, which re-issues the same `decision_id` (§2.2) so a commit that the response
+          lost is answered by §4.13's repeat rather than resolved twice. */}
+      {props.failure === null ? null : (
+        <p className="banner">
+          <span className="banner__body" role="status">
+            {props.failure.message}
+          </span>
+          <button type="button" className="button button--ghost" onClick={props.onRetryResolution}>
+            Retry
+          </button>
+        </p>
+      )}
 
       {/* E3 is the composed empty; at exactly the floor it adds §9's widening nudge, and its levers are
           Add idea + Recompute (§5.3; the Fork CTA lands with S5, which owns that route). */}
@@ -235,14 +303,11 @@ function Band(props: {
   );
 }
 
-/**
- * The deck's resolution seam — **the call itself is K4 `#38`'s** (`POST /v1/sparks/{id}/decision`).
- * This slice wires the path (card → the one `onResolve`) and leaves the seat the decision API will
- * occupy; until then a Good / Not for me press resolves nothing rather than inventing a request, so the
- * deck never claims a decision the server has not recorded. Undo (K5) and Recompute (S4) meet the same
- * edge.
- */
-const resolve: ResolveSeam = () => {};
+/** T29's notice: which spark failed, and the sentence the user reads. */
+interface ResolutionFailure {
+  sparkId: string;
+  message: string;
+}
 
 /**
  * T08 — the card's **tap** opens S1b (`#/sparks/<id>`, `FLOW.md` §4.5). It is a route change, not a
