@@ -457,10 +457,13 @@ Readings this doc had not pinned (settled in #118):
 - **An unknown id is §2's `not_found` (`404`) — and it is the only `404` here.** The read moves nothing
   and reaches no provider, like §4.9/§4.10: an already-offered spark stays reviewable with the engine
   down (`FLOW.md` §5.6).
-- **The `{id}` shape is exactly one non-empty segment.** The reserved exact paths — `state` (§4.10),
-  `events` (§4.11), `run` (§4.16) — are matched **before** the `{id}` shape, so none is ever read as an
-  id; a further segment (`/v1/sparks/{id}/decision`, §4.13, K6 `#39`) and the bare trailing slash are
-  the `not_found` envelope until K6 lands.
+- **The `{id}` shape is exactly one non-empty segment, and never a reserved one.** The reserved paths
+  — `state` (§4.10), `events` (§4.11), `run` (§4.16) — are matched **before** this shape **and refused by
+  it**, on *any* method, so no reserved name is ever read as an id. (`GET /v1/sparks/run` read `run` as
+  the id `run` until K4 `#38` closed that in the matcher: the same `404`/`not_found` either way, but
+  the clause is now literally true rather than nearly.) A further segment
+  (`/v1/sparks/{id}/decision`, §4.13, which is its own route since K4 `#38`), a nested one
+  (`…/decision/x`), and the bare trailing slash are the `not_found` envelope (§2).
 
 ### 4.13 `POST /v1/sparks/{id}/decision` — ACCEPT / DISMISS
 Request: `{ "decision_id": "…", "kind": "ACCEPT" | "DISMISS" }`.
@@ -476,6 +479,38 @@ Request: `{ "decision_id": "…", "kind": "ACCEPT" | "DISMISS" }`.
 - **Both are vault operations and must succeed with the AI down** (`FLOW.md` §4.3; NFR-A1).
 
 `200` → `Decision` (§3.5). A repeated `(spark_id, decision_id)` returns the first `Decision` unchanged.
+
+Readings this doc had not pinned (settled in K4 `#38`):
+
+- **The check order is `422 → 404 → 409`, with the idempotent repeat hoisted above all three.** The
+  body contract is checked first (the §4.2/§4.6/§4.7 order), so a malformed body is `422` on an unknown
+  spark too; then an unknown `{id}` is `404`; then `409` for a `decision_id` already recorded for
+  **another** spark — the key is global, and one client id must not silently alias two decisions — or
+  for a spark that is not `OFFERED` (only a live offer may resolve). A recorded decision for this
+  `decision_id` **and this spark** is answered `200` **before** all of them: it is the retry of an
+  interrupted commit, and a resolved-state check ahead of it would `409` a legal retry (`FLOW.md` §2.2 /
+  N4). Pinned in `api/src/server.test.ts` in both directions, so the order cannot silently flip.
+- **`ACCEPT`'s prefill is a stated reading, not an invention** — `FLOW.md` §4.3 step 4 / T27, executed:
+  `direction → hypothesis`, `claim → problem`, `monetization` **blank**, and `domain_tags` = the two
+  sources' tags, deduped in pair order (§3.3). **Every one-tap ACCEPT therefore lands
+  `NEEDS_COMPLETION`**: a `spark` carries no `monetization` (`ARCHITECTURE.md` §2.3) and `PRD.md` §2
+  makes it mandatory, so the idea is saved, flagged, excluded from selection, and nudged — T27 by
+  construction, not a defect. `FLOW.md` §6 Q1 still marks it owner-overridable; if that flips, the
+  change is this map and the status it implies, not the schema.
+- **`ACCEPT` writes no `suppressed_pair` row.** §3.5 retires an accepted pair by the `spark` row itself
+  — the engine's settled set is `spark` (any status) ∪ `suppressed_pair`, so the union already names it,
+  and a second write would be redundant state. A **DISMISS** is the other way round: its
+  `suppressed_pair(pair_key, 'DISMISSED')` row is the negative signal (and replaces a `NOISE` row for
+  the same pair — the user's verdict is the last word), with no vault node created.
+- **No concurrency handler, deliberately.** A raced swipe + tap is serialised by the write transaction,
+  which opens `BEGIN IMMEDIATE`: the loser reads the committed row and answers `200` — never a `500`,
+  never a second idea — so there is no `SQLITE_CONSTRAINT` arm to write. The claim is *checked*, not
+  argued: one key through two connections to one file, one idea and one `decision` row.
+- **`undoable` is `true` on a fresh resolution.** `FLOW.md` §5.4 leaves the window unspecified and §4.15
+  is K6 `#40`'s; until it lands no window has closed, so the flag reports what is true rather than
+  standing in for a policy that does not exist yet.
+- **This shape is `POST` only.** A `GET`/`DELETE` on it, and any deeper segment (`…/decision/x`), are
+  §2's `not_found` envelope like every other route/method pair that is not defined.
 
 ### 4.14 `POST /v1/sparks/{id}/inspire` — open seeded capture
 `200` → the seed payload to prefill Capture:
@@ -517,11 +552,12 @@ Readings this doc had not pinned (settled in W8 `#33`):
   `run_id` rather than adding a second row.
 - **The bare `/v1/sparks/{id}` is a route; the *deeper* `{id}` shapes are not.** The implemented paths
   under the prefix are bare `/v1/sparks` (§4.9), `/v1/sparks/state` (§4.10), `/v1/sparks/events`
-  (§4.11), this one, and — since #118 — `/v1/sparks/{id}` (§4.12), a single segment. A **further**
-  segment is still the `not_found` envelope: `/v1/sparks/{id}/decision` (§4.13) is defined in this
-  contract but **not served** until K6 `#39`, so it answers the envelope, not a partial read. (This
-  bullet once read *"exactly two routes exist … the unwritten §4.17"* — stale as §4.9 and §4.17 landed —
-  then *"§4.12 defined but not served"* — stale as #118 landed.)
+  (§4.11), this one, `/v1/sparks/{id}` (§4.12) and `/v1/sparks/{id}/decision` (§4.13) — a single
+  segment each. Beyond §4.13's own action the prefix is still the `not_found` envelope (`…/decision/x`,
+  and the reserved-segment spellings §4.12 records), so a deeper shape answers the envelope rather than
+  a partial read. (This bullet once read *"exactly two routes exist … the unwritten §4.17"* — stale as
+  §4.9 and §4.17 landed — then *"§4.12 defined but not served"* — stale as #118 landed — then *"§4.13 …
+  not served until K6 `#39`"* — stale as K4 `#38` landed.)
 
 ### 4.17 `GET /v1/export` — open, complete export (NFR-D1)
 `200` → a single self-describing JSON document (`ARCHITECTURE.md` §8):
@@ -676,6 +712,24 @@ rather than left to the implementation:
   filter because the `{id}` **is** the filter, so a resolved spark must still answer on a tap-back.
   §3.4 carries the projection: `Spark` plus only `what_it_takes`.
 
+- **The decision API (settled in K4 `#38`)** — §4.13's readings live at the endpoint. Two generalise:
+  - **The idempotent repeat is hoisted above the state checks.** A recorded `decision_id` for *this*
+    spark answers `200` before the not-`OFFERED` `409`, or a retry after an interrupted commit would
+    `409` instead of returning the first `Decision`; everything else keeps the §4.2/§4.6/§4.7 order
+    (`422 → 404 → 409`). This is the one place the `decision_id` key is read *before* the state, and it
+    is deliberate rather than an accident of ordering.
+  - **The resolving read is `store`'s, and it is deliberately not status-filtered.**
+    `sparkForDecision(db, id)` carries the `status`, the canonical `pair_key` and the two source idea
+    ids — fields no response shows — because the write branches on the state and points its provenance
+    and its suppression at the pair. The caller owns the `409`; a filter in the read would turn it into
+    a `404`. It shares `SPARK_SELECT` and `pairTags` with §4.9/§4.12, so the derived union is one
+    definition across all three reads.
+
+  Recorded here rather than at the endpoint: **no primary-key conflict can arise, so none is handled.**
+  The write runs inside `BEGIN IMMEDIATE`, so two racing clients serialise before either reads; the
+  loser's transaction sees the committed row and answers `200`. A handler for the unreachable case would
+  be a guard that cannot fail in the state it forbids.
+
 ---
 
 *Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`;
@@ -684,4 +738,5 @@ branch `feat/v2-vault-read-api`; by **O2** (`#22`), branch `feat/o2-vault-summar
 (`#16`), branch `feat/v5-delete-api`; by **V3** (`#14`), branch `feat/v3-iterate-api`; by **W8**
 (`#33`), branch `feat/w8-run-surface`; by **K1** (`#35`), branch `feat/k1-sparks-read`;
 by **#118**, branch `feat/118-spark-detail`;
+by **K4** (`#38`), branch `feat/k4-decision`;
 and by the **#94 docs pass**, branch `docs/94-e0-definition-scope`.*
