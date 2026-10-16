@@ -86,6 +86,15 @@ export function sparkHref(id: string): string {
 }
 
 /**
+ * The **seeded S2** route's hash for one spark (`#/capture/<id>`, T09). The id is the spark Capture
+ * prefills from (§4.14); the route carries it so a reload and a deep link render the same seeded form,
+ * exactly as `#/sparks/<id>` renders S1b from its own read. Ids are opaque — never encoded here.
+ */
+export function captureHref(id: string): string {
+  return `#/capture/${id}`;
+}
+
+/**
  * The id in an `#/sparks/<id>` path, or `null` when the path is not a per-id route — the same
  * contract as `ideaIdFromPath`, for the same reason: S1b is not an entry in `SCREENS` (S1 lives at
  * `/`), so `matchScreen` alone would call it a not-found, and the shell must resolve the id *before*
@@ -96,5 +105,20 @@ export function sparkHref(id: string): string {
  */
 export function sparkIdFromPath(path: string): string | null {
   const match = /^\/sparks\/([^/]+)$/.exec(path.replace(/\/+$/, ""));
+  return match ? match[1]! : null;
+}
+
+/**
+ * The spark id in a `#/capture/<id>` path, or `null` when the path is not that per-id route — the same
+ * contract as `ideaIdFromPath` / `sparkIdFromPath`, for the same reason: the **seeded** S2 is not an
+ * entry in `SCREENS` (`SCREENS`'s S2 entry is the bare `/capture`), so the shell must resolve the id
+ * *before* it matches. A trailing slash still resolves.
+ *
+ * **A bare `/capture` is not this route**: it is `SCREENS`' own blank capture and is matched as S2, so
+ * the seeded path needs an id — a path with nothing after the slash is the blank form, not a seed of
+ * nothing.
+ */
+export function seedSparkIdFromPath(path: string): string | null {
+  const match = /^\/capture\/([^/]+)$/.exec(path.replace(/\/+$/, ""));
   return match ? match[1]! : null;
 }

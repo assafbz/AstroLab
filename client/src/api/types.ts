@@ -121,6 +121,30 @@ export interface SparkDetail extends Spark {
 }
 
 /**
+ * `docs/API.md` §4.14 — the seed payload `POST /v1/sparks/{id}/inspire` returns to prefill S2.
+ *
+ * It is §3.4's exact projection under the payload's own key names: `Spark` plus `what_it_takes`, minus
+ * `created_at`, with `id` presented as `spark_id` (the client keys the seed by the spark it came from).
+ * §3.3's six fields are therefore all here, and the screen maps **four** of them onto Capture's fields
+ * (`seedToDraft`): a spark carries no `monetization`, and `what_it_takes`/`first_step` have no Capture
+ * field to land in, so they are read and not seeded (recorded in #119). `domain_tags` is the two source
+ * ideas' deduped union, folded server-side (§3.3) — the client takes it as given.
+ */
+export interface InspireSeed {
+  spark_id: string;
+  /** The proposed idea — the "Core Hypothesis" the seeded capture prefills. */
+  direction: string;
+  /** Why it matters — the "Problem Solved" the seeded capture prefills. */
+  claim: string;
+  /** What the idea would take to build. `null` only on a legacy row — absent, not `""` (§3.4). */
+  what_it_takes: string | null;
+  /** The card's third element (§3.3). `null` only on a legacy row, rendered as simply absent. */
+  first_step: string | null;
+  /** The two source ideas' tags, pair order, deduped (§3.3) — carried as given, never re-derived. */
+  domain_tags: string[];
+}
+
+/**
  * `docs/API.md` §3.5 — one resolution, as the server recorded it.
  *
  * `kind` is the contract's **three** — a *response* may name `INSPIRED` even though §4.13's request

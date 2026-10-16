@@ -7,6 +7,8 @@
  * `api/src/capture.ts` exactly — trimming for emptiness, measuring the hypothesis as typed.
  */
 
+import type { InspireSeed } from "../api/types.ts";
+
 /** `docs/API.md` §4.2 — the hypothesis limit, mirroring the server's `MAX_HYPOTHESIS_LENGTH`. */
 export const HYPOTHESIS_MAX = 280;
 
@@ -52,6 +54,31 @@ export function validateCapture(draft: CaptureDraft): CaptureErrors {
   if (draft.domain_tags.length === 0) errors.domain_tags = "Add at least one domain";
 
   return errors;
+}
+
+/**
+ * The **seeded prefill** — §4.14's seed mapped onto the four fields Capture has (T09/T16; `FLOW.md`
+ * §2.2's INSPIRE row; `docs/stitch-prompts.md` §3). Pure: the screen renders this.
+ *
+ * Four of the seed's six fields land, and the two that do not are deliberate:
+ *
+ * - `direction → hypothesis`, `claim → problem` — the spark's idea and its why.
+ * - `monetization` is **blank**: a spark carries none, and inventing one would be the client supplying
+ *   a value the user owns (`PRD.md` §2 makes it theirs), so the seeded save is blocked until they fill
+ *   it — the same §4.2 validation as a blank capture, no separate rule.
+ * - `domain_tags` is taken **as given** — the server already folded the two source ideas' union, deduped
+ *   and in pair order (§3.3), so re-normalising or re-deduping here would be a second, disagreeing copy
+ *   of a rule the store owns.
+ * - `what_it_takes` / `first_step` have **no Capture field** to seed, so they are not carried, and no
+ *   read-only block is invented to hold them: `FLOW.md` §2.2/§4.3 name no destination for them (#119).
+ */
+export function seedToDraft(seed: InspireSeed): CaptureDraft {
+  return {
+    hypothesis: seed.direction,
+    problem: seed.claim,
+    monetization: "",
+    domain_tags: seed.domain_tags,
+  };
 }
 
 /** The live mono counter (`FLOW.md` T17; `DESIGN.md` §3). */

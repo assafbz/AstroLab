@@ -1,11 +1,13 @@
 import { expect, test } from "vitest";
 
+import type { InspireSeed } from "../api/types.ts";
 import {
   HYPOTHESIS_MAX,
   addDomainTag,
   counterText,
   normalizeDomainTag,
   removeDomainTag,
+  seedToDraft,
   validateCapture,
 } from "./capture.ts";
 
@@ -81,4 +83,40 @@ test("addDomainTag ignores a blank or bare-# entry rather than storing an empty 
 test("removeDomainTag drops exactly the named tag", () => {
   expect(removeDomainTag(["fin", "logistics"], "fin")).toEqual(["logistics"]);
   expect(removeDomainTag(["fin"], "absent")).toEqual(["fin"]);
+});
+
+/** §4.14 — the spark's seed payload (one field of it is `spark_id`, which the draft does not carry). */
+const SEED: InspireSeed = {
+  spark_id: "1a2b",
+  direction: "Pair the transit lattice with audio",
+  claim: "Scheduling and DSP share a shape.",
+  what_it_takes: "Two weekends on the ingest path.",
+  first_step: "Instrument the ingest path before the model runs.",
+  domain_tags: ["transit", "audio-dsp"],
+};
+
+test("seedToDraft is §4.13's prefill: direction→hypothesis, claim→problem, monetization blank", () => {
+  expect(seedToDraft(SEED)).toEqual({
+    hypothesis: "Pair the transit lattice with audio",
+    problem: "Scheduling and DSP share a shape.",
+    // A spark carries no monetization, and one is not invented for it — the user supplies it (T16).
+    monetization: "",
+    domain_tags: ["transit", "audio-dsp"],
+  });
+});
+
+test("seedToDraft takes the seed's union as given — the server deduped already, so no re-derivation", () => {
+  // Not re-normalised, not re-deduped, not re-ordered: the two source ideas' union arrives folded and
+  // in pair order (§3.3), and the client maps it, it does not recompute it.
+  const seed: InspireSeed = { ...SEED, domain_tags: ["Transit", "audio-dsp", "zeta"] };
+  expect(seedToDraft(seed).domain_tags).toEqual(["Transit", "audio-dsp", "zeta"]);
+});
+
+test("a seeded draft is valid exactly when the user has supplied the missing monetization (T16)", () => {
+  // The prefill leaves one mandatory field empty by construction, so the seeded save is blocked until
+  // the user fills it — the same §4.2 validation as a blank capture, no separate rule.
+  expect(validateCapture(seedToDraft(SEED))).toEqual({
+    monetization: "Monetization is required",
+  });
+  expect(validateCapture({ ...seedToDraft(SEED), monetization: "the value angle" })).toEqual({});
 });
