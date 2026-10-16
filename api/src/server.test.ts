@@ -141,6 +141,7 @@ test("no path under /v1 answers anything but 401 without a valid token", async (
     "/v1/sparks",
     "/v1/sparks/state",
     "/v1/sparks/events",
+    "/v1/sparks/9f1c",
     "/v1/vault/summary",
     "/v1/export",
     "/v1/nope",
@@ -176,13 +177,14 @@ test("authorized, the encoded spellings route to the same place or the envelope 
 });
 
 test("an authorized but unimplemented /v1 route is the not_found envelope — never a 200", async () => {
-  // W8 (#33) implemented `GET /v1/sparks/state` and `POST /v1/sparks/run`, and K1 (#35) makes bare
-  // `/v1/sparks` a route; each entry that pinned their *absence* is removed here as it lands (each has
-  // its own coverage below). The bare `/v1/sparks` entry is replaced by a **deeper** unknown spark path,
-  // so the not_found envelope is still pinned for the `{id}` shape K3 will claim (§4.12). The
-  // `/v1/export` entry is removed by V6 (#17), which makes it a route; its own coverage is below.
+  // W8 (#33) implemented `GET /v1/sparks/state` and `POST /v1/sparks/run`, K1 (#35) makes bare
+  // `/v1/sparks` a route, V6 (#17) makes `/v1/export` one, and #118 makes `GET /v1/sparks/{id}` one;
+  // each entry that pinned their *absence* is removed here as it lands (each has its own coverage
+  // below). The `{id}` entry is replaced by the next *unclaimed* spark shape — §4.13's
+  // `POST /v1/sparks/{id}/decision` (K6 #39) — so the envelope stays pinned for the shape still
+  // without a route.
   for (const [method, path] of [
-    ["GET", "/v1/sparks/9f1c"],
+    ["POST", "/v1/sparks/9f1c/decision"],
     ["GET", "/v1"],
   ] as const) {
     expectEnvelope(
@@ -326,6 +328,78 @@ test("GET /v1/sparks?state=offered returns the live deck and never a resolved sp
       },
     ],
   });
+});
+
+/** #118 — §4.12, `GET /v1/sparks/{id}`: the `SparkDetail` the S1b screen reads. */
+function seedSparkDetail(sparkId: string, status: string, withDetail: boolean): void {
+  for (const [id, tag] of [
+    ["a", "fintech"],
+    ["b", "health"],
+  ] as const) {
+    db.prepare(
+      `INSERT OR IGNORE INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
+                         lineage_parent_id, status, visibility, current_version, created_at, updated_at)
+       VALUES (?, 'h', 'p', 'm', ?, 'ROOT', NULL, 'ACTIVE', 'PRIVATE', 1, 't', 't')`,
+    ).run(id, JSON.stringify([tag]));
+  }
+  db.prepare(
+    `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, first_step,
+                        what_it_takes, status, created_at, mechanism, domain_distance,
+                        structural_alignment)
+     VALUES (?, 'a', 'b', ?, 'a direction', 'a claim', 'a first step', ?, ?, ?, '{"verb":"fuse"}', 2, 0.71)`,
+  ).run(
+    sparkId,
+    `a|b|${sparkId}`,
+    withDetail ? "what it takes" : null,
+    status,
+    "2026-01-01T00:00:00Z",
+  );
+}
+
+test("GET /v1/sparks/{id} answers §4.12's SparkDetail — the deck's fields plus only `what_it_takes`", async () => {
+  seedSparkDetail("s1", "OFFERED", true);
+
+  const result = await call("GET", "/v1/sparks/s1", { authorization: `Bearer ${TOKEN}` });
+  expect(result.status).toBe(200);
+  // Exact: the selection internals are in the row and absent from the body, and the detail's whole
+  // delta over `Spark` (§3.4) is present.
+  expect(result.body).toEqual({
+    id: "s1",
+    direction: "a direction",
+    claim: "a claim",
+    first_step: "a first step",
+    what_it_takes: "what it takes",
+    domain_tags: ["fintech", "health"],
+    created_at: "2026-01-01T00:00:00Z",
+  });
+});
+
+test("GET /v1/sparks/{id} is status-blind — a resolved spark answers 200; only an unknown id is the envelope", async () => {
+  seedSparkDetail("s-res", "RESOLVED-ACCEPTED", false);
+
+  // §4.9's deck drops this row; §4.12 must not — the tap-back 404 the issue forbids.
+  const read = await call("GET", "/v1/sparks/s-res", { authorization: `Bearer ${TOKEN}` });
+  expect(read.status).toBe(200);
+  expect(read.body).toMatchObject({ id: "s-res", what_it_takes: null });
+
+  expectEnvelope(
+    await call("GET", "/v1/sparks/9f1c-missing", { authorization: `Bearer ${TOKEN}` }),
+    404,
+    "not_found",
+  );
+});
+
+test("the {id} shape claims exactly one segment — §4.13's `{id}/decision` and an empty id stay the envelope", async () => {
+  const auth = { authorization: `Bearer ${TOKEN}` };
+  // K6 #39 owns `POST /v1/sparks/{id}/decision`; until it lands, a further segment is not a route.
+  expectEnvelope(await call("POST", "/v1/sparks/s1/decision", auth), 404, "not_found");
+  expectEnvelope(await call("GET", "/v1/sparks/s1/decision", auth), 404, "not_found");
+  // The bare path with a trailing slash is neither the deck route nor a detail id.
+  expectEnvelope(await call("GET", "/v1/sparks/", auth), 404, "not_found");
+  // The reserved exact paths are matched **before** the `{id}` shape, so `state` is never a detail id.
+  const state = await call("GET", "/v1/sparks/state", auth);
+  expect(state.status).toBe(200);
+  expect(state.body).toMatchObject({ state: "E0" });
 });
 
 test("a path outside /v1 is the envelope, and needs no token", async () => {

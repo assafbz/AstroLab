@@ -1,11 +1,12 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import { liveOffers } from "@astrolab/store";
+import { liveOffers, sparkById } from "@astrolab/store";
 
 import { ValidationError } from "./capture.js";
 
 /**
- * The deck read — `GET /v1/sparks?state=offered` (`docs/API.md` §4.9, §3.3; K1 `#35`).
+ * The spark reads — the deck (`GET /v1/sparks?state=offered`, §4.9/§3.3; K1 `#35`) and the by-id
+ * detail (`GET /v1/sparks/{id}`, §4.12/§3.4; #118).
  *
  * Two properties hold here and are tested, not assumed:
  * - **`state` is mandatory, and `offered` is its only value.** A `Spark` carries no `status` field
@@ -61,4 +62,29 @@ export function parseSparkQuery(query: URLSearchParams): SparkQuery {
  */
 export function listOfferedSparks(db: DatabaseSync): Spark[] {
   return liveOffers(db);
+}
+
+/**
+ * `docs/API.md` §3.4 — the S1b expanded view: `Spark` plus **only** `what_it_takes` (`#118`).
+ *
+ * `first_step` sits on `Spark` itself (§3.3, #115), so the detail's whole delta is the one field that
+ * stays off the card by design. No scores, no similarity readout (`ARCHITECTURE.md` §6).
+ */
+export interface SparkDetail extends Spark {
+  /** What the idea would take to build. `null` only on a legacy row — rendered as simply absent. */
+  what_it_takes: string | null;
+}
+
+/**
+ * `docs/API.md` §4.12, or `null` for an unknown id — the caller answers the `not_found` envelope.
+ *
+ * **Status-blind by id.** The by-id read (`sparkById`) carries no `status` filter, and must not: a
+ * spark the user resolved mid-session must still answer when they tap back to it, and only an
+ * *unknown* id is absent. `Spark`/`SparkDetail` carry no `status` (§3.3/§3.4), so the resolution never
+ * surfaces. It is the deliberate opposite of §4.9's offered-only list: there a `Spark` has no `status`
+ * to mark a resolved row, so the filter is the only thing keeping it off the deck; here the id **is**
+ * the filter, so no ambiguity exists. The store read owns the projection and the join.
+ */
+export function sparkDetail(db: DatabaseSync, id: string): SparkDetail | null {
+  return sparkById(db, id);
 }

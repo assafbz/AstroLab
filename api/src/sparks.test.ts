@@ -6,7 +6,7 @@ import { MIGRATIONS, migrate, openStore } from "@astrolab/store";
 import { describe, expect, test } from "vitest";
 
 import { ValidationError } from "./capture.js";
-import { listOfferedSparks, parseSparkQuery } from "./sparks.js";
+import { listOfferedSparks, parseSparkQuery, sparkDetail } from "./sparks.js";
 
 /**
  * K1 (#35) — the deck read (`docs/API.md` §4.9, §3.3) against a fresh migrated vault.
@@ -169,6 +169,69 @@ describe("the deck read moves nothing (NFR-P1's read posture)", () => {
     expect((db.prepare("SELECT total_changes() AS n").get() as { n: number }).n).toBe(
       before.changes,
     );
+  });
+});
+
+/**
+ * #118 — the by-id detail read (`docs/API.md` §4.12 / §3.4). The body is the deck's `Spark` plus
+ * **only** `what_it_takes`, and the read is **status-blind**: an unknown id is the only absent case.
+ */
+describe("sparkDetail — §4.12's body (#118)", () => {
+  test("is the deck's fields plus `what_it_takes`, and no internals", () => {
+    const db = newDb();
+    idea(db, "a", ["fintech"]);
+    idea(db, "b", ["health"]);
+    db.prepare(
+      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, first_step,
+                          what_it_takes, status, created_at, mechanism, domain_distance,
+                          structural_alignment)
+       VALUES ('s1', 'a', 'b', 'a|b', 'the direction', 'the claim', 'the first step',
+               'what it takes', 'OFFERED', 't', '{"verb":"fuse"}', 2, 0.71)`,
+    ).run();
+
+    // `toEqual` is exact: the internals are in the row and absent from the body, and the detail's whole
+    // delta over `Spark` (§3.4) is present.
+    expect(sparkDetail(db, "s1")).toEqual({
+      id: "s1",
+      direction: "the direction",
+      claim: "the claim",
+      first_step: "the first step",
+      what_it_takes: "what it takes",
+      domain_tags: ["fintech", "health"],
+      created_at: "t",
+    });
+  });
+
+  test("a resolved spark still answers — the id is the filter, and no `status` surfaces", () => {
+    const db = newDb();
+    idea(db, "a", ["fintech"]);
+    idea(db, "b", ["health"]);
+    spark(db, "s-res", "a", "b", "RESOLVED-ACCEPTED");
+
+    // §4.9's deck drops this row; §4.12 must not — the tap-back 404 the issue forbids. The exact
+    // `toEqual` would also fail if a `status` key were added (`Spark`/`SparkDetail` carry none).
+    expect(sparkDetail(db, "s-res")).toEqual({
+      id: "s-res",
+      direction: "a direction",
+      claim: "a claim",
+      first_step: null,
+      what_it_takes: null,
+      domain_tags: ["fintech", "health"],
+      created_at: "t",
+    });
+  });
+
+  test("a legacy row's `what_it_takes` reads `null`, not a dropped key", () => {
+    const db = newDb();
+    idea(db, "a", ["fintech"]);
+    idea(db, "b", ["health"]);
+    spark(db, "s1", "a", "b");
+
+    expect(sparkDetail(db, "s1")).toMatchObject({ what_it_takes: null });
+  });
+
+  test("an unknown id is `null` — the route answers the §2 `not_found` envelope", () => {
+    expect(sparkDetail(newDb(), "nope")).toBeNull();
   });
 });
 

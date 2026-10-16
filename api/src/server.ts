@@ -19,7 +19,7 @@ import { forkIdea, parseForkInput } from "./fork.js";
 import { getIdeaDetail, listIdeas, parseVaultFilters } from "./ideas.js";
 import { iterateIdea } from "./iterate.js";
 import { handleSparkEvents, type SparkEventsOptions } from "./spark-events.js";
-import { listOfferedSparks, parseSparkQuery } from "./sparks.js";
+import { listOfferedSparks, parseSparkQuery, sparkDetail } from "./sparks.js";
 import { vaultSummary } from "./vault-summary.js";
 
 /**
@@ -220,6 +220,16 @@ async function handleRequest(
       return sendJson(res, 202, { run_id: run.id, vault_revision: run.vault_revision });
     }
 
+    // §4.12 — the spark detail (S1b, #118). The `{id}` shape is matched **after** the exact spark
+    // routes above, so `state` / `events` / `run` are never read as a detail id; a further segment
+    // (`…/decision`, §4.13, K6 #39) or a non-`GET` method falls to the envelope below. An unknown id is
+    // §2's `not_found` — and it is the **only** 404 here: the read is status-blind, so a resolved spark
+    // still answers `200` (§3.3/§3.4 carry no `status`).
+    const sparkId = sparkPath(path);
+    if (sparkId !== null && method === "GET") {
+      return handleSparkDetail(res, db, sparkId);
+    }
+
     // §4.17 — the open, complete export (V6 `#17`; NFR-D1, ARCH §8). A `GET` only: the document is the
     // whole vault in one read, so there is nothing to validate and no body is read. The read is the
     // export's own — one `BEGIN`…`COMMIT` snapshot inside `exportVault` (§4.5's shared `readSnapshot`),
@@ -335,6 +345,13 @@ function handleIdeaDetail(res: ServerResponse, db: DatabaseSync, id: string): vo
   sendJson(res, 200, detail);
 }
 
+/** `GET /v1/sparks/{id}` (docs/API.md §4.12). An unknown id is the `not_found` envelope. */
+function handleSparkDetail(res: ServerResponse, db: DatabaseSync, id: string): void {
+  const detail = sparkDetail(db, id);
+  if (detail === null) return sendError(res, "not_found", `spark ${id} not found`);
+  sendJson(res, 200, detail);
+}
+
 /**
  * `DELETE /v1/ideas/{id}` (docs/API.md §4.8): orphan-with-warning, so the server never blocks and
  * never asks — §4.5's `referenced_by` is the client's warning, and the delete proceeds either way. An
@@ -360,6 +377,20 @@ function ideaPath(path: string): { id: string; action: "iterate" | "fork" | null
   if (id === undefined || id === "" || extra.length > 0) return null;
   if (action === undefined) return { id, action: null };
   return action === "iterate" || action === "fork" ? { id, action } : null;
+}
+
+/**
+ * The `{id}` shape under `/v1/sparks/`, read from the **normalised** path like `ideaPath` (#118,
+ * §4.12). Exactly one non-empty segment. The reserved exact routes (`state` / `events` / `run`) are
+ * matched by the router *before* this is consulted, so they can never be read as a detail id; a further
+ * segment (`…/decision`, §4.13) and an empty id (`/v1/sparks/`) are not defined routes, which §2
+ * answers as `not_found`.
+ */
+const SPARK_DETAIL_PREFIX = "/v1/sparks/";
+function sparkPath(path: string): string | null {
+  if (!path.startsWith(SPARK_DETAIL_PREFIX)) return null;
+  const [id, ...extra] = path.slice(SPARK_DETAIL_PREFIX.length).split("/");
+  return id === undefined || id === "" || extra.length > 0 ? null : id;
 }
 
 /** A capture body is a few hundred bytes; a megabyte is a ceiling, not a target. */
