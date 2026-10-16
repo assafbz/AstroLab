@@ -44,6 +44,13 @@ skills."* Applied to this repo's harness, that means:
    evidence. The `.gitignore` commit in `using-git-worktrees` and the install/build
    steps in `using-git-worktrees` / `ponytail-help` are therefore fine to run on a
    branch.
+3. **A PR closes its issue with a keyword, on the closing PR only.** GitHub links and
+   closes an issue from a `Closes #<n>` line in the PR body — prose does not, and a
+   missing keyword has left a finished lane's issue OPEN twice (#94 / PR #96, #37 /
+   PR #128). `.github/pull_request_template.md` carries that line first, **inert as
+   written**: an unreplaced `#<n>` closes nothing, so a held-lane PR — the one that
+   deliberately must *not* close its issue yet — leaves the placeholder untouched.
+   Replace `<n>` with the issue number only on the PR that completes the issue.
 
 ## Guard discipline — what counts as evidence
 
