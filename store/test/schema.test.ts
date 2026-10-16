@@ -46,6 +46,7 @@ const COLUMNS: Record<string, string[]> = {
     "created_at",
     "updated_at",
     "mutation_delta",
+    "new_domain",
   ],
   idea_version: [
     "idea_id",
@@ -294,6 +295,46 @@ test("a populated v4 store upgrades to 0005 — rows intact, the delta column ad
   // The added column defaults to NULL, and the guard is live on the upgraded store.
   expect(rows(db, "SELECT mutation_delta AS d FROM idea WHERE id = 'child'")[0]?.d).toBeNull();
   expect(() => db.exec("UPDATE idea SET mutation_delta = 'd' WHERE id = 'root'")).toThrow(/CHECK/);
+  expect(rows(db, "PRAGMA foreign_key_check")).toEqual([]);
+});
+
+test("new_domain is nullable and only 0/1 (0006, EV1 #43)", () => {
+  const db = migrated();
+  insertIdea(db, "root");
+  // NULL is the default and a state in its own right: **"not recorded"** — a pre-existing row, or an
+  // ACCEPT-born root at birth. The report counts `= 1`, so NULL is excluded, never read as 0.
+  expect(rows(db, "SELECT new_domain AS d FROM idea WHERE id = 'root'")[0]?.d).toBeNull();
+
+  // Both recorded values are accepted — on INSERT and on UPDATE alike (the column is not FORK-only).
+  db.exec("UPDATE idea SET new_domain = 1 WHERE id = 'root'");
+  expect(rows(db, "SELECT new_domain AS d FROM idea WHERE id = 'root'")[0]?.d).toBe(1);
+  db.exec("UPDATE idea SET new_domain = 0 WHERE id = 'root'");
+  expect(rows(db, "SELECT new_domain AS d FROM idea WHERE id = 'root'")[0]?.d).toBe(0);
+
+  // Nothing outside the vocabulary is: the guard is the schema's, not call-site discipline.
+  expect(() => db.exec("UPDATE idea SET new_domain = 2 WHERE id = 'root'")).toThrow(/CHECK/);
+  expect(() => db.exec("UPDATE idea SET new_domain = -1 WHERE id = 'root'")).toThrow(/CHECK/);
+  expect(() => db.exec("UPDATE idea SET new_domain = 'yes' WHERE id = 'root'")).toThrow(/CHECK/);
+  expect(rows(db, "PRAGMA foreign_key_check")).toEqual([]);
+});
+
+test("a populated v5 store upgrades to 0006 — rows intact, the column added and NULL", () => {
+  const db = newStore();
+  // Apply only the first five, so this is a real upgrade path (the state every dev store is in).
+  migrate(db, MIGRATIONS.slice(0, 5));
+  expect(schemaVersion(db)).toBe(5);
+
+  insertIdea(db, "root");
+  insertIdea(db, "child", { lineageKind: "FORK", lineageParentId: "root" });
+
+  expect(migrate(db, MIGRATIONS)).toBe(SCHEMA_VERSION);
+  expect(rows(db, "SELECT count(*) AS n FROM idea")[0]?.n).toBe(2);
+  expect(rows(db, "SELECT lineage_parent_id AS p FROM idea WHERE id = 'child'")[0]?.p).toBe("root");
+  // The added column has no default, so every pre-existing row lands NULL = "not recorded" — which is
+  // the whole point: no backfill is faked, and the metric's `= 1` filter keeps them out.
+  expect(rows(db, "SELECT new_domain AS d FROM idea WHERE id = 'child'")[0]?.d).toBeNull();
+  // And the CHECK is live on the upgraded store, not just on a fresh install.
+  expect(() => db.exec("UPDATE idea SET new_domain = 7 WHERE id = 'child'")).toThrow(/CHECK/);
   expect(rows(db, "PRAGMA foreign_key_check")).toEqual([]);
 });
 

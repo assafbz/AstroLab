@@ -2,7 +2,8 @@
 
 > **Status:** The schema of record, in DDL form — and **shipped**: `0001_init` (the twelve tables),
 > `0002_seed_vault_meta`, `0003_reference_actions`, `0004_retire_iteration_lineage_kind` and
-> `0005_idea_mutation_delta` live in `store/src/migrations.ts`, and this file tracks them.
+> `0005_idea_mutation_delta` and `0006_idea_new_domain` live in `store/src/migrations.ts`, and this
+> file tracks them.
 > **Source of record:** `docs/ARCHITECTURE.md` §2 (data model — the complete table set incl.
 > `idea_mechanism`) and ADR-0001 / ADR-0002. Where this file and §2 differ, **§2 wins** and this file
 > is the defect — file it.
@@ -12,16 +13,17 @@
 The DDL below applies as one forward-only migration (`0001_init`) — restated here **as amended** by
 `0003_reference_actions` (§1b), which changes only the eight `REFERENCES idea(id)` of V5 `#16`; by
 `0004_retire_iteration_lineage_kind`, which narrows only `idea.lineage_kind` to `ROOT | FORK`
-(V3 `#14`); and by `0005_idea_mutation_delta` (§1d), which adds only `idea.mutation_delta` (V4 `#15`).
-`0003`/`0004` are rebuilds — SQLite cannot `ALTER` a `CHECK` or a foreign-key action; `0005` is a plain
-`ADD COLUMN`, because it adds a *new* column and changes no existing constraint.
+(V3 `#14`); by `0005_idea_mutation_delta` (§1d), which adds only `idea.mutation_delta` (V4 `#15`); and by
+`0006_idea_new_domain` (§1e), which adds only `idea.new_domain` (EV1 `#43`).
+`0003`/`0004` are rebuilds — SQLite cannot `ALTER` a `CHECK` or a foreign-key action; `0005`/`0006` are
+plain `ADD COLUMN`s, because they add a *new* column and change no existing constraint.
 `PRAGMA journal_mode=WAL` and
 `PRAGMA foreign_keys=ON` are set by the store's connection setup (F2), not by the migration — the
 foreign-keys pragma is per-connection and a no-op inside the migration's `BEGIN IMMEDIATE`.
 
 ---
 
-## 1. The tables of §2 — DDL (`0001_init`, as amended by `0003`, `0004` and `0005`)
+## 1. The tables of §2 — DDL (`0001_init`, as amended by `0003`, `0004`, `0005` and `0006`)
 
 **Twelve** tables: the eleven enumerated in §2.1–§2.4, plus **`idea_mechanism`** (the per-idea
 descriptor cache — `ARCHITECTURE.md` §2.3, §3.3 step 1; ADR-0002; W3 `#28`), added to the schema of
@@ -49,6 +51,12 @@ CREATE TABLE idea (
   current_version   INTEGER NOT NULL DEFAULT 1,
   created_at        TEXT NOT NULL,
   updated_at        TEXT NOT NULL,
+  new_domain        INTEGER CHECK (new_domain IN (0,1)),
+                                                   -- `0006` (EV1 #43): did this idea's domain set
+                                                   -- reach a domain the vault did not already carry?
+                                                   -- 1 | 0 | NULL = not recorded (§4.13's ACCEPT, and
+                                                   -- every row predating the column). Plain ADD COLUMN,
+                                                   -- so it lands last in `PRAGMA table_info`
   -- structural guard: only a FORK may carry a parent
   CHECK (lineage_kind = 'FORK' OR lineage_parent_id IS NULL)
 );
@@ -238,6 +246,47 @@ legal — and the fork path stores the delta with the row (`docs/API.md` §4.7).
 
 ---
 
+### 1e. `0006_idea_new_domain` — `idea.new_domain`, nullable `0 | 1` (EV1 `#43`, 2026-10-16)
+
+NFR-Q1 (`PRD.md` §5, the requirement table's *"accepted sparks, and how many landed in a new domain"*)
+needs that question recorded as an instrument, and no `idea` or `idea_version` column carried it. `0006`
+adds the column, so §1's `idea` DDL gains
+
+```sql
+new_domain INTEGER CHECK (new_domain IN (0,1))
+```
+
+The column lives on **`idea`, not `decision`** — the rejected alternative, recorded rather than dropped.
+A `decision` row is immutable and one per ACCEPT, so a flag stored there would be a fact about the
+*accept*; but the accepted root's domain can change **after** it (§4.6's iterate, T27's completion), and
+the property is about the *idea* — so a `decision`-stored flag would go stale on exactly the
+follow-through the metric reads. A `decision.new_domain` would also be a column nothing writes.
+
+**Three states, and the third is load-bearing.** `1` = the write reached a domain the vault did not
+already carry; `0` = it did not; `NULL` = **not recorded** — §4.13's ACCEPT, whose root's tags are the
+source pair's union drawn from pre-existing rows (the reading there is constant-false, `docs/API.md`
+§4.13), and every row that predates the column. The three writes that *can* widen record it (§4.2
+capture, §4.7 fork, §4.6 iterate) through `newDomainFlag` (`store/src/domain-map.ts`), whose identity for
+a domain is the vault's own — the cluster, with an unmapped tag as its own cluster; the reporting reads
+are `api/src/metrics.ts` (`acceptedByMonth`, `newDomainByMonth`, `acceptedLandingNewDomainByMonth`,
+documented in the module), which is NFR-Q1's *"instrumentation + reporting"* and is deliberately **not**
+a route.
+
+**A recorded `1` is durable.** The metric reads an event — *"a spark that **landed** in a new domain"* —
+so `1` is a fact about the idea's *history*, not the latest write's answer. §4.6 is the one writer whose
+row already exists, and it writes the value monotonically (`CASE WHEN new_domain = 1 THEN 1 ELSE ? END`,
+`api/src/iterate.ts`): once earned — at birth, or by a T27 completion onto a fresh domain — it survives
+every later write of the row's own domain, a plain text edit included. Without that, a widening would be
+cleared by the next unrelated edit (the recomputation compares against a vault that now includes the row
+itself), and both month views would drift down with use. `newDomainFlag` returns only *this* write's
+answer; preserving the prior `1` is the writer's job, and only §4.6 has a prior value to preserve.
+
+A **plain `ALTER TABLE … ADD COLUMN`**, not a rebuild (`0005`'s precedent): it adds a *new* column and
+changes no existing constraint. Nullable, so every pre-existing row lands `NULL` with no backfill — and
+the report counts `= 1`, never `!= 1`, so "did not widen" and "not recorded" cannot be confused.
+
+---
+
 ## 2. Invariants F3's tests assert
 
 | Invariant (source) | How it holds |
@@ -245,6 +294,8 @@ legal — and the fork path stores the delta with the row (`docs/API.md` §4.7).
 | **Provenance-bearing ⇒ `lineage_parent_id IS NULL`** (ARCH §2.2, closes D1) | cross-table; asserted by test. Optionally a trigger — see §4. |
 | **Single-parent lineage** (PRD §2) | structural: one nullable `lineage_parent_id` column (no longer a FK — `0003`), plus the `FORK`-only `CHECK`. |
 | **A mutation delta exists only on a FORK** (PRD §3.2 item 2; V4 `#15`) | structural: `mutation_delta` is nullable and carries `CHECK (lineage_kind='FORK' OR mutation_delta IS NULL)` (`0005`, §1d). |
+| **`new_domain` is `0`, `1`, or unrecorded** (EV1 `#43`; NFR-Q1) | structural: nullable `INTEGER` carrying `CHECK (new_domain IN (0,1))` (`0006`, §1e) — a `NULL` passes as the *absence* of a record, never as a value. |
+| **A recorded `new_domain = 1` is durable** (EV1 `#43`; NFR-Q1) | §4.6's iterate assigns `CASE WHEN new_domain = 1 THEN 1 ELSE ? END` (`api/src/iterate.ts`), so no later write clears a recorded widening — asserted by test (`api/src/nfr-q1.test.ts`, claim 3). |
 | **A repeated `decision_id` insert is a no-op** (FLOW §2.2/N4, H4) | PK on `decision.id`; write via `INSERT … ON CONFLICT(id) DO NOTHING` (then read the existing row). |
 | **`vault_meta.revision` monotonicity** (ARCH §4) | every candidate-affecting vault mutation bumps it inside the same transaction; test asserts non-decreasing and single-row. |
 | **At most one live offer per pair** (ARCH §3.5) | `ux_spark_live` partial unique index. |

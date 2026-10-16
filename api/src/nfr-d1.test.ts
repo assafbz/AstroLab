@@ -121,13 +121,13 @@ function shapeOf(db: DatabaseSync): VaultShape {
 
 function insertIdea(
   db: DatabaseSync,
-  spec: { id: string; tags: string[]; parent?: string; delta?: string },
+  spec: { id: string; tags: string[]; parent?: string; delta?: string; newDomain?: 0 | 1 | null },
 ): void {
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                        lineage_parent_id, status, visibility, current_version, created_at, updated_at,
-                       mutation_delta)
-     VALUES (?, ?, 'p', 'm', ?, ?, ?, 'ACTIVE', 'PRIVATE', 1, ?, ?, ?)`,
+                       mutation_delta, new_domain)
+     VALUES (?, ?, 'p', 'm', ?, ?, ?, 'ACTIVE', 'PRIVATE', 1, ?, ?, ?, ?)`,
   ).run(
     spec.id,
     `h-${spec.id}`,
@@ -138,6 +138,9 @@ function insertIdea(
     TS,
     // A ROOT's `mutation_delta` is NULL by the schema's CHECK — never both a parent and a delta.
     spec.delta ?? null,
+    // The instrument (`0006`, EV1 `#43`) — omitted ⇒ `null` = "not recorded", which is the shape the
+    // real writers leave behind for a pre-existing row.
+    spec.newDomain ?? null,
   );
 }
 
@@ -161,7 +164,7 @@ function insertProvenance(db: DatabaseSync, derived: string, source: string, spa
 function writeVault(db: DatabaseSync): void {
   vaultMutation(db, () => {
     insertIdea(db, { id: "r1", tags: ["fintech"] });
-    insertIdea(db, { id: "r2", tags: ["health"] });
+    insertIdea(db, { id: "r2", tags: ["health"], newDomain: 1 });
     insertIdea(db, { id: "f1", tags: ["fintech"], parent: "r1", delta: "widened into health" });
     insertIdea(db, { id: "d1", tags: ["fintech"] });
     insertVersion(db, "r1", ["fintech"]);
@@ -200,8 +203,8 @@ function reimport(doc: ExportDocument): DatabaseSync {
   const idea = db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                        lineage_parent_id, status, visibility, current_version, created_at, updated_at,
-                       mutation_delta)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                       mutation_delta, new_domain)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
   for (const row of doc.ideas) {
     idea.run(
@@ -218,6 +221,9 @@ function reimport(doc: ExportDocument): DatabaseSync {
       row.created_at,
       row.updated_at,
       row.mutation_delta,
+      // Carried, not defaulted: EV1 `#43`'s instrument is a stored fact (it is not recomputable from
+      // the current vault), so an importer that dropped it would change what the report counts.
+      row.new_domain,
     );
   }
 
@@ -251,6 +257,18 @@ const ideaIds = (db: DatabaseSync): string[] =>
   (db.prepare("SELECT id FROM idea ORDER BY id").all() as unknown as Array<{ id: string }>).map(
     (row) => row.id,
   );
+
+/**
+ * EV1 `#43`'s instrument, per row — carried by the export/import path as well, because it is a
+ * **stored** fact: it is not recomputable from the vault the importer rebuilds, so a document that
+ * dropped it would silently change what NFR-Q1 reports. Read here, beside `shapeOf`, as the second
+ * quantity a rebuild must preserve.
+ */
+const newDomainFlags = (db: DatabaseSync): Array<{ id: string; new_domain: number | null }> =>
+  db.prepare("SELECT id, new_domain FROM idea ORDER BY id").all() as Array<{
+    id: string;
+    new_domain: number | null;
+  }>;
 
 test("backup → wipe → restore: every idea, lineage and provenance edge survives", () => {
   const { dir, path, db } = newVault();
@@ -321,6 +339,10 @@ test("export → wipe → re-import: the document alone rebuilds the vault", () 
   const { path, db } = newVault();
   writeVault(db);
   const before = shapeOf(db);
+  const flagsBefore = newDomainFlags(db);
+  // Non-vacuity for the flags below: one row carries a recorded `1`, the rest are unrecorded — a
+  // fixture of all-`null` would pass the equality even if the importer dropped the column.
+  expect(flagsBefore.map((row) => row.new_domain)).toEqual([null, null, null, 1]);
 
   // The bytes a user gets from `GET /v1/export` (the route returns exactly this object — server.test.ts).
   const json = JSON.stringify(exportVault(db));
@@ -328,6 +350,9 @@ test("export → wipe → re-import: the document alone rebuilds the vault", () 
 
   const rebuilt = reimport(JSON.parse(json) as ExportDocument);
   expect(shapeOf(rebuilt)).toEqual(before);
+  // EV1 `#43`: the instrument is part of the vault's state (`0006`), so "nothing the vault holds is
+  // dropped" covers it too — and unlike an edge, it cannot be re-derived from the rebuilt vault.
+  expect(newDomainFlags(rebuilt)).toEqual(flagsBefore);
 });
 
 test("the round-trip reads the document: an emptied provenance_edges[] cannot invent edges", () => {
