@@ -40,6 +40,21 @@ function seedIdea(db: DatabaseSync, id: string, tags: string[], status = "ACTIVE
   ).run(id, JSON.stringify(tags), status);
 }
 
+/** A node with an explicit lineage edge — `FORK` carrying `lineage_parent_id`. */
+function seedForkedIdea(
+  db: DatabaseSync,
+  id: string,
+  tags: string[],
+  parentId: string,
+  status = "ACTIVE",
+): void {
+  db.prepare(
+    `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
+                       lineage_parent_id, status, visibility, current_version, created_at, updated_at)
+     VALUES (?, 'h', 'p', 'm', ?, 'FORK', ?, ?, 'PRIVATE', 1, 't', 't')`,
+  ).run(id, JSON.stringify(tags), parentId, status);
+}
+
 function descriptor(over: Partial<MechanismDescriptor> = {}): MechanismDescriptor {
   return {
     verb: "route",
@@ -169,6 +184,69 @@ describe("createGate — the candidate set (§3.5)", () => {
     expect(pairs).toEqual([]);
     // b and c never even reached Stage 1 — the exclusion is before extraction.
     expect(calls).toEqual(["a"]);
+  });
+});
+
+describe("createGate — the lineage exclusion (§3.5, #141)", () => {
+  // §4.7 copies a fork's mechanism text **verbatim** from its parent while refusing a same-domain
+  // fork, so a parent/fork pair clears **both** axes by construction — a fake cross-domain spark that
+  // is not a discovery. The gate must not offer it. Each case below carries a control pair with no
+  // lineage relation that *is* gated, so the block cannot pass by suppressing the whole scan.
+
+  test("a fork and its own parent are never paired, though the pair clears both thresholds", async () => {
+    const db = newDb();
+    seedIdea(db, "p", ["fintech"]); // the parent
+    seedForkedIdea(db, "f", ["mobility"], "p"); // the fork: same descriptor, a different domain
+    seedIdea(db, "u", ["mobility"]); // an unrelated node, same descriptor as the fork
+    const { cache } = countingCache({ p: descriptor(), f: descriptor(), u: descriptor() });
+    const scripted = scriptedDistance([
+      ["fintech", "mobility", 1], // p|f and p|u both clear distance; alignment is 1.0 for all three
+      ["mobility", "mobility", 0], // f|u is the cliché quadrant — dropped on distance alone
+    ]);
+
+    const pairs = await createGate(db, cache, scripted.distance).gatedPairs(cutOf(["p", "f", "u"]));
+
+    // p|u gates — the gate itself is intact. p|f is dropped for lineage alone, and **before** the
+    // distance axis is asked: the pair never reached `between` (2 calls, not the full C(3,2)=3).
+    expect(pairs.map((pair) => pair.key)).toEqual(["p|u"]);
+    expect(scripted.calls).toBe(2);
+  });
+
+  test("an ancestor two generations up is excluded even when the middle node is not a candidate", async () => {
+    const db = newDb();
+    seedIdea(db, "g", ["fintech"]); // grandparent (candidate)
+    seedForkedIdea(db, "m", ["fintech"], "g", "NEEDS_COMPLETION"); // middle: outside the candidate set
+    seedForkedIdea(db, "c", ["mobility"], "m"); // child (candidate)
+    seedIdea(db, "x", ["mobility"]); // unrelated control
+    const { cache } = countingCache({ g: descriptor(), c: descriptor(), x: descriptor() });
+    const { distance } = scriptedDistance([
+      ["fintech", "mobility", 1], // g|c and g|x
+      ["mobility", "mobility", 0], // c|x
+    ]);
+
+    const pairs = await createGate(db, cache, distance).gatedPairs(cutOf(["g", "m", "c", "x"]));
+
+    // The walk from c crossed m (NEEDS_COMPLETION, no candidate) to reach g, so g|c is excluded;
+    // g|x still gates.
+    expect(pairs.map((pair) => pair.key)).toEqual(["g|x"]);
+  });
+
+  test("siblings (two forks of one parent) are NOT excluded — only ancestor/descendant is", async () => {
+    const db = newDb();
+    seedIdea(db, "p", ["fintech"]);
+    seedForkedIdea(db, "f1", ["mobility"], "p");
+    seedForkedIdea(db, "f2", ["energy"], "p");
+    const { cache } = countingCache({ p: descriptor(), f1: descriptor(), f2: descriptor() });
+    const { distance } = scriptedDistance([
+      ["fintech", "mobility", 1],
+      ["fintech", "energy", 1],
+      ["mobility", "energy", 1],
+    ]);
+
+    const pairs = await createGate(db, cache, distance).gatedPairs(cutOf(["p", "f1", "f2"]));
+
+    // p|f1 and p|f2 are ancestor/descendant (excluded); f1|f2 are siblings — the ruled boundary.
+    expect(pairs.map((pair) => pair.key)).toEqual(["f1|f2"]);
   });
 });
 

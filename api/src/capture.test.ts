@@ -167,10 +167,10 @@ describe("derivedStatus — the one status predicate (§4.13 mints it, §4.6 cle
 });
 
 /**
- * The status rule is **one rule**. `derivedStatus` is defined once and both paths that touch the
- * status call it — §4.13's ACCEPT mints it (K4), §4.6's iterate clears it (#42). A second, inline copy
- * of the rule is the failure this guards: it would let the mint and the clear disagree. Structural, so
- * each scan carries its own non-vacuity assertion.
+ * The status rule is **one rule**. `derivedStatus` is defined once and every path that touches the
+ * status calls it — §4.13's ACCEPT mints it (K4), §4.6's iterate clears it (#42), §4.7's fork derives
+ * it (#137). A second, inline copy of the rule is the failure this guards: it would let the paths
+ * disagree. Structural, so each scan carries its own non-vacuity assertion.
  */
 describe("derivedStatus — one definition site, and the rule spelled once", () => {
   const SRC = fileURLToPath(new URL(".", import.meta.url));
@@ -179,10 +179,12 @@ describe("derivedStatus — one definition site, and the rule spelled once", () 
   test("the scan reaches this package's real sources", () => {
     // Non-vacuity: a walk that saw nothing would make both assertions below pass for free.
     expect(sources.length).toBeGreaterThan(10);
-    expect(sources).toEqual(expect.arrayContaining(["capture.ts", "decision.ts", "iterate.ts"]));
+    expect(sources).toEqual(
+      expect.arrayContaining(["capture.ts", "decision.ts", "fork.ts", "iterate.ts"]),
+    );
   });
 
-  test("is defined once (capture.ts) and called by both paths that touch the status", () => {
+  test("is defined once (capture.ts) and called by every path that touches the status", () => {
     const definitions: string[] = [];
     const callers: string[] = [];
     for (const name of sources) {
@@ -192,7 +194,7 @@ describe("derivedStatus — one definition site, and the rule spelled once", () 
     }
 
     expect(definitions).toEqual(["capture.ts"]);
-    expect(callers).toEqual(["decision.ts", "iterate.ts"]);
+    expect(callers).toEqual(["decision.ts", "fork.ts", "iterate.ts"]);
   });
 
   test("the four-field completeness test is spelled once — a second inline copy is the fork", () => {
