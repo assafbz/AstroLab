@@ -20,9 +20,10 @@ import type { Idea, IdeaRow } from "./idea.js";
  *
  * `ARCHITECTURE.md` §8 fixes the eight **keys**, not their types, so the shapes below are the plan's
  * calls, recorded rather than invented silently:
- * - `ideas[]` is the **full row**, `mutation_delta` included (`null` for a ROOT, per the schema's
- *   column CHECK) — export is the backup path, so nothing the vault holds is dropped. The §3.1
- *   `Idea` resource deliberately omits it, so this module does not reuse `toIdea` to build the row.
+ * - `ideas[]` is the **full row**, `mutation_delta` and `new_domain` included (`null` for a ROOT and
+ *   wherever the instrument was never recorded, per the schema's column contract) — export is the
+ *   backup path, so nothing the vault holds is dropped. The §3.1 `Idea` resource deliberately omits
+ *   both, so this module does not reuse `toIdea` to build the row.
  * - `lineage_edges[]` is **derived, not a table**: `{idea_id, parent_idea_id}` read from
  *   `idea WHERE lineage_parent_id IS NOT NULL`. The other three edge/row arrays are 1:1 with a table
  *   (`idea_version`, `provenance_edge`, `decision`) — this one has no home of its own.
@@ -30,9 +31,14 @@ import type { Idea, IdeaRow } from "./idea.js";
  *   (`domain_cluster`'s names and `adjacency` are not among the frozen eight).
  */
 
-/** §3.1's `Idea` plus the row-only `mutation_delta` (`0005`, V4 `#15`) — the backup-complete row. */
+/** §3.1's `Idea` plus the row-only fields `0005` and `0006` added — the backup-complete row. */
 export interface ExportedIdea extends Idea {
   mutation_delta: string | null;
+  /**
+   * `idea.new_domain` (`0006`, EV1 `#43`) — `1`/`0` where a write that can widen recorded it, `null`
+   * where the value is not recorded (§4.13's ACCEPT, and every row that predates the column).
+   */
+  new_domain: 0 | 1 | null;
 }
 
 /** One `idea_version` row, `domain_tags` as the array the idea carries. */
@@ -110,11 +116,15 @@ function ideas(db: DatabaseSync): ExportedIdea[] {
   const rows = db
     .prepare(
       `SELECT id, hypothesis, problem, monetization, domain_tags, lineage_kind, lineage_parent_id,
-              status, visibility, current_version, created_at, updated_at, mutation_delta
+              status, visibility, current_version, created_at, updated_at, mutation_delta, new_domain
          FROM idea ORDER BY id`,
     )
     .all() as unknown as Array<
-    Omit<IdeaRow, "domain_tags"> & { domain_tags: string; mutation_delta: string | null }
+    Omit<IdeaRow, "domain_tags"> & {
+      domain_tags: string;
+      mutation_delta: string | null;
+      new_domain: 0 | 1 | null;
+    }
   >;
   return rows.map((row) => ({
     id: row.id,
@@ -131,6 +141,9 @@ function ideas(db: DatabaseSync): ExportedIdea[] {
     updated_at: row.updated_at,
     // A ROOT's `mutation_delta` is `null` by the schema CHECK, so the column is the whole answer.
     mutation_delta: row.mutation_delta,
+    // `new_domain` is `null` where it was never recorded (`0006`), which is a state the document must
+    // carry rather than flatten: a backup that dropped it would change what the report counts.
+    new_domain: row.new_domain,
   }));
 }
 

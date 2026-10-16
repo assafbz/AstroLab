@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
-import { isoTimestamp, LIVE_STATUS, vaultMutation } from "@astrolab/store";
+import { isoTimestamp, LIVE_STATUS, newDomainFlag, vaultMutation } from "@astrolab/store";
 
 import { toIdea, type Idea, type IdeaRow } from "./idea.js";
 
@@ -255,7 +255,10 @@ interface DecisionRow {
 }
 
 function insertIdea(db: DatabaseSync, input: IdeaFields): Idea {
-  return insertRootIdea(db, input, "ACTIVE", isoTimestamp());
+  // §4.2's capture is one of the writes that can widen the vault, so it records the instrument
+  // (`EV1` #43 / NFR-Q1). Computed **before** the row exists: the idea's own row is never "another
+  // row", and it is not in the table yet.
+  return insertRootIdea(db, input, "ACTIVE", isoTimestamp(), newDomainFlag(db, input.domain_tags));
 }
 
 /**
@@ -264,12 +267,18 @@ function insertIdea(db: DatabaseSync, input: IdeaFields): Idea {
  * paths that create a node — so "the first version is this content" is written once rather than
  * restated per caller. The status is the caller's: a capture's is `ACTIVE`, and an ACCEPT computes its
  * own from what the spark could prefill (`FLOW.md` §4.3 step 4 / T27).
+ *
+ * `newDomain` is the caller's too, and its default is the **absence of a record**: a capture passes the
+ * instrument's value (`EV1` #43, `newDomainFlag`), while §4.13's ACCEPT passes nothing — the accepted
+ * root's tags are the source pair's union, all drawn from rows that already exist, so the reading there
+ * is constant-false and `NULL` ("not recorded") is the honest value, not a `0` (`SCHEMA.md` §1e).
  */
 export function insertRootIdea(
   db: DatabaseSync,
   fields: IdeaFields,
   status: Idea["status"],
   now: string,
+  newDomain: 0 | 1 | null = null,
 ): Idea {
   const idea: Idea = {
     id: randomUUID(),
@@ -288,9 +297,20 @@ export function insertRootIdea(
   const tags = JSON.stringify(idea.domain_tags);
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
-                       lineage_parent_id, status, visibility, current_version, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'ROOT', NULL, ?, 'PRIVATE', 1, ?, ?)`,
-  ).run(idea.id, idea.hypothesis, idea.problem, idea.monetization, tags, idea.status, now, now);
+                       lineage_parent_id, status, visibility, current_version, created_at, updated_at,
+                       new_domain)
+     VALUES (?, ?, ?, ?, ?, 'ROOT', NULL, ?, 'PRIVATE', 1, ?, ?, ?)`,
+  ).run(
+    idea.id,
+    idea.hypothesis,
+    idea.problem,
+    idea.monetization,
+    tags,
+    idea.status,
+    now,
+    now,
+    newDomain,
+  );
   // The first version is this content (PRD §3.2) — written with the row, not after it.
   db.prepare(
     `INSERT INTO idea_version (idea_id, version, hypothesis, problem, monetization, domain_tags, created_at)

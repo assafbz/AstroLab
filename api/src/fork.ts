@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
-import { isoTimestamp, vaultMutation } from "@astrolab/store";
+import { isoTimestamp, newDomainFlag, vaultMutation } from "@astrolab/store";
 
 import {
   ConflictError,
@@ -76,11 +76,17 @@ export function forkIdea(db: DatabaseSync, id: string, input: ForkInput): Idea {
       updated_at: now,
     };
     const tags = JSON.stringify(idea.domain_tags);
+    // §4.7's fork is the second write that can widen (§4.2's capture is the third) — and deliberately
+    // the **vault-relative** test, not T25's parent-relative one: `sameDomainSet` above keeps the fork
+    // distinct from *its parent*, while the instrument asks whether the vault as a whole gains a domain
+    // (`EV1` #43 / NFR-Q1; `PRD.md` §1.2's "genuine spread vs near-variants"). Computed before the
+    // insert: the fork is not yet a row, so no other-row exclusion is needed.
+    const newDomain = newDomainFlag(db, idea.domain_tags);
     db.prepare(
       `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                          lineage_parent_id, status, visibility, current_version, created_at, updated_at,
-                         mutation_delta)
-       VALUES (?, ?, ?, ?, ?, 'FORK', ?, 'ACTIVE', 'PRIVATE', 1, ?, ?, ?)`,
+                         mutation_delta, new_domain)
+       VALUES (?, ?, ?, ?, ?, 'FORK', ?, 'ACTIVE', 'PRIVATE', 1, ?, ?, ?, ?)`,
     ).run(
       idea.id,
       idea.hypothesis,
@@ -91,6 +97,7 @@ export function forkIdea(db: DatabaseSync, id: string, input: ForkInput): Idea {
       now,
       now,
       input.mutation_delta,
+      newDomain,
     );
     // The first version is this content (PRD §3.2 item 2) — written with the row, not after it.
     db.prepare(

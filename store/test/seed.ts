@@ -11,15 +11,18 @@ export interface IdeaOverrides {
   lineageParentId?: string | null;
   status?: string;
   visibility?: string;
+  /** The idea's `domain_tags` — `["x"]` unless a test needs a real domain (`EV1` #43's coverage read). */
+  tags?: string[];
 }
 
 export function insertIdea(db: DatabaseSync, id: string, over: IdeaOverrides = {}): void {
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
        lineage_parent_id, status, visibility, current_version, created_at, updated_at)
-     VALUES (?, 'h', 'p', 'm', '["x"]', ?, ?, ?, ?, 1, 't', 't')`,
+     VALUES (?, 'h', 'p', 'm', ?, ?, ?, ?, ?, 1, 't', 't')`,
   ).run(
     id,
+    JSON.stringify(over.tags ?? ["x"]),
     over.lineageKind ?? "ROOT",
     over.lineageParentId ?? null,
     over.status ?? "ACTIVE",

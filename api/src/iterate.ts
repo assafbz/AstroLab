@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 
-import { isoTimestamp, vaultMutation } from "@astrolab/store";
+import { isoTimestamp, newDomainFlag, vaultMutation } from "@astrolab/store";
 
 import { NotFoundError, derivedStatus, type IdeaFields } from "./capture.js";
 import { toIdea, type Idea, type IdeaRow } from "./idea.js";
@@ -31,6 +31,11 @@ export function iterateIdea(db: DatabaseSync, id: string, fields: IdeaFields): I
     // The §4.2 validator guarantees all four arrived, so this is always `ACTIVE` — but the status is
     // *derived* here, not hard-coded, so the mint (§4.13) and the clear stay one rule.
     const status = derivedStatus(fields);
+    // The third write that can widen (§4.2 capture, §4.7 fork). Computed **before** the UPDATE on
+    // purpose: the row's own current tags are part of the coverage being compared against — they are
+    // exactly what the vault already carried — so a text-only re-save of the same domain reads `0`
+    // rather than a false "new" whenever no other row shares it (`EV1` #43 / NFR-Q1).
+    const newDomain = newDomainFlag(db, fields.domain_tags);
 
     db.prepare(
       `INSERT INTO idea_version (idea_id, version, hypothesis, problem, monetization, domain_tags, created_at)
@@ -39,9 +44,19 @@ export function iterateIdea(db: DatabaseSync, id: string, fields: IdeaFields): I
 
     db.prepare(
       `UPDATE idea SET hypothesis = ?, problem = ?, monetization = ?, domain_tags = ?,
-                       status = ?, current_version = ?, updated_at = ?
+                       status = ?, current_version = ?, updated_at = ?, new_domain = ?
        WHERE id = ?`,
-    ).run(fields.hypothesis, fields.problem, fields.monetization, tags, status, version, now, id);
+    ).run(
+      fields.hypothesis,
+      fields.problem,
+      fields.monetization,
+      tags,
+      status,
+      version,
+      now,
+      newDomain,
+      id,
+    );
 
     return toIdea({
       ...row,
