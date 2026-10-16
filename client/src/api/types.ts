@@ -120,6 +120,26 @@ export interface SparkDetail extends Spark {
   what_it_takes: string | null;
 }
 
+/**
+ * `docs/API.md` §3.5 — one resolution, as the server recorded it.
+ *
+ * `kind` is the contract's **three** — a *response* may name `INSPIRED` even though §4.13's request
+ * accepts only `ACCEPT`/`DISMISS` (the widening the response needs, the request does not; the request's
+ * narrowing is `api/decisions.ts`'s). `spark_status` is `FLOW.md` §3's **verbatim** terminal status —
+ * never a bare `ACCEPTED` — and `result_idea_id` is the ROOT that `ACCEPT` derived, `null` for a
+ * `DISMISS`. `undoable` reports §5.4's server-side window at response time; the client computes none
+ * of it.
+ */
+export interface Decision {
+  decision_id: string;
+  spark_id: string;
+  kind: "ACCEPT" | "DISMISS" | "INSPIRED";
+  result_idea_id: string | null;
+  spark_status: "RESOLVED-ACCEPTED" | "RESOLVED-DISMISSED" | "RESOLVED-INSPIRED";
+  decided_at: string;
+  undoable: boolean;
+}
+
 /** `docs/API.md` §3.6 / `FLOW.md` §4.1 — the five engine states, verbatim. */
 export type EngineStateName = "E0" | "E1" | "E2" | "E3" | "E4";
 
