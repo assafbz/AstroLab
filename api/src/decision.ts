@@ -225,7 +225,11 @@ export interface DecisionRow {
   decided_at: string;
 }
 
-function findDecision(db: DatabaseSync, id: string): DecisionRow | null {
+/**
+ * The `decision` row for an id, or `null` — `decision.ts` stays the owner of a `decision` row (§4.15's
+ * handler reads this rather than re-deriving the shape, so the row and its `rowid` are read one way).
+ */
+export function findDecision(db: DatabaseSync, id: string): DecisionRow | null {
   const row = db
     .prepare(
       "SELECT rowid, id, spark_id, kind, result_idea_id, decided_at FROM decision WHERE id = ?",

@@ -42,7 +42,10 @@ function count(db: DatabaseSync, table: string): number {
 }
 
 /** Root ideas with the given tags, so a spark's derived union is observable. */
-function seedIdeas(db: DatabaseSync, rows: ReadonlyArray<readonly [string, readonly string[]]>): void {
+function seedIdeas(
+  db: DatabaseSync,
+  rows: ReadonlyArray<readonly [string, readonly string[]]>,
+): void {
   for (const [id, tags] of rows) {
     db.prepare(
       `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
@@ -398,7 +401,9 @@ describe("`undoable` is §4.15's window, computed at response time (§3.5, K6 #4
     seedSpark(db, "s1", "a", "b");
     resolveDecision(db, "s1", accept);
     // Move the resolution past the window rather than wait it out.
-    db.prepare("UPDATE decision SET decided_at = ? WHERE id = 'd-accept'").run("2000-01-01T00:00:00Z");
+    db.prepare("UPDATE decision SET decided_at = ? WHERE id = 'd-accept'").run(
+      "2000-01-01T00:00:00Z",
+    );
 
     expect(resolveDecision(db, "s1", accept).undoable).toBe(false);
   });

@@ -22,6 +22,7 @@ import { inspireSeed } from "./inspire.js";
 import { iterateIdea } from "./iterate.js";
 import { handleSparkEvents, type SparkEventsOptions } from "./spark-events.js";
 import { listOfferedSparks, parseSparkQuery, sparkDetail } from "./sparks.js";
+import { undoDecision } from "./undo.js";
 import { vaultSummary } from "./vault-summary.js";
 
 /**
@@ -252,6 +253,15 @@ async function handleRequest(
       return handleSparkInspire(res, db, inspireSparkId);
     }
 
+    // §4.15 — the undo (K6 `#40`, FLOW §5.4 / T12 / N3). One step over all three resolving paths; the
+    // `decision_id` is the path, so **no body is read** (§4.16's posture). Matched on §4.13/§4.14's
+    // `{id}/<action>` shape (the shared `detailActionPath`); an unknown id is §2's `not_found`, and a
+    // decision the window / a later decision / an edit / a deletion retired is the `409` envelope.
+    const undoDecisionId = undoPath(path);
+    if (undoDecisionId !== null && method === "POST") {
+      return handleUndo(res, db, undoDecisionId);
+    }
+
     // §4.17 — the open, complete export (V6 `#17`; NFR-D1, ARCH §8). A `GET` only: the document is the
     // whole vault in one read, so there is nothing to validate and no body is read. The read is the
     // export's own — one `BEGIN`…`COMMIT` snapshot inside `exportVault` (§4.5's shared `readSnapshot`),
@@ -414,6 +424,17 @@ function handleSparkInspire(res: ServerResponse, db: DatabaseSync, id: string): 
 }
 
 /**
+ * `POST /v1/decisions/{decision_id}/undo` (docs/API.md §4.15): no body is read — the id is the path,
+ * and a body is ignored, not echoed (§4.16's posture) — and the write answers `404` (unknown id)
+ * before `409` (a decision the window / a later decision / an edit / a deletion retired). One vault
+ * mutation, so a refused undo writes nothing.
+ */
+function handleUndo(res: ServerResponse, db: DatabaseSync, decisionId: string): void {
+  const result = undoDecision(db, decisionId); // NotFoundError → 404; ConflictError → 409
+  sendJson(res, 200, result);
+}
+
+/**
  * `DELETE /v1/ideas/{id}` (docs/API.md §4.8): orphan-with-warning, so the server never blocks and
  * never asks — §4.5's `referenced_by` is the client's warning, and the delete proceeds either way. An
  * unknown id is the `not_found` envelope, which is also what a repeat delete answers: the id is
@@ -463,28 +484,53 @@ function sparkPath(path: string): string | null {
 }
 
 /**
- * The two action routes under `/v1/sparks/` — `{id}/decision` (§4.13, K4 `#38`) and `{id}/inspire`
- * (§4.14, K5 `#39`): one non-empty, unreserved segment and the exact action. `/v1/sparks/{id}/<action>/x`,
- * `/v1/sparks/<action>` and `/v1/sparks/run/<action>` are not a route; each falls to the envelope (§2),
- * the `not_found` rule the deeper shapes already follow.
+ * The `{id}/<action>` shape under a detail prefix, shared by the three action routes — `{id}/decision`
+ * (§4.13, K4 `#38`), `{id}/inspire` (§4.14, K5 `#39`) and `{decision_id}/undo` (§4.15, K6 `#40`): one
+ * non-empty id, the exact action, and no deeper segment. `{id}/<action>/x`, `<prefix><action>` and a
+ * reserved id are not a route; each falls to the envelope (§2), the `not_found` rule the deeper shapes
+ * already follow.
  *
- * One function for both actions rather than one per action: the reserved-segment refusal below is
+ * One function for all three rather than one per action: the **reserved-segment refusal** is
  * load-bearing (Max's #127 nit — no reserved name is ever read as an id, on any method), and a second
- * copy of it is a second thing to drift.
- *
- * `action` is the **union**, not `string` (#132's review carry): a typo'd literal at a call site is
- * then a compile error rather than a route that can never match — the failure K4 `#38` named.
+ * copy of it is a second thing to drift. `ideaPath` is deliberately **not** folded in — its shape is
+ * different (an optional action, two allowed actions), so sharing the matcher would mean parameterising
+ * it past the point of reading.
+ */
+function detailActionPath(
+  prefix: string,
+  action: string,
+  reserved: ReadonlySet<string>,
+  path: string,
+): string | null {
+  if (!path.startsWith(prefix)) return null;
+  const rest = path.slice(prefix.length);
+  const suffix = `/${action}`;
+  if (!rest.endsWith(suffix)) return null;
+  const id = rest.slice(0, -suffix.length);
+  if (id === "" || id.includes("/") || reserved.has(id)) return null;
+  return id;
+}
+
+/**
+ * §4.13/§4.14's two actions under `/v1/sparks/`. `action` is the **union**, not `string` (#132's
+ * review carry): a typo'd literal at a call site is then a compile error rather than a route that can
+ * never match — the failure K4 `#38` named.
  */
 type SparkAction = "decision" | "inspire";
 
 function sparkActionPath(path: string, action: SparkAction): string | null {
-  if (!path.startsWith(SPARK_DETAIL_PREFIX)) return null;
-  const rest = path.slice(SPARK_DETAIL_PREFIX.length);
-  const suffix = `/${action}`;
-  if (!rest.endsWith(suffix)) return null;
-  const id = rest.slice(0, -suffix.length);
-  if (id === "" || id.includes("/") || RESERVED_SPARK_SEGMENTS.has(id)) return null;
-  return id;
+  return detailActionPath(SPARK_DETAIL_PREFIX, action, RESERVED_SPARK_SEGMENTS, path);
+}
+
+/**
+ * §4.15's `{decision_id}/undo` under `/v1/decisions/`. No reserved segments: this is the prefix's only
+ * route (an empty id or a deeper segment is the `not_found` envelope, §2).
+ */
+const DECISION_DETAIL_PREFIX = "/v1/decisions/";
+const NO_RESERVED_SEGMENTS: ReadonlySet<string> = new Set();
+
+function undoPath(path: string): string | null {
+  return detailActionPath(DECISION_DETAIL_PREFIX, "undo", NO_RESERVED_SEGMENTS, path);
 }
 
 /** A capture body is a few hundred bytes; a megabyte is a ceiling, not a target. */
