@@ -8,6 +8,7 @@ import {
   LIVE_STATUS,
   liveOffers,
   retractOffersOutside,
+  sparkById,
   type OfferedSpark,
 } from "../src/sparks.js";
 import { insertIdea } from "./seed.js";
@@ -198,16 +199,19 @@ describe("the engine's spark writes touch no vault state (C7)", () => {
  * six fields (K1's five + `first_step`, #115) — and each one is mutable: dropping the `status` filter,
  * sorting the union, or returning the row instead of the projection reddens exactly one of them.
  */
-describe("liveOffers — the deck read (K1 #35, §4.9)", () => {
-  /** An idea with explicit tags: `seed.ts`'s `insertIdea` hard-codes `["x"]`, which cannot discriminate. */
-  function taggedIdea(db: DatabaseSync, id: string, tags: string[]): void {
-    db.prepare(
-      `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
-         lineage_parent_id, status, visibility, current_version, created_at, updated_at)
-       VALUES (?, 'h', 'p', 'm', ?, 'ROOT', NULL, 'ACTIVE', 'PRIVATE', 1, 't', 't')`,
-    ).run(id, JSON.stringify(tags));
-  }
+/**
+ * An idea with explicit tags: `seed.ts`'s `insertIdea` hard-codes `["x"]`, which cannot discriminate —
+ * both the deck read and the by-id read derive `domain_tags` from these.
+ */
+function taggedIdea(db: DatabaseSync, id: string, tags: string[]): void {
+  db.prepare(
+    `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
+       lineage_parent_id, status, visibility, current_version, created_at, updated_at)
+     VALUES (?, 'h', 'p', 'm', ?, 'ROOT', NULL, 'ACTIVE', 'PRIVATE', 1, 't', 't')`,
+  ).run(id, JSON.stringify(tags));
+}
 
+describe("liveOffers — the deck read (K1 #35, §4.9)", () => {
   test("live offers only, in insertion order — a resolved spark never reaches the deck", () => {
     const db = newDb();
     // The lexicographically-**later** pair goes in **first**, so `rowid` order and `pair_key` order
@@ -305,5 +309,89 @@ describe("liveOffers — the deck read (K1 #35, §4.9)", () => {
     // Non-vacuity: the query found the shipped index, so the `toContain` below is not scanning "".
     expect(index?.sql).toContain("CREATE UNIQUE INDEX ux_spark_live");
     expect(index?.sql).toContain(`status = '${LIVE_STATUS}'`);
+  });
+});
+
+/**
+ * The by-id detail read (#118, `docs/API.md` §4.12/§3.4). Two properties here are a *check*, not a
+ * reading: **status-blindness** (the id is the filter; only an unknown id is absent) and the exact
+ * projection (the deck's fields plus `what_it_takes`, and no internals). Each is mutable — adding a
+ * `status = 'OFFERED'` filter, or returning the raw row, reddens exactly one of them.
+ */
+describe("sparkById — the by-id detail read (#118, §4.12)", () => {
+  test("reads a spark in any status — the id is the filter, not `status`", () => {
+    const db = newDb();
+    insertOfferedSparks(db, [offer({ direction: "live" })], "t");
+    db.prepare(
+      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, status, created_at)
+       VALUES ('s-res', 'b', 'c', 'b|c', 'resolved', 'c', 'RESOLVED-ACCEPTED', 't')`,
+    ).run();
+    const liveId = (
+      db.prepare("SELECT id FROM spark WHERE direction = 'live'").get() as {
+        id: string;
+      }
+    ).id;
+
+    // §4.9's deck hides the resolved row; §4.12 must **not**. A `status = 'OFFERED'` filter here
+    // answers `null` for a spark the user resolved mid-session — the tap-back 404 the issue forbids.
+    expect(sparkById(db, "s-res")?.direction).toBe("resolved");
+    expect(sparkById(db, liveId)?.direction).toBe("live");
+  });
+
+  test("the projection is §3.4's fields — the deck's, plus `what_it_takes`, and no internals", () => {
+    const db = newDb();
+    insertOfferedSparks(db, [offer()], "t");
+    const id = (db.prepare("SELECT id FROM spark").get() as { id: string }).id;
+
+    // `toEqual` is exact: `mechanism`, the two scores and the source idea ids sit in the row and are
+    // absent here; `what_it_takes` — the detail's whole delta over `Spark` — is present.
+    expect(sparkById(db, id)).toEqual({
+      id,
+      direction: "A direction",
+      claim: "A claim",
+      first_step: "a first step",
+      what_it_takes: "what it takes",
+      domain_tags: ["x"],
+      created_at: "t",
+    });
+  });
+
+  test("a legacy row's `what_it_takes` and `first_step` read `null`, not a dropped key", () => {
+    const db = newDb();
+    db.prepare(
+      `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, status, created_at)
+       VALUES ('s1', 'a', 'b', 'a|b', 'd', 'c', 'OFFERED', 't')`,
+    ).run();
+
+    expect(sparkById(db, "s1")).toMatchObject({ what_it_takes: null, first_step: null });
+  });
+
+  test("domain_tags is the derived pair-order union, exactly as the deck row derives it", () => {
+    const db = openStore(":memory:");
+    migrate(db, MIGRATIONS);
+    taggedIdea(db, "a", ["fintech", "audio-dsp"]);
+    taggedIdea(db, "b", ["audio-dsp", "health"]);
+    insertOfferedSparks(db, [offer()], "t");
+    const id = (db.prepare("SELECT id FROM spark").get() as { id: string }).id;
+
+    // A sort would give `["audio-dsp", "fintech", "health"]`; either single side would be a prefix.
+    expect(sparkById(db, id)?.domain_tags).toEqual(["fintech", "audio-dsp", "health"]);
+  });
+
+  test("a row whose source idea is gone is still read — the left joins are the guard, not tolerance", () => {
+    const db = openStore(":memory:");
+    migrate(db, MIGRATIONS);
+    taggedIdea(db, "a", ["fintech"]);
+    taggedIdea(db, "b", ["health"]);
+    insertOfferedSparks(db, [offer()], "t");
+    const id = (db.prepare("SELECT id FROM spark").get() as { id: string }).id;
+    // `0003` dropped `spark.idea_a_id`'s FK, so this row can exist and an inner join would drop it.
+    db.prepare("DELETE FROM idea WHERE id = 'a'").run();
+
+    expect(sparkById(db, id)?.domain_tags).toEqual(["health"]);
+  });
+
+  test("an unknown id is `null` — the caller answers the §2 envelope", () => {
+    expect(sparkById(newDb(), "nope")).toBeNull();
   });
 });

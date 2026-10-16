@@ -11,6 +11,7 @@ import { withRetry } from "./retry.js";
  * | an `OFFERED` spark | the engine — a gated pair the model confirmed (§3.3 step 3) | `insertOfferedSparks`, standalone |
  * | the sweep | the engine — a live offer whose ideas are no longer candidates (V5 `#16` ⑤) | `retractOffersOutside`, standalone |
  * | the deck read | the API — `GET /v1/sparks?state=offered` (K1 `#35`, §4.9) | `liveOffers`, standalone |
+ * | the detail read | the API — `GET /v1/sparks/{id}` (§4.12, #118) | `sparkById`, standalone |
  *
  * ## One live-offer predicate, one constant
  *
@@ -138,6 +139,30 @@ export function retractOffersOutside(db: DatabaseSync, candidateIds: readonly st
 }
 
 /**
+ * The one select behind both spark reads: §3.3's six fields — including the derived `domain_tags` from
+ * the two source ideas (§4.9) — plus §3.4's `what_it_takes`. The deck appends a `status` filter and a
+ * row order; the by-id read appends an id predicate. One definition, so the deck row and the detail row
+ * cannot come to describe different shapes (the module's one-`LIVE_STATUS` posture, above).
+ */
+const SPARK_SELECT = `SELECT s.id, s.direction, s.claim, s.first_step, s.what_it_takes, s.created_at,
+         a.domain_tags AS a_tags, b.domain_tags AS b_tags
+    FROM spark s
+    LEFT JOIN idea a ON a.id = s.idea_a_id
+    LEFT JOIN idea b ON b.id = s.idea_b_id`;
+
+/** The columns `SPARK_SELECT` returns, before the derived `domain_tags` is folded in. */
+interface SparkReadRow {
+  id: string;
+  direction: string;
+  claim: string;
+  first_step: string | null;
+  what_it_takes: string | null;
+  created_at: string;
+  a_tags: string | null;
+  b_tags: string | null;
+}
+
+/**
  * One deck row, exactly as `docs/API.md` §3.3 projects it (K1 `#35`). Deliberately not the row:
  * `mechanism`, `domain_distance`, `structural_alignment` and the source idea ids are selection
  * internals and never surface (`ARCHITECTURE.md` §2.3; §6's no-scores rule).
@@ -184,24 +209,10 @@ export interface LiveSpark {
  */
 export function liveOffers(db: DatabaseSync): LiveSpark[] {
   const rows = db
-    .prepare(
-      `SELECT s.id, s.direction, s.claim, s.first_step, s.created_at,
-              a.domain_tags AS a_tags, b.domain_tags AS b_tags
-         FROM spark s
-         LEFT JOIN idea a ON a.id = s.idea_a_id
-         LEFT JOIN idea b ON b.id = s.idea_b_id
-        WHERE s.status = '${LIVE_STATUS}'
-        ORDER BY s.rowid ASC`,
-    )
-    .all() as Array<{
-    id: string;
-    direction: string;
-    claim: string;
-    first_step: string | null;
-    created_at: string;
-    a_tags: string | null;
-    b_tags: string | null;
-  }>;
+    .prepare(`${SPARK_SELECT} WHERE s.status = '${LIVE_STATUS}' ORDER BY s.rowid ASC`)
+    .all() as unknown as SparkReadRow[];
+  // §3.3's six fields: `what_it_takes` is the detail's alone (§3.4), so the deck drops it here rather
+  // than shipping it and ignoring it downstream.
   return rows.map((row) => ({
     id: row.id,
     direction: row.direction,
@@ -210,6 +221,46 @@ export function liveOffers(db: DatabaseSync): LiveSpark[] {
     domain_tags: pairTags(row.a_tags, row.b_tags),
     created_at: row.created_at,
   }));
+}
+
+/**
+ * A `Spark` **and** the detail-only `what_it_takes` (`docs/API.md` §3.4) — one spark read **by id**,
+ * in whatever status it holds. The status-blind sibling of `LiveSpark`: the deck filters to
+ * `LIVE_STATUS`, this read does not, because the `{id}` in the request *is* the filter (§4.12).
+ */
+export interface DetailSpark extends LiveSpark {
+  /** What the idea would take to build. `null` only on a legacy row — rendered as simply absent. */
+  what_it_takes: string | null;
+}
+
+/**
+ * One spark by id, in **any** status (§4.12, #118), or `null` for an id the vault does not hold.
+ *
+ * ## Status-blind by design — the opposite reading from §4.9
+ *
+ * There is no `status` filter here, and there must not be. A spark the user resolved mid-session must
+ * still answer when they tap back to it; only an *unknown* id is absent (the §2 envelope). §4.9's deck
+ * needs its filter because a `Spark` carries no `status`, so an unfiltered list is ambiguous — it would
+ * hand back resolved sparks with nothing marking them. Here the id is the filter, so no ambiguity
+ * exists, and a resolved spark never surfaces as resolved: neither the deck row nor the detail row
+ * carries a `status` field (§3.3/§3.4).
+ *
+ * The select, the join and the derived `domain_tags` are `liveOffers`' (`SPARK_SELECT`), plus §3.4's one
+ * extra field. The selection internals are never selected, so nothing here can surface them.
+ */
+export function sparkById(db: DatabaseSync, id: string): DetailSpark | null {
+  const row = db.prepare(`${SPARK_SELECT} WHERE s.id = ?`).get(id) as unknown as
+    SparkReadRow | undefined;
+  if (row === undefined) return null;
+  return {
+    id: row.id,
+    direction: row.direction,
+    claim: row.claim,
+    first_step: row.first_step,
+    what_it_takes: row.what_it_takes,
+    domain_tags: pairTags(row.a_tags, row.b_tags),
+    created_at: row.created_at,
+  };
 }
 
 /** The pair-order union: `a`'s tags then `b`'s, first appearance wins. */

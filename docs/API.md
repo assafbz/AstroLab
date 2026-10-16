@@ -443,6 +443,25 @@ Readings this doc had not pinned (settled in K1 `#35`):
 ### 4.12 `GET /v1/sparks/{id}` — spark detail (S1b)
 `200` → `SparkDetail` (§3.4). No scores, no similarity readout (`ARCHITECTURE.md` §6).
 
+Readings this doc had not pinned (settled in #118):
+
+- **The body is §3.4's exact projection** — §3.3's six fields plus **only** `what_it_takes`, the derived
+  `domain_tags` (§3.3) included. The selection internals (`mechanism`, the two scores, the source idea
+  ids) sit in the row and never in the body; a legacy row's `what_it_takes` is `null` — absent, not a
+  dropped key (the #115 treatment for `first_step`).
+- **The read is status-blind by id — the deliberate *opposite* of §4.9.** There is no `status` filter: a
+  spark the user resolved mid-session must still answer when they tap back to it. §4.9 needs its filter
+  because a `Spark` carries **no `status`**, so an unfiltered *list* would hand back resolved rows with
+  nothing marking them; here the `{id}` **is** the filter, so no ambiguity exists, and a resolved spark
+  never surfaces as resolved (§3.3/§3.4 carry no `status` field).
+- **An unknown id is §2's `not_found` (`404`) — and it is the only `404` here.** The read moves nothing
+  and reaches no provider, like §4.9/§4.10: an already-offered spark stays reviewable with the engine
+  down (`FLOW.md` §5.6).
+- **The `{id}` shape is exactly one non-empty segment.** The reserved exact paths — `state` (§4.10),
+  `events` (§4.11), `run` (§4.16) — are matched **before** the `{id}` shape, so none is ever read as an
+  id; a further segment (`/v1/sparks/{id}/decision`, §4.13, K6 `#39`) and the bare trailing slash are
+  the `not_found` envelope until K6 lands.
+
 ### 4.13 `POST /v1/sparks/{id}/decision` — ACCEPT / DISMISS
 Request: `{ "decision_id": "…", "kind": "ACCEPT" | "DISMISS" }`.
 - **Idempotent on `decision_id`.** A raced swipe + button tap, or a retry after an interrupted commit,
@@ -496,12 +515,13 @@ Readings this doc had not pinned (settled in W8 `#33`):
   successor, forever (`ARCHITECTURE.md` §4 / I).
 - **Idempotent per revision:** a repeat while a `PENDING` run exists at that stamp returns **the same**
   `run_id` rather than adding a second row.
-- **The prefix's `{id}` paths are not routes — they are the `not_found` envelope.** The implemented
-  paths are bare `/v1/sparks` (§4.9), `/v1/sparks/state` (§4.10), `/v1/sparks/events` (§4.11) and this
-  one. `/v1/sparks/{id}` (§4.12) is defined in this contract but **not served** — K3's S1b transport is
-  client-side — so `/v1/sparks/9f1c` answers the envelope, not a partial read. (This bullet once read
-  *"exactly two routes exist … the unwritten §4.17"*; both clauses went stale as §4.9 and §4.17
-  landed.)
+- **The bare `/v1/sparks/{id}` is a route; the *deeper* `{id}` shapes are not.** The implemented paths
+  under the prefix are bare `/v1/sparks` (§4.9), `/v1/sparks/state` (§4.10), `/v1/sparks/events`
+  (§4.11), this one, and — since #118 — `/v1/sparks/{id}` (§4.12), a single segment. A **further**
+  segment is still the `not_found` envelope: `/v1/sparks/{id}/decision` (§4.13) is defined in this
+  contract but **not served** until K6 `#39`, so it answers the envelope, not a partial read. (This
+  bullet once read *"exactly two routes exist … the unwritten §4.17"* — stale as §4.9 and §4.17 landed —
+  then *"§4.12 defined but not served"* — stale as #118 landed.)
 
 ### 4.17 `GET /v1/export` — open, complete export (NFR-D1)
 `200` → a single self-describing JSON document (`ARCHITECTURE.md` §8):
@@ -650,6 +670,12 @@ rather than left to the implementation:
   newest-first. §3.3 carries the derived-`domain_tags` reading. The endpoint answers **no** engine
   state: E0–E4 stays §4.10's, computed in one place, so the deck read cannot grow a second ladder.
 
+- **The spark detail read (settled in #118)** — §4.12's readings live at the endpoint. The one that
+  generalises: **status-blindness is the opposite reading from §4.9 on purpose.** §4.9 filters to
+  `OFFERED` because a `Spark` carries no `status`, so an unfiltered *list* is ambiguous; §4.12 does not
+  filter because the `{id}` **is** the filter, so a resolved spark must still answer on a tap-back.
+  §3.4 carries the projection: `Spark` plus only `what_it_takes`.
+
 ---
 
 *Frozen — Ari (AstroLab agent), 2026-10-13, issue **F4** (`#11`), branch `feat/f4-api-contract`;
@@ -657,4 +683,5 @@ carried and extended by **V1** (`#12`), branch `feat/v1-capture-api`; by **V2** 
 branch `feat/v2-vault-read-api`; by **O2** (`#22`), branch `feat/o2-vault-summary`; by **V5**
 (`#16`), branch `feat/v5-delete-api`; by **V3** (`#14`), branch `feat/v3-iterate-api`; by **W8**
 (`#33`), branch `feat/w8-run-surface`; by **K1** (`#35`), branch `feat/k1-sparks-read`;
+by **#118**, branch `feat/118-spark-detail`;
 and by the **#94 docs pass**, branch `docs/94-e0-definition-scope`.*
