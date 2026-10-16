@@ -194,17 +194,32 @@ interface DecisionRow {
   result_idea_id: string | null;
 }
 
-function insertIdea(db: DatabaseSync, input: CaptureInput): Idea {
-  const now = isoTimestamp();
+function insertIdea(db: DatabaseSync, input: IdeaFields): Idea {
+  return insertRootIdea(db, input, "ACTIVE", isoTimestamp());
+}
+
+/**
+ * A ROOT idea and its first version, in the caller's transaction (`PRD.md` §3.2, §4.2). Shared by the
+ * **blank** capture and the **seeded** one, and by §4.13's ACCEPT (`api/src/decision.ts`) — the three
+ * paths that create a node — so "the first version is this content" is written once rather than
+ * restated per caller. The status is the caller's: a capture's is `ACTIVE`, and an ACCEPT computes its
+ * own from what the spark could prefill (`FLOW.md` §4.3 step 4 / T27).
+ */
+export function insertRootIdea(
+  db: DatabaseSync,
+  fields: IdeaFields,
+  status: Idea["status"],
+  now: string,
+): Idea {
   const idea: Idea = {
     id: randomUUID(),
-    hypothesis: input.hypothesis,
-    problem: input.problem,
-    monetization: input.monetization,
-    domain_tags: input.domain_tags,
+    hypothesis: fields.hypothesis,
+    problem: fields.problem,
+    monetization: fields.monetization,
+    domain_tags: fields.domain_tags,
     lineage_kind: "ROOT",
     lineage_parent_id: null,
-    status: "ACTIVE",
+    status,
     visibility: "PRIVATE",
     current_version: 1,
     created_at: now,
@@ -214,8 +229,8 @@ function insertIdea(db: DatabaseSync, input: CaptureInput): Idea {
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                        lineage_parent_id, status, visibility, current_version, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 'ROOT', NULL, 'ACTIVE', 'PRIVATE', 1, ?, ?)`,
-  ).run(idea.id, idea.hypothesis, idea.problem, idea.monetization, tags, now, now);
+     VALUES (?, ?, ?, ?, ?, 'ROOT', NULL, ?, 'PRIVATE', 1, ?, ?)`,
+  ).run(idea.id, idea.hypothesis, idea.problem, idea.monetization, tags, idea.status, now, now);
   // The first version is this content (PRD §3.2) — written with the row, not after it.
   db.prepare(
     `INSERT INTO idea_version (idea_id, version, hypothesis, problem, monetization, domain_tags, created_at)
@@ -224,7 +239,8 @@ function insertIdea(db: DatabaseSync, input: CaptureInput): Idea {
   return idea;
 }
 
-function insertProvenance(
+/** One provenance edge, in the caller's transaction (`FLOW.md` §4.3; §4.2 seeded, §4.13 ACCEPT). */
+export function insertProvenance(
   db: DatabaseSync,
   derivedIdeaId: string,
   sourceIdeaId: string,

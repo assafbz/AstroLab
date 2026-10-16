@@ -9,6 +9,7 @@ import {
   liveOffers,
   retractOffersOutside,
   sparkById,
+  sparkForDecision,
   type OfferedSpark,
 } from "../src/sparks.js";
 import { insertIdea } from "./seed.js";
@@ -393,5 +394,52 @@ describe("sparkById — the by-id detail read (#118, §4.12)", () => {
 
   test("an unknown id is `null` — the caller answers the §2 envelope", () => {
     expect(sparkById(newDb(), "nope")).toBeNull();
+  });
+});
+
+/**
+ * The resolving read (K4 `#38`, `docs/API.md` §4.13) — the *writer's* sibling of `sparkById`.
+ *
+ * It is the one spark read that carries `status`, the canonical `pair_key` and the two source idea
+ * ids, because the resolution has to branch on the spark's state and point its `provenance_edge` rows
+ * and its dismissal at the pair. It shares `SPARK_SELECT`'s join and `pairTags`, so its derived
+ * `domain_tags` cannot drift from the deck's or the detail's — the same one-definition posture the
+ * module takes for `LIVE_STATUS`.
+ */
+describe("sparkForDecision — the resolving read (K4 #38, §4.13)", () => {
+  test("the row's identity, state and pair, with the derived pair-order tags", () => {
+    const db = openStore(":memory:");
+    migrate(db, MIGRATIONS);
+    taggedIdea(db, "a", ["fintech", "audio-dsp"]);
+    taggedIdea(db, "b", ["audio-dsp", "health"]);
+    insertOfferedSparks(db, [offer()], "t");
+    const id = (db.prepare("SELECT id FROM spark").get() as { id: string }).id;
+
+    // Exact: `mechanism`, the two scores, `what_it_takes` and `first_step` are the row's and are not
+    // this read's business; the union is pair-order, as at §4.9/§4.12 (a sort would move `health`).
+    expect(sparkForDecision(db, id)).toEqual({
+      id,
+      idea_a_id: "a",
+      idea_b_id: "b",
+      pair_key: "a|b",
+      direction: "A direction",
+      claim: "A claim",
+      domain_tags: ["fintech", "audio-dsp", "health"],
+      status: "OFFERED",
+    });
+  });
+
+  test("reads a resolved spark too — the `409` on a second resolution is the caller's, not a filter here", () => {
+    const db = newDb();
+    insertOfferedSparks(db, [offer()], "t");
+    const id = (db.prepare("SELECT id FROM spark").get() as { id: string }).id;
+    db.prepare("UPDATE spark SET status = 'RESOLVED-DISMISSED' WHERE id = ?").run(id);
+
+    // A `status = 'OFFERED'` filter here would answer `null` and turn the caller's `409` into a `404`.
+    expect(sparkForDecision(db, id)?.status).toBe("RESOLVED-DISMISSED");
+  });
+
+  test("an unknown id is `null` — the caller answers the §2 envelope", () => {
+    expect(sparkForDecision(newDb(), "nope")).toBeNull();
   });
 });

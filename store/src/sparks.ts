@@ -46,6 +46,13 @@ import { withRetry } from "./retry.js";
  */
 export const LIVE_STATUS = "OFFERED";
 
+/**
+ * `spark.status`'s whole vocabulary (`ARCHITECTURE.md` §2.3's CHECK; `FLOW.md` §3's verbs). The three
+ * terminal values are the resolutions; `OFFERED` is `LIVE_STATUS`, "a live offer".
+ */
+export type SparkStatus =
+  typeof LIVE_STATUS | "RESOLVED-ACCEPTED" | "RESOLVED-DISMISSED" | "RESOLVED-INSPIRED";
+
 /** One confirmed pair, shaped as `spark` stores it. The caller owns the pairing; this is the row. */
 export interface OfferedSpark {
   idea_a_id: string;
@@ -139,12 +146,16 @@ export function retractOffersOutside(db: DatabaseSync, candidateIds: readonly st
 }
 
 /**
- * The one select behind both spark reads: §3.3's six fields — including the derived `domain_tags` from
- * the two source ideas (§4.9) — plus §3.4's `what_it_takes`. The deck appends a `status` filter and a
- * row order; the by-id read appends an id predicate. One definition, so the deck row and the detail row
- * cannot come to describe different shapes (the module's one-`LIVE_STATUS` posture, above).
+ * The one select behind the spark reads: §3.3's six fields — including the derived `domain_tags` from
+ * the two source ideas (§4.9) — plus §3.4's `what_it_takes`, plus the row's identity/state
+ * (`idea_a_id`, `idea_b_id`, `pair_key`, `status`) the resolving read needs and **no response carries**.
+ * The deck appends a `status` filter and a row order; the by-id read an id predicate; the resolving
+ * read nothing. One definition, so the deck row, the detail row and the resolving row cannot come to
+ * describe different shapes (the module's one-`LIVE_STATUS` posture, above) — the derived union in
+ * particular, which is `pairTags`' and is folded exactly once below.
  */
-const SPARK_SELECT = `SELECT s.id, s.direction, s.claim, s.first_step, s.what_it_takes, s.created_at,
+const SPARK_SELECT = `SELECT s.id, s.idea_a_id, s.idea_b_id, s.pair_key, s.status, s.direction, s.claim,
+         s.first_step, s.what_it_takes, s.created_at,
          a.domain_tags AS a_tags, b.domain_tags AS b_tags
     FROM spark s
     LEFT JOIN idea a ON a.id = s.idea_a_id
@@ -153,6 +164,10 @@ const SPARK_SELECT = `SELECT s.id, s.direction, s.claim, s.first_step, s.what_it
 /** The columns `SPARK_SELECT` returns, before the derived `domain_tags` is folded in. */
 interface SparkReadRow {
   id: string;
+  idea_a_id: string;
+  idea_b_id: string;
+  pair_key: string;
+  status: SparkStatus;
   direction: string;
   claim: string;
   first_step: string | null;
@@ -261,6 +276,50 @@ export function sparkById(db: DatabaseSync, id: string): DetailSpark | null {
     domain_tags: pairTags(row.a_tags, row.b_tags),
     created_at: row.created_at,
   };
+}
+
+/**
+ * A spark as its **resolution** needs it (K4 `#38`, `docs/API.md` §4.13) — the identity, the state and
+ * the pair, which no response carries. `Spark`/`SparkDetail`/`LiveSpark` all drop these on purpose
+ * (§3.3/§3.4: `status` never surfaces, and a `Spark` has no source idea ids); this is the writer's read
+ * and has no response contract at all.
+ *
+ * It carries the two source ids because `ACCEPT` writes a `provenance_edge` per source and `DISMISS`
+ * writes the pair's negative signal — the pair is `pair_key`, which is canonical here rather than
+ * recomputed at the call site. The projection is otherwise `sparkById`'s, over the same `SPARK_SELECT`
+ * and the same `pairTags`, so the union cannot drift from the deck's or the detail's.
+ *
+ * **Not a filter on `status`.** The caller decides what a non-`OFFERED` spark means (`409`, §4.13); a
+ * filter here would answer `null` and turn that `409` into a `404`.
+ */
+export function sparkForDecision(db: DatabaseSync, id: string): DecisionSpark | null {
+  const row = db.prepare(`${SPARK_SELECT} WHERE s.id = ?`).get(id) as unknown as
+    SparkReadRow | undefined;
+  if (row === undefined) return null;
+  return {
+    id: row.id,
+    idea_a_id: row.idea_a_id,
+    idea_b_id: row.idea_b_id,
+    pair_key: row.pair_key,
+    direction: row.direction,
+    claim: row.claim,
+    domain_tags: pairTags(row.a_tags, row.b_tags),
+    status: row.status,
+  };
+}
+
+/** A spark as the resolving write needs it — see `sparkForDecision`. */
+export interface DecisionSpark {
+  id: string;
+  /** The pair's two source ideas, in stored order — the provenance edges' targets (§4.13). */
+  idea_a_id: string;
+  idea_b_id: string;
+  /** `[aId, bId].sort().join("|")` — the canonical key `suppressed_pair` is written with. */
+  pair_key: string;
+  direction: string;
+  claim: string;
+  domain_tags: string[];
+  status: SparkStatus;
 }
 
 /** The pair-order union: `a`'s tags then `b`'s, first appearance wins. */

@@ -56,8 +56,11 @@ export {
   liveOffers,
   retractOffersOutside,
   sparkById,
+  sparkForDecision,
+  type DecisionSpark,
   type DetailSpark,
   type LiveSpark,
   type OfferedSpark,
+  type SparkStatus,
 } from "./sparks.js";
 export { vaultMutation } from "./vault.js";
