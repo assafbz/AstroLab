@@ -44,6 +44,20 @@ skills."* Applied to this repo's harness, that means:
    evidence. The `.gitignore` commit in `using-git-worktrees` and the install/build
    steps in `using-git-worktrees` / `ponytail-help` are therefore fine to run on a
    branch.
+   **The gate is opened by a resolvable mention, and answered in one of two
+   states.** A PR counts as *ready for review* only once its author has named the
+   assigned reviewer with an **explicit identity** (`--mention` / npub). A
+   paraphrase `@Name` is presentation, not a wake: on 2026-10-16 #139 sat green
+   from 11:11Z to 16:35Z with its ready report carrying only prose `@Name`, and
+   moved 11m28s after a mention-carrying directive at 16:24Z — the reviewer had
+   not been reached, so that is not reviewer latency. The reviewer answers that
+   mention in one of two states — **taking it** (with when) or **parked** (with
+   why); a silent hold is the failure mode, and when the reviewer is woken and
+   cannot act, that one sentence *is* the deliverable. **Detection threshold:
+   >2h** with no answer on the reviewer's mention → the author re-tags — the same
+   shape as the >3h fallback for routed owner calls, so the team carries one
+   convention rather than two. The threshold detects, it never licenses: the
+   reviewer still performs the merge.
 3. **A PR closes its issue with a closing keyword, on the closing PR only.** GitHub
    closes an issue when the PR body contains a closing keyword followed by an issue
    reference — `#<n>`, `owner/repo#<n>`, or a full issue URL — **anywhere** in the body;
