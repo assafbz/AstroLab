@@ -471,8 +471,13 @@ function sparkPath(path: string): string | null {
  * One function for both actions rather than one per action: the reserved-segment refusal below is
  * load-bearing (Max's #127 nit — no reserved name is ever read as an id, on any method), and a second
  * copy of it is a second thing to drift.
+ *
+ * `action` is the **union**, not `string` (#132's review carry): a typo'd literal at a call site is
+ * then a compile error rather than a route that can never match — the failure K4 `#38` named.
  */
-function sparkActionPath(path: string, action: string): string | null {
+type SparkAction = "decision" | "inspire";
+
+function sparkActionPath(path: string, action: SparkAction): string | null {
   if (!path.startsWith(SPARK_DETAIL_PREFIX)) return null;
   const rest = path.slice(SPARK_DETAIL_PREFIX.length);
   const suffix = `/${action}`;
