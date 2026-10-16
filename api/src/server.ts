@@ -223,7 +223,7 @@ async function handleRequest(
 
     // §4.12 — the spark detail (S1b, #118). The `{id}` shape is matched **after** the exact spark
     // routes above, so `state` / `events` / `run` are never read as a detail id; a further segment
-    // (`…/decision`, §4.13, K6 #39) or a non-`GET` method falls to the envelope below. An unknown id is
+    // (`…/decision`, §4.13, K4 #38) or a non-`GET` method falls to the envelope below. An unknown id is
     // §2's `not_found` — and it is the **only** 404 here: the read is status-blind, so a resolved spark
     // still answers `200` (§3.3/§3.4 carry no `status`).
     const sparkId = sparkPath(path);

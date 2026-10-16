@@ -506,6 +506,14 @@ Readings this doc had not pinned (settled in K4 `#38`):
   which opens `BEGIN IMMEDIATE`: the loser reads the committed row and answers `200` — never a `500`,
   never a second idea — so there is no `SQLITE_CONSTRAINT` arm to write. The claim is *checked*, not
   argued: one key through two connections to one file, one idea and one `decision` row.
+  **The evidence is replay-shaped, not a race (the N4 residual, stated).** `node:sqlite` and
+  `resolveDecision` are synchronous, so no in-process test interleaves two connections — the
+  two-connection test and the `Promise.all` pair both *replay*: one call commits, then the other runs
+  and reads the row the first left. That replay is the property N4 needs (a **retry**, not a lock), and
+  it is what the tests check: delete step 1 and both redden on the key-conflict branch, reached only
+  because the second connection read the committed row. The lock half is SQLite's own `BEGIN
+  IMMEDIATE`, and only a genuinely concurrent caller — two OS processes on one file, which no test here
+  is — would exercise it. Recorded rather than left implied.
 - **`undoable` is `true` on a fresh resolution.** `FLOW.md` §5.4 leaves the window unspecified and §4.15
   is K6 `#40`'s; until it lands no window has closed, so the flag reports what is true rather than
   standing in for a policy that does not exist yet.
