@@ -21,4 +21,6 @@ verdict.
 | `lint:citations`                          |        |
 
 **Review:** author ≠ reviewer — **approve and merge**, with the verdict as a PR
-comment (the shared account blocks a formal self-approval).
+comment (the shared account blocks a formal self-approval). Open the gate by
+naming the reviewer with an **explicit identity** (`--mention` / npub) — a plain
+`@Name` is presentation and does not wake them (`AGENTS.md`, _Harness overrides_ 2).
