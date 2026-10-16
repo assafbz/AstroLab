@@ -93,6 +93,8 @@ idea(
   lineage_kind       TEXT NOT NULL,    -- ROOT | FORK (iteration is a version, not a lineage kind)
   lineage_parent_id  TEXT NULL,        -- NOT a foreign key (T26): set only for FORK (single parent)
   mutation_delta     TEXT NULL,        -- the fork's mutation delta (V4 #15, `0005`); set only for a FORK
+  new_domain         INTEGER NULL,     -- did this idea's domain set widen the vault? (EV1 #43, `0006`);
+                                       -- 1 | 0 | NULL = not recorded (§4.13's ACCEPT, rows predating it)
   status             TEXT NOT NULL,    -- ACTIVE | NEEDS_COMPLETION
   visibility         TEXT NOT NULL,    -- PRIVATE (MVP only)
   current_version    INTEGER NOT NULL,
@@ -648,9 +650,17 @@ Every non-functional requirement in `PRD.md` §4 → a design element and its ve
   route already uses, and this document is the source of record, so the row was the defect. No
   state-machine change.
 
+- **2026-10-16 — r3.6.** **EV1 (`#43`) — `idea.new_domain`, the NFR-Q1 instrument.** §2.1's `idea(` sketch
+  gains the nullable `new_domain` (`0006`, `docs/SCHEMA.md` §1e): `1` where a write that can widen the
+  vault reached a domain the vault did not already carry, `0` where it did not, `NULL` where the value
+  was never recorded — §4.13's ACCEPT (its root's tags are the source pair's union, so the reading there
+  is constant-false) and every row predating the column. The three producers are §4.2's capture, §4.7's
+  fork and §4.6's iterate; the reporting reads live in `api/src/metrics.ts` and are not a route. The
+  column is additive and nullable, so no existing constraint or state-machine behaviour moves.
+
 - **2026-10-14 — r3.5.** **O5 (`#25`) — §12 item 3 (cold-start ordering) closed.** The onboarding run is
   triggered by the exit the user chose: *See your sparks* presses `POST /v1/sparks/run` (`docs/API.md`
   §4.16), *Skip* carries no side effect, and the S0→S1 exit never auto-runs. Client-only: a press-scoped
   single-flight guard (`client/src/domain/run-trigger.ts`), no server invariant and no state-machine change.
 
-*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.5, 2026-10-14. Review: adversarial passes by Max. Branch `docs/architecture`.*
+*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.6, 2026-10-16. Review: adversarial passes by Max. Branch `docs/architecture`.*

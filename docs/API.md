@@ -232,6 +232,13 @@ Readings this doc had not pinned (settled in K5 `#39`):
   (settled in V1 `#12`) already records that a repeat on `decision_id` returns the first `Idea` with the
   same `201`. §4.13's `200` is that endpoint's own reading and does not carry over.
 
+- **Capture records `new_domain` (`#43`).** Capture is one of the three writes that can *widen* the
+  vault, so it stores whether its domain set reached a domain the vault did not already carry
+  (`SCHEMA.md` §1e). The reading is the vault's own: a domain is the **cluster**, and a tag the
+  vocabulary has not seen is its own cluster (§3.2) — so a typed fresh tag counts at once, which is
+  the arm that keeps the flywheel's own signal rather than `NULL`-ing it. `api/src/nfr-q1.test.ts`
+  pins both arms, and the tag-vs-cluster case (`payments` where the vault holds `fintech`).
+
 ### 4.3 `GET /v1/vault/summary` — S0 progress / spread gate
 `200` → `VaultSummary` (§3.2). Deterministic; **never** blocks on the provider.
 
@@ -315,6 +322,13 @@ Readings this doc had not pinned (settled in V3 `#14`):
   path, and any deeper path (`/v1/ideas/a/b`) are the `not_found` envelope (§2), by the rule the read
   path already records.
 
+- **Iterate re-records `new_domain`, against the vault as it stood (`#43`).** The node's **own current
+  tags are part of the coverage compared against** — they are what the vault already carried — which is
+  why the flag is computed *before* the `UPDATE`. The consequence the contract owns: a **text-only
+  re-save is not a widening**, even when the idea is the sole carrier of its domain; computing the flag
+  after the write instead would make it always `0`, and ignoring the node's own tags would report that
+  re-save as `1`. Both cases are pinned in `api/src/nfr-q1.test.ts`.
+
 ### 4.7 `POST /v1/ideas/{id}/fork` — S5 Fork
 Request: `{ "mutation_delta": "…", "domain_tags": ["…"] }`.
 Guard: `mutation_delta` non-empty **and** the fork's domain set differs from the parent's
@@ -357,6 +371,12 @@ Readings this doc had not pinned (settled in V4 `#15`):
   writes nothing and moves no revision.
 - **Only `POST` on `{id}/fork` is a route.** `GET`/`DELETE` on `…/fork`, and any deeper path, are the
   `not_found` envelope (§2) — the rule §4.5/§4.6 record.
+
+- **The fork's `new_domain` is the vault-relative test (`#43`) — deliberately not T25's.** The `409`
+  above compares the fork's domain set to its **parent's**; the instrument asks whether the **vault**
+  gained a domain, so a fork into a domain a *third* idea already covers records `0` even though it
+  cleared the parent comparison. Two questions, two predicates, and only the second is the metric
+  (`api/src/nfr-q1.test.ts`).
 
 ### 4.8 `DELETE /v1/ideas/{id}` — delete, orphan-with-warning
 `200` → `{ "deleted": true, "id": "…" }`. Semantics (`FLOW.md` T26 / M3):
@@ -558,6 +578,17 @@ Readings this doc had not pinned (settled in K4 `#38`):
 - **This shape is `POST` only.** A `GET`/`DELETE` on it, and any deeper segment (`…/decision/x`), are
   §2's `not_found` envelope like every other route/method pair that is not defined.
 
+- **ACCEPT records no `new_domain`, and that is a reading rather than an omission (`#43`).** The root's
+  `domain_tags` are `spark.domain_tags` — the **derived union** of the two source ideas' stored tags
+  (`FLOW.md` §4.3 steps 1–2) — and both sources are pre-existing `idea` rows the gate admitted, so the
+  root's domains are a subset of the vault's **already**. *"Did this accept land in a new domain"* is
+  therefore **constant-false by construction**, under either reading (tag or cluster), and the fixture
+  the plan first proposed — an ACCEPT on an empty vault — is unreachable: a live offer needs a pair, and
+  that pair is exactly where the tags come from. The column lands `NULL` = **not recorded**
+  (`SCHEMA.md` §1e) instead of a `0` that would claim a measurement was taken. NFR-Q1's instrument lives
+  on the writes that *can* widen — §4.2, §4.6, §4.7 (`api/src/nfr-q1.test.ts`, and the constant is
+  asserted there rather than described).
+
 ### 4.14 `POST /v1/sparks/{id}/inspire` — open seeded capture
 `200` → the seed payload to prefill Capture:
 ```json
@@ -667,7 +698,7 @@ Readings this doc had not pinned (settled in W8 `#33`):
 ### 4.17 `GET /v1/export` — open, complete export (NFR-D1)
 `200` → a single self-describing JSON document (`ARCHITECTURE.md` §8):
 ```json
-{ "schema_version": 5,
+{ "schema_version": 6,
   "exported_at": "2026-10-13T05:14:05Z",
   "ideas": [ … ], "idea_versions": [ … ], "lineage_edges": [ … ],
   "provenance_edges": [ … ], "decisions": [ … ], "domain_tags": [ … ] }
@@ -677,15 +708,18 @@ committed idea is present; no vendor format, no proprietary ids needed to read i
 
 Readings this doc had not pinned (settled in V6 `#17`):
 
-- **`schema_version` is a number — the store's own reading.** The live `SCHEMA_VERSION` (`5`), equal to
+- **`schema_version` is a number — the store's own reading.** The live `SCHEMA_VERSION` (`6`), equal to
   `PRAGMA user_version` on any store the API serves. The example above once showed the string `"1"`; that
   placeholder is corrected here, not carried.
 - **The document is the whole vault in one snapshot.** One `BEGIN`…`COMMIT` over the F3 tables, read-only:
   `exported_at` and the seven arrays are a single vault state, and the read writes nothing (no revision
   bump, no run). No provider is reachable from the export path.
 - **The eight keys are top-level, in this order** — the response body *is* the document, not a wrapper.
-- **`ideas[]` is the full `idea` row, `mutation_delta` included** (`null` on a ROOT). Export is the
-  backup path, so nothing the vault holds is dropped; §3.1's `Idea`, which omits it, is unchanged.
+- **`ideas[]` is the full `idea` row, `mutation_delta` and `new_domain` included** (`null` on a ROOT,
+  and `null` wherever the instrument was never recorded). Export is the backup path, so nothing the
+  vault holds is dropped — and `new_domain` is a **stored** fact, not recomputable from the vault the
+  document rebuilds, so a document that skipped it would silently change what NFR-Q1 counts after a
+  restore (`api/src/nfr-d1.test.ts` round-trips it). §3.1's `Idea`, which omits both, is unchanged.
 - **`lineage_edges[]` is derived, keys `{idea_id, parent_idea_id}`** — one per FORK, from
   `idea WHERE lineage_parent_id IS NOT NULL`; it has no table of its own. The other edge/row arrays are
   1:1 with a table (`idea_version`, `provenance_edge`, `decision`).
