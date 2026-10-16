@@ -1,0 +1,15 @@
+# Build context for `deploy/Dockerfile`. Keep it to source: the image builds its own dist and
+# installs its own node_modules.
+.git
+.github
+.agents
+node_modules
+**/dist
+artifacts
+data
+*.sqlite
+*.sqlite-*
+.env
+.env.*
+docs
+PLANS

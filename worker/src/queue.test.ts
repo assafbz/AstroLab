@@ -3,7 +3,14 @@ import type { DatabaseSync } from "node:sqlite";
 import { MIGRATIONS, enqueueRun, migrate, openStore, stampAndEnqueue } from "@astrolab/store";
 import { describe, expect, test } from "vitest";
 
-import { cutVault, runOnce, stubRunBody, type RunOutcome, type VaultCut } from "./queue.js";
+import {
+  cutVault,
+  runOnce,
+  startWorker,
+  stubRunBody,
+  type RunOutcome,
+  type VaultCut,
+} from "./queue.js";
 
 /** A fresh migrated in-memory vault — the same schema `main` ships (`0001_init` + `0002`). */
 function newDb(): DatabaseSync {
@@ -165,5 +172,35 @@ describe("cutVault", () => {
     seedIdea(db, "b");
 
     expect(cutVault(db, 7)).toEqual({ revision: 7, ideaIds: ["a", "b", "c"] });
+  });
+});
+
+describe("startWorker — an idle worker stays resident (deployed shape)", () => {
+  // The poll timer is the only thing that can keep the process alive between runs. `unref`'d, it
+  // cannot: node exits the moment the queue is empty, so a run enqueued *after* boot is never
+  // drained and the spark deck never updates (`docs/ARCHITECTURE.md` §1, ADR-0004). `unref`'d
+  // timers are absent from `getActiveResourcesInfo`, so the difference is observable in-process.
+  const refdTimeouts = (): number =>
+    process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
+
+  test("keepAlive (the default) references its timer", () => {
+    const before = refdTimeouts();
+    // idleMs is long so the first tick cannot fire and reschedule during the synchronous assertion.
+    const worker = startWorker(newDb(), stubRunBody, { idleMs: 60_000 });
+    try {
+      expect(refdTimeouts()).toBe(before + 1);
+    } finally {
+      worker.stop();
+    }
+  });
+
+  test("keepAlive: false does not — the negative control that makes the guard non-vacuous", () => {
+    const before = refdTimeouts();
+    const worker = startWorker(newDb(), stubRunBody, { idleMs: 60_000, keepAlive: false });
+    try {
+      expect(refdTimeouts()).toBe(before);
+    } finally {
+      worker.stop();
+    }
   });
 });

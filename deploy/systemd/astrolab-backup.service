@@ -1,0 +1,7 @@
+[Unit]
+Description=AstroLab — take a dated, verified copy of the vault
+After=astrolab.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/astrolab/backup.sh

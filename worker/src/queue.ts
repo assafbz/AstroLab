@@ -147,11 +147,20 @@ export interface WorkerOptions {
   onError?: (err: unknown) => void;
   /** W8: the run's write hook, forwarded to every `runOnce` (S2). Absent ⇒ the loop writes nothing. */
   commit?: RunCommit;
+  /**
+   * Hold the process open while the loop is idle. **Default `true`**, because a deployed worker is a
+   * long-lived process (`docs/ARCHITECTURE.md` §1, ADR-0004): with an `unref`'d timer nothing keeps
+   * the event loop alive, so the process exits the moment the queue is empty — and a run enqueued
+   * *after* boot is then never drained. Pass `false` from a caller that starts a loop and does not
+   * want to have to `stop()` it (or that never expects the loop to survive).
+   */
+  keepAlive?: boolean;
 }
 
 /**
  * Starts the poll loop: `runOnce` repeatedly, waiting `idleMs` between passes. The timer is
- * `unref`'d, so an idle worker does not hold the process open on its own.
+ * **referenced** by default — an idle worker stays resident — which is what makes the deployed shape
+ * work; see `keepAlive` for the exception.
  */
 export function startWorker(
   db: DatabaseSync,
@@ -159,6 +168,7 @@ export function startWorker(
   options: WorkerOptions = {},
 ): { stop: () => void } {
   const idleMs = options.idleMs ?? 1000;
+  const keepAlive = options.keepAlive ?? true;
   let stopped = false;
   let handle: NodeJS.Timeout | undefined;
 
@@ -172,10 +182,16 @@ export function startWorker(
       // itself, which must not take the loop down.
       options.onError?.(err);
     }
-    if (!stopped) handle = setTimeout(tick, idleMs).unref();
+    if (!stopped) handle = park(idleMs);
   };
 
-  handle = setTimeout(tick, 0).unref();
+  /** The one place a poll timer is created, so `keepAlive` cannot apply to one site and not the other. */
+  function park(ms: number): NodeJS.Timeout {
+    const timer = setTimeout(tick, ms);
+    return keepAlive ? timer : timer.unref();
+  }
+
+  handle = park(0);
   return {
     stop: () => {
       stopped = true;
