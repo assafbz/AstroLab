@@ -98,6 +98,9 @@ the review seat, not the author.
 
 - **Drift check** — a scheduled job diffing the live ruleset against the committed JSON, failing
   closed.
+- **Wire `--self-check` into CI** — one step in the existing `build` job (a step, so the required
+  context string is unchanged) would catch a spec ↔ workflow disagreement on the PR that causes it,
+  rather than at the next hand-run. A workflow edit, so not in this lane.
 - **Split the ZDR self-check** — the offline self-check is deterministic and could be required; the
   live call cannot. They are bundled in `PRIV1` today; splitting is a workflow edit, out of this lane.
 - **No client/E2E gate** — a check must exist before it can be required; no browser harness exists.
