@@ -84,7 +84,7 @@ export function readDomainMap(db: SqliteConnection, tags: readonly string[]): Ma
  * ## A domain's identity is the vault's own rule, not a second one
  *
  * A domain is the **cluster** (`docs/API.md:119` — *"`#fintech` + `#banking` are **one** domain"*), and
- * the vault already counts coverage that way: `SUMMARY_SQL` (`api/src/vault-summary.ts`) reads
+ * the vault already counts coverage that way: `SUMMARY_SQL` (`core/src/vault/vault-summary.ts`) reads
  * `COUNT(DISTINCT m.cluster_id)`, with an unmapped tag counted as **its own cluster** (provisional).
  * The identity used here is that same expression — `COALESCE(domain_map.cluster_id, <the tag>)` — so
  * the instrument cannot disagree with the readout it feeds. A tag in `domain_map` therefore resolves
@@ -120,7 +120,7 @@ export function readDomainMap(db: SqliteConnection, tags: readonly string[]): Ma
  * `1` answers *"did this idea ever reach a domain the vault did not already carry?"* — NFR-Q1 reads an
  * event (*"landed"*) — so it is not re-answered by a later write that happens not to widen. §4.6 is the
  * one writer whose row already exists, and it writes the value **monotonically**
- * (`CASE WHEN new_domain = 1 THEN 1 ELSE ? END`, `api/src/iterate.ts`): a `1` earned at birth or at any
+ * (`CASE WHEN new_domain = 1 THEN 1 ELSE ? END`, `core/src/vault/iterate.ts`): a `1` earned at birth or at any
  * earlier iterate survives every later write of the row's own domain, a plain text edit included. The
  * alternative — overwriting with this write's answer — resets such a row to `0` (the recomputation
  * compares against a vault that now **includes the row itself**), so a widening would be erased by the

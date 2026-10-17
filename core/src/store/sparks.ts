@@ -17,13 +17,13 @@ import { withRetry } from "./retry.js";
  *
  * "A live offer" is `spark.status = LIVE_STATUS` and nothing else. That predicate is executable in
  * six places — the insert guard, both sweep branches, the API's delete-retraction
- * (`api/src/delete.ts`), the `unreviewed` count (`api/src/engine-state.ts`), and `liveOffers` — so it
+ * (`core/src/vault/delete.ts`), the `unreviewed` count (`core/src/vault/engine-state.ts`), and `liveOffers` — so it
  * lives here as one exported constant rather than as six literal copies that drift. The two DDL
  * copies (`migrations.ts`) stay literal: DDL cannot take a TS const, and the shipped SQL is what
  * `core/test/schema.test.ts` asserts.
  *
  * The API **resolves** sparks (`POST /v1/sparks/{id}/decision`, `DELETE /v1/ideas/{id}`); the worker
- * **creates** them — the split `api/src/delete.ts` records. `spark` is **not** one of §4's four
+ * **creates** them — the split `core/src/vault/delete.ts` records. `spark` is **not** one of §4's four
  * trigger tables (`idea` / `idea_version` / `provenance_edge` / `decision`), so neither write here
  * stamps `vault_meta.revision` nor enqueues a run: a run that stamped would enqueue its own successor,
  * forever. Asserted in `sparks.test.ts`, not assumed.
@@ -123,7 +123,7 @@ export function insertOfferedSparks(
  * `candidateIds` is the cut's eligible set — `ACTIVE` ideas carrying at least one domain tag
  * (`worker/src/engine/gate.ts`). A live offer is *not* history: it is a promise made from the vault's
  * current state, and the state has changed. A **resolved** spark is history and keeps its pair, so the
- * `status = 'OFFERED'` filter confines this exactly as `api/src/delete.ts`'s retraction does.
+ * `status = 'OFFERED'` filter confines this exactly as `core/src/vault/delete.ts`'s retraction does.
  *
  * An empty candidate set means nothing is offerable, so every live offer is outside it.
  *
@@ -219,7 +219,7 @@ export interface LiveSpark {
  *
  * ## The left joins are the count's guard, not a tolerance for dangling refs
  *
- * A live offer's sources exist by construction — `api/src/delete.ts` retracts a live offer in the
+ * A live offer's sources exist by construction — `core/src/vault/delete.ts` retracts a live offer in the
  * same transaction that removes an idea — so an inner join would be correct *today*. It is a left
  * join anyway because the failure it prevents is silent and load-bearing: an inner join that dropped
  * a row would hide a live offer that `engineState`'s `unreviewed` still counts, and §3.6's count and

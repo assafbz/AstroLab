@@ -80,7 +80,7 @@ export function recordNoise(db: SqliteConnection, pairKeys: readonly string[]): 
  * conflict, and refreshes `updated_at`.
  *
  * Called **inside** K4's `vaultMutation` — the dismissal must commit with its `decision` row and its
- * spark's status in one transaction (`api/src/delete.ts` is the mirror pattern), so this carries no
+ * spark's status in one transaction (`core/src/vault/delete.ts` is the mirror pattern), so this carries no
  * transaction and no retry of its own.
  */
 export function recordDismissal(db: SqliteConnection, pairKey: string): void {

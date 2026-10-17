@@ -35,7 +35,7 @@ const VAULT_WRITE = new RegExp(
  * own modules by relative path, and `worker/` (until L3 relocates it) by package name.
  */
 const IMPORTS_HELPER =
-  /import\s*\{[^}]*\bvaultMutation\b[^}]*\}\s*from\s*"[^"]*(?:@astrolab\/store|\/store\/vault\.js)"/;
+  /import\s*\{[^}]*\bvaultMutation\b[^}]*\}\s*from\s*"[^"]*(?:@astrolab\/store|\/store\/(?:index|vault)\.js)"/;
 
 /** Only these two modules may touch `spark_run`: the queue itself and the trigger's wrapper. */
 const SPARK_RUN_OWNERS = ["core/src/store/runs.ts", "core/src/store/vault.ts"];
@@ -68,7 +68,7 @@ describe("vault writes go through vaultMutation (ARCHITECTURE.md §4)", () => {
     // (V3/V4/V5) edit this test just to go green.
     const writers = FILES.filter((f) => VAULT_WRITE.test(f.text)).map((f) => f.rel);
 
-    expect(writers).toContain("api/src/capture.ts");
+    expect(writers).toContain("core/src/vault/capture.ts");
   });
 
   test("every module writing a vault table imports and calls vaultMutation", () => {

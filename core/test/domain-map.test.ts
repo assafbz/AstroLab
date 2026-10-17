@@ -23,7 +23,7 @@ import { insertIdea, rows } from "./seed.js";
  * one write it makes: the cached normalisation of a provisional tag.
  *
  * The load-bearing blocks are the **exact-raw-tag key** (the S3 exact-match filter and
- * `api/src/vault-summary.test.ts`'s raw-cased-tag test both rest on it) and the **non-stamping**
+ * `core/src/vault/vault-summary.test.ts`'s raw-cased-tag test both rest on it) and the **non-stamping**
  * property — this write is the `idea_mechanism` exception (Max's #78), and "no revision bump, no run"
  * must be guarded **where the write lives**.
  */

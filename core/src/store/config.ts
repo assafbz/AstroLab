@@ -20,8 +20,9 @@ import { withRetry } from "./retry.js";
  *
  * ## Seeding is insert-only, and that is the point
  *
- * `seedGateConfig` is `INSERT … ON CONFLICT(key) DO NOTHING` — it runs at boot (`api/src/index.ts`,
- * `worker/src/boot.ts`, beside `seedDomainTaxonomy`) and must be **safe to run on every boot**. A
+ * `seedGateConfig` is `INSERT … ON CONFLICT(key) DO NOTHING` — it runs at boot (the app's composition
+ * root, L2; v1's `api/src/index.ts` and `worker/src/boot.ts`, beside `seedDomainTaxonomy`) and must be
+ * **safe to run on every boot**. A
  * `DO UPDATE` would silently revert an operator's tuning on the next restart, which is the exact
  * thing §3.4's *"tuned empirically"* forbids. Insert-only means the first boot writes the default and
  * every later boot leaves whatever is there alone. `setConfig` is the explicit overwrite.
