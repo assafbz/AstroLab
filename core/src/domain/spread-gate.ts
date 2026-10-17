@@ -4,7 +4,7 @@ import type { VaultSummary } from "../types.js";
  * S0's exit gate (`FLOW.md` §4.2 T04; `DESIGN.md` §9 E0) — whether S1 opens the deck or lands cold.
  *
  * **Read, not recomputed.** The gate is the server's `summary.eligible`, which
- * `api/src/vault-summary.ts` computes as `resolved_domains >= floor`. That *is* T04's "vault ≥ 2
+ * `core/src/vault/vault-summary.ts` computes as `resolved_domains >= floor`. That *is* T04's "vault ≥ 2
  * distinct **resolved** domains" (the floor the payload ships): recomputing it here would make the
  * gate a second source of truth for the same boolean — the drift class #24 exists to close.
  *

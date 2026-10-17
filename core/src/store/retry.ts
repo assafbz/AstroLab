@@ -1,9 +1,11 @@
 /**
- * Bounded retry-with-backoff for `SQLITE_BUSY` (ARCHITECTURE.md §9, ADR-0001).
+ * Bounded retry-with-backoff for `SQLITE_BUSY` (ARCHITECTURE.md §9, ADR-0001 as amended by ADR-0006).
  *
- * SQLite takes one file-wide write lock, so the API and worker — two processes on one file — can
- * collide. WAL + `busy_timeout` absorb most of it; this is the backstop, and it is deliberately
- * *bounded*: a write that cannot get through must fail loudly rather than retry forever.
+ * SQLite takes one file-wide write lock, so **two connections** — not two processes, since the app is
+ * the only writer now — can collide. WAL + `busy_timeout` absorb most of it; this is the backstop, and
+ * it is deliberately *bounded*: a write that cannot get through must fail loudly rather than retry
+ * forever. With one in-process writer it is a **guard, not a routine cost** — the same posture
+ * `store.ts` states at `openStore`/`writeTransaction`, and it must keep agreeing with it.
  */
 
 export interface RetryOptions {

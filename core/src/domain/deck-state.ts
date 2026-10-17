@@ -2,7 +2,7 @@ import type { EngineState, Spark } from "../types.js";
 
 /**
  * S1's **band composition** — `DESIGN.md` §9, `FLOW.md` §4.1. The state itself is not decided here:
- * E0–E4 arrives computed from `GET /v1/sparks/state` (§4.10, `api/src/engine-state.ts`), and this
+ * E0–E4 arrives computed from `GET /v1/sparks/state` (§4.10, `core/src/vault/engine-state.ts`), and this
  * module answers a different question — **which layer of the band draws what**, in the order §4.1
  * pins.
  *

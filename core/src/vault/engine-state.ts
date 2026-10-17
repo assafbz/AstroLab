@@ -89,7 +89,7 @@ export function engineState(db: SqliteConnection): EngineState {
   const summary = vaultSummary(db);
   const ideas = count(db, "SELECT COUNT(*) AS n FROM idea");
   // Every live offer counts, resolved sparks do not: `LIVE_STATUS` is exactly the deck's reviewable set
-  // — the same predicate `liveOffers` reads and `delete.ts` retracts on, from `store/src/sparks.ts` —
+  // — the same predicate `liveOffers` reads and `delete.ts` retracts on, from `core/src/store/sparks.ts` —
   // and §3.6's `unreviewed` is the count that deck needs.
   const unreviewed = count(db, `SELECT COUNT(*) AS n FROM spark WHERE status = '${LIVE_STATUS}'`);
   const run = db

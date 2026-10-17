@@ -4,7 +4,7 @@
  * **This is UX parity, not authority.** The server enforces the invariants (`docs/API.md` §0 last
  * line); this module exists so the inline error appears under the field the moment Save is pressed,
  * instead of arriving a round-trip later as a `422`. The two must agree, so the rules below mirror
- * `api/src/capture.ts` exactly — trimming for emptiness, measuring the hypothesis as typed.
+ * `core/src/vault/capture.ts` exactly — trimming for emptiness, measuring the hypothesis as typed.
  */
 
 import type { Idea, InspireSeed } from "../types.js";
@@ -43,7 +43,7 @@ const MANDATORY: ReadonlyArray<{ field: keyof CaptureDraft; message: string }> =
  * Absent = empty on the trimmed value for the three text fields, and no tag for `domain_tags`.
  * Whitespace-only is a missing field, not a present one — a naive `!== ""` check would let `"   "`
  * through and the server would answer `422` with no inline error having shown (Review Focus 3;
- * `api/src/capture.ts` `requiredText`).
+ * `core/src/vault/capture.ts` `requiredText`).
  */
 function isAbsent(draft: CaptureDraft, field: keyof CaptureDraft): boolean {
   return field === "domain_tags" ? draft.domain_tags.length === 0 : draft[field].trim() === "";
@@ -51,7 +51,7 @@ function isAbsent(draft: CaptureDraft, field: keyof CaptureDraft): boolean {
 
 /**
  * The mandatory fields that are **absent**, in the contract's order. This is the client mirror of the
- * server's `derivedStatus` (`api/src/decision.ts:205`): the same four-field completeness test, which
+ * server's `derivedStatus` (`core/src/vault/decision.ts:205`): the same four-field completeness test, which
  * is what decides `ACTIVE` vs `NEEDS_COMPLETION` and therefore what a completion prompt names
  * (§4.6, K8 `#42`). It is deliberately *not* `validateCapture`: that also fails a 281-character
  * hypothesis, which is a fixable draft error, not a field the user has not supplied.
@@ -124,7 +124,7 @@ export function sameDraft(a: CaptureDraft, b: CaptureDraft): boolean {
 /**
  * Whether two tag lists are the same **set** — order- and duplicate-insensitive, which is the rule
  * §4.7 pins for a fork's domain set (`docs/API.md` §4.7: *"Same-domain is set equality, order- and
- * duplicate-insensitive"*). Named after the server's own `sameDomainSet` (`api/src/fork.ts`) so the two
+ * duplicate-insensitive"*). Named after the server's own `sameDomainSet` (`core/src/vault/fork.ts`) so the two
  * mirrors cannot be read as different rules, and shared with `sameDraft` — one spelling of "the same
  * domains", not two.
  */

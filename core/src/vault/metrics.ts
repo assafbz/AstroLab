@@ -25,7 +25,7 @@ import type { SqliteConnection } from "../store/connection.js";
  * `= 1` and never `!= 1`, so a row whose value was never written is excluded rather than read as `0` —
  * the difference between "this idea did not widen the vault" and "nobody asked". §4.13's ACCEPT is the
  * writer that leaves `NULL`, because its root's tags are the source pair's union and the reading there
- * is constant-false; `store/src/domain-map.ts` carries the proof.
+ * is constant-false; `core/src/store/domain-map.ts` carries the proof.
  */
 
 /** One month bucket: `month` is a `YYYY-MM` UTC key, `count` the rows whose stamp falls in it. */

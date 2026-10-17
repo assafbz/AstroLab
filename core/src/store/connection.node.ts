@@ -15,7 +15,7 @@ import { openStore } from "./store.js";
  * `node:sqlite` is built into Node, so the suites need no native module and no build step; the
  * Expo app supplies its own adapter instead (L2). Nothing under `core/src` may import this module:
  * a device bundle that pulled it in would ship a Node built-in that does not exist there.
- * `core/test/connection.node.test.ts` reads the source tree and fails if the adapter is imported
+ * `core/test/boundary-node-adapter.test.ts` reads the source tree and fails if the adapter is imported
  * outside tests (L1's instance of the guard discipline — the claim is checked, not asserted in prose).
  */
 
