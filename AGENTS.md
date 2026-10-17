@@ -59,12 +59,20 @@ skills."* Applied to this repo's harness, that means:
    convention rather than two. The threshold detects, it never licenses: the
    reviewer still performs the merge.
 3. **A PR closes its issue with a closing keyword, on the closing PR only.** GitHub
-   closes an issue when the PR body contains a closing keyword followed by an issue
-   reference — `#<n>`, `owner/repo#<n>`, or a full issue URL — **anywhere** in the body;
-   markdown does **not** shield it (prose, code spans and quotes all fire).
-   **Incident-verified** is the `Closes #<n>` form (2026-10-16: #42 auto-closed 2 s after
-   PR #138 merged, from a backticked `Closes #42` in the body's prose — the author meant
-   it inert as discussion). **Documented, not tested here** is the full keyword set
+   links an issue when the PR body contains a closing keyword followed by an issue
+   reference — `#<n>`, `owner/repo#<n>`, or a full issue URL — **anywhere** in the body:
+   prose, quotes and parentheses all fire; **code spans and fenced code blocks do not**
+   (measured 2026-10-17 on throwaway PR #175 — one form per line, a distinct
+   already-closed issue each; reading `closingIssuesReferences` back gave
+   `[94,129,141,151]` for the prose, parenthesised and block-quoted forms and nothing for
+   the backticked and fenced ones). Position is irrelevant — mid-sentence and own line
+   both fire — and **negation is not read**: `this does **not** close #42` fires.
+   **Incident-verified** is the `Closes #<n>` form (`[169]` pre-merge on #170, `[171]` on
+   #172, `[]` on #173 with no keyword written). The #42 close of 2026-10-16 is
+   **re-attributed**: #138's body held *two* matches, and the one that fired was the plain
+   prose `deliberately does **not** close #42`; the backticked `Closes #42` beside it was
+   inert. That is the shape to watch — a sentence *denying* the close still performs it.
+   **Read `closingIssuesReferences` back after opening a PR** — it is what caught this. **Documented, not tested here** is the full keyword set
    GitHub recognises, case-insensitive: `close`/`closes`/`closed`, `fix`/`fixes`/`fixed`,
    `resolve`/`resolves`/`resolved`. A **held-lane** PR — the one that deliberately must
    *not* close its issue yet — therefore leaves the placeholder untouched **and contains
