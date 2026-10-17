@@ -99,6 +99,21 @@ assertion too, so it cannot quietly scan nothing, miss the files it exists for, 
 wrong package — and a structural claim asserted only in prose (a PR body, a JSDoc line) is not
 a check at all.
 
+**A matcher is only as wide as the spellings it normalises.** Where a guard's anchor is *text* — a
+declaration, a specifier, a call site — one planted form proves nothing about the others: run the
+mutation across the **spelling space** of the thing matched (a rename · a local alias · a qualified
+`import("…").X` · an identifier the pattern does not actually bound), keep a **near-miss control**
+that must stay green, so the guard cannot buy its reds by over-matching, and pin whatever the matcher
+still cannot reach as a **case that asserts the count is 0** rather than as prose.
+
+The failure is one level in from instance 3 below — that one is a matcher blind to an import
+**form**, this is a matcher blind to an annotation's **spelling**. **#171** (2026-10-17): the EV6
+call-site anchor `\b<receiver>\s*:\s*<InterfaceName>\b` bit for `ex: MechanismExtractor` and let six
+spellings of the same declaration through — a qualified import · a local alias · a renamed import · a
+rename-then-alias chain · the interface module's own aggregate alias · a `$`-named receiver (whose
+`\b` never holds, so that spelling matched nothing at all). Fixed in **#172**; its near-miss control
+is the engine's own `Adjudicator`-typed stage, which shares the method name and stays uncounted.
+
 Five instances in one day (2026-10-14, the W1/W2 lane). All five were found in review, not by
 the check itself, except the third, which its own mutation check caught:
 
