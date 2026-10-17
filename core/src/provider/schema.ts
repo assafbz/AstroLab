@@ -5,7 +5,7 @@ import { InvalidOutputError, type MechanismDescriptor, type SparkDraft } from ".
  * anything is stored**, and *"invalid output = a failed call, retried per §4, never stored"*.
  *
  * Validation is hand-rolled rather than a schema library: two small objects do not earn a dependency,
- * and this is the same shape `store/src/domain-seed.ts` already uses to validate its YAML. The
+ * and this is the same shape `core/src/store/domain-seed.ts` already uses to validate its YAML. The
  * `…_SCHEMA` constants are what the model is *asked* for; the parsers are what it is *held to* — a model
  * that ignores the schema is caught here, not by the schema's existence.
  */

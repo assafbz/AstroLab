@@ -5,13 +5,13 @@
  * **Run it** (0 provider calls — nothing here constructs an adapter):
  *
  * ```sh
- * npm run build -w store          # required: `tsx` does not apply vitest's source alias
+ * # nothing to build: the harness imports `core/`'s source, and `tsx` compiles it
  * npx tsx scripts/w9-c5-fixture.ts <path-to-p2-actuals.json>
  * ```
  *
  * The input is the **artifact of record** — `p2-actuals.json` (sha256 `b5e37875…`), posted to issue #34's
  * thread as relay messages `ee452598…` ‖ `e1b2ca87…`. This script reads those bytes and writes
- * `worker/src/engine/calibration/w9-c5-fixture.json`; a reviewer holding the artifact can re-run it and
+ * `core/src/engine/calibration/w9-c5-fixture.json`; a reviewer holding the artifact can re-run it and
  * expect `git diff` on the fixture to be empty.
  *
  * ## What it copies, and what it derives
@@ -35,6 +35,8 @@
  * script cannot quietly add an extraction call to the snapshot: a hash mismatch aborts the run instead.
  */
 
+import type { SqliteConnection } from "../core/src/store/connection.js";
+
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -42,22 +44,22 @@ import {
   currentVaultRevision,
   MIGRATIONS,
   migrate,
-  openStore,
   seedDomainTaxonomy,
   upsertDescriptor,
   vaultMutation,
-} from "@astrolab/store";
+} from "../core/src/store/index.js";
 
-import { createDomainDistance } from "../worker/src/engine/domain.js";
-import { createGate } from "../worker/src/engine/gate.js";
+import { createDomainDistance } from "../core/src/engine/domain.js";
+import { createGate } from "../core/src/engine/gate.js";
 import {
   createMechanismCache,
   EXTRACTOR_VERSION,
   hashIdeaText,
-} from "../worker/src/engine/mechanism.js";
-import { parseVault, W9_VAULT_PATH, type W9Idea } from "../worker/src/engine/calibration/w9-run.js";
-import type { IdeaText, MechanismDescriptor } from "../worker/src/provider/types.js";
-import { cutVault } from "../worker/src/queue.js";
+} from "../core/src/engine/mechanism.js";
+import { openNodeStore } from "../core/src/store/connection.node.js";
+import { parseVault, W9_VAULT_PATH, type W9Idea } from "../core/src/engine/calibration/w9-run.js";
+import type { IdeaText, MechanismDescriptor } from "../core/src/provider/types.js";
+import { cutVault } from "../core/src/engine/queue.js";
 
 /** The model the artifact's descriptors were extracted under (`AI_MODEL` unset ⇒ this default at P1). */
 const MODEL = "deepseek/deepseek-v4-flash";
@@ -65,7 +67,7 @@ const MODEL = "deepseek/deepseek-v4-flash";
 const FLOOR = 0.02;
 
 const OUT = fileURLToPath(
-  new URL("../worker/src/engine/calibration/w9-c5-fixture.json", import.meta.url),
+  new URL("../core/src/engine/calibration/w9-c5-fixture.json", import.meta.url),
 );
 
 interface Artifact {
@@ -90,7 +92,7 @@ function fail(message: string): never {
 }
 
 /** Seed the committed vault into `idea` (the same write the other W9 fixtures make). */
-function seedVault(db: ReturnType<typeof openStore>, ideas: readonly W9Idea[]): void {
+function seedVault(db: SqliteConnection, ideas: readonly W9Idea[]): void {
   vaultMutation(db, () => {
     const insert = db.prepare(
       `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
@@ -121,7 +123,7 @@ async function main(): Promise<void> {
   const artifact = JSON.parse(readFileSync(artifactPath, "utf8")) as Artifact;
   if (artifact.floor !== FLOOR) fail(`artifact floor is ${artifact.floor}, expected ${FLOOR}`);
 
-  const db = openStore(":memory:");
+  const db = openNodeStore(":memory:");
   migrate(db, MIGRATIONS);
   seedDomainTaxonomy(db);
 

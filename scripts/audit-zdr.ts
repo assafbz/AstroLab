@@ -24,7 +24,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { DEFAULT_MODEL } from "../worker/src/provider/index.js";
+import { DEFAULT_MODEL } from "../core/src/provider/index.js";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 

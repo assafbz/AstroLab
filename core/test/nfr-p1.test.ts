@@ -1,25 +1,25 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../src/store/connection.js";
 
 import {
   currentVaultRevision,
   MIGRATIONS,
   migrate,
-  openStore,
   seedDomainTaxonomy,
   seedGateConfig,
   stampAndEnqueue,
   vaultMutation,
-} from "@astrolab/store";
+} from "../src/store/index.js";
+import { openNodeStore } from "../src/store/connection.node.js";
 import { describe, expect, test } from "vitest";
 
-import { engineFromProvider } from "./compose.js";
+import { engineFromProvider } from "../src/engine/compose.js";
 import {
   ProviderError,
   type MechanismDescriptor,
   type Provider,
   type SparkDraft,
-} from "./provider/index.js";
-import { runOnce } from "./queue.js";
+} from "../src/provider/index.js";
+import { runOnce } from "../src/engine/queue.js";
 
 /**
  * EV4 (#46) — **NFR-P1**, bounded delivery & non-blocking (`PRD.md` §4 NFR-P1; `FLOW.md` §5.6).
@@ -38,8 +38,8 @@ import { runOnce } from "./queue.js";
  * claim.
  */
 
-function newDb(): DatabaseSync {
-  const db = openStore(":memory:");
+function newDb(): SqliteConnection {
+  const db = openNodeStore(":memory:");
   migrate(db, MIGRATIONS);
   seedDomainTaxonomy(db); // `fintech` / `health` resolve; this path never calls `normalizeTag`
   seedGateConfig(db);
@@ -47,7 +47,7 @@ function newDb(): DatabaseSync {
 }
 
 /** The shape `insertIdea` writes, as the store's own tests seed it. */
-function seedIdea(db: DatabaseSync, id: string, tags: string[], status = "ACTIVE"): void {
+function seedIdea(db: SqliteConnection, id: string, tags: string[], status = "ACTIVE"): void {
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                        lineage_parent_id, status, visibility, current_version, created_at, updated_at)
@@ -60,7 +60,7 @@ function seedIdea(db: DatabaseSync, id: string, tags: string[], status = "ACTIVE
  * is not necessarily this run's — a vault write during the run stamps a revision and enqueues its
  * successor (§4 / I).
  */
-function runRow(db: DatabaseSync, id: string): { status: string; error: string | null } {
+function runRow(db: SqliteConnection, id: string): { status: string; error: string | null } {
   return db.prepare("SELECT status, error FROM spark_run WHERE id = ?").get(id) as {
     status: string;
     error: string | null;

@@ -1,7 +1,7 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../../store/connection.js";
 import { fileURLToPath } from "node:url";
 
-import { currentVaultRevision, readClusters } from "@astrolab/store";
+import { currentVaultRevision, readClusters } from "../../store/index.js";
 import { parse as parseYaml } from "yaml";
 
 import {
@@ -15,7 +15,7 @@ import { createAdjudicator, type Adjudication } from "../adjudicate.js";
 import { createDomainDistance, type DomainDistance } from "../domain.js";
 import { createGate, type GatedPair } from "../gate.js";
 import { createMechanismCache, EXTRACTOR_VERSION } from "../mechanism.js";
-import { cutVault } from "../../queue.js";
+import { cutVault } from "../queue.js";
 
 /**
  * The W9 calibration driver (issue #34; the bar is `docs/W9_CALIBRATION.md` on `main`).
@@ -95,7 +95,7 @@ export const W9_TAUS = [0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65] as const;
 
 /**
  * The **widened** sweep (bar §4 step 6.4 — the pre-authorized "extend below 0.35" phase). `W9_TAUS`
- * was chosen to bracket the *then-provisional* default (`store/src/config.ts`, `min_alignment = 0.5`
+ * was chosen to bracket the *then-provisional* default (`core/src/store/config.ts`, `min_alignment = 0.5`
  * before 2026-10-15), not the metric: `descriptorSimilarity` is a uniform mean of per-field Jaccard,
  * and cross-domain ideas share a mechanism *concept*, not lexemes, so alignment sits well below
  * `0.35`. This list spans the metric's range and then carries `W9_TAUS` unchanged for continuity; its
@@ -183,7 +183,7 @@ export function parseVault(text: string, source: string): W9Idea[] {
  * test assertion. The cluster set comes from `domain_cluster` (seeded at boot), so a vault can never
  * claim coverage of a cluster the engine cannot normalise to.
  */
-export function coverageViolations(db: DatabaseSync, ideas: readonly W9Idea[]): string[] {
+export function coverageViolations(db: SqliteConnection, ideas: readonly W9Idea[]): string[] {
   const shipped = new Set(readClusters(db).map((cluster) => cluster.id));
   const present = new Set(ideas.map((idea) => idea.cluster));
   const missing = [...shipped].filter((id) => !present.has(id)).sort();
@@ -287,7 +287,7 @@ export interface CalibrationRun {
  * reused (D1), so the driver carries no engine logic of its own — only the wiring and the counts.
  */
 export function createCalibrationRun(
-  db: DatabaseSync,
+  db: SqliteConnection,
   options: CalibrationRunOptions,
 ): CalibrationRun {
   let extractCalls = 0;

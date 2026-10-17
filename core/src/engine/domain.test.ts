@@ -1,6 +1,7 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
-import { MIGRATIONS, migrate, openStore, readDomainMap, seedDomainTaxonomy } from "@astrolab/store";
+import { MIGRATIONS, migrate, readDomainMap, seedDomainTaxonomy } from "../store/index.js";
+import { openNodeStore } from "../store/connection.node.js";
 import { describe, expect, test } from "vitest";
 
 import type { ClusterOption, TagNormalizer } from "../provider/index.js";
@@ -14,8 +15,8 @@ import { createDomainDistance } from "./domain.js";
  * `0` only for a shared cluster, `null` (never `0`) for a pair the table does not list.
  */
 
-function newDb(): DatabaseSync {
-  const db = openStore(":memory:");
+function newDb(): SqliteConnection {
+  const db = openNodeStore(":memory:");
   migrate(db, MIGRATIONS);
   seedDomainTaxonomy(db);
   return db;

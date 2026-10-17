@@ -1,6 +1,6 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
-import { recordNoise } from "@astrolab/store";
+import { recordNoise } from "../store/index.js";
 
 import type { RejectedPair } from "./adjudicate.js";
 import type { GatedPair } from "./gate.js";
@@ -10,7 +10,7 @@ import type { GatedPair } from "./gate.js";
  * row of *any* status, or a `suppressed_pair` row of *any* reason — and therefore **not re-offered**.
  *
  * It sits between W5's gate and W6's adjudicator, and it is the **only** reader of the settled set
- * (the writes live in `store/src/suppression.ts`, where both packages can reach them):
+ * (the writes live in `core/src/store/suppression.ts`, where both packages can reach them):
  * W8 composes `gate → eligiblePairs → adjudicate → recordRejections`.
  *
  * ## The seam — a socket (D1, Q1)
@@ -34,7 +34,7 @@ import type { GatedPair } from "./gate.js";
  *
  * **No `decision` read.** Every resolving action moves its spark out of `OFFERED` (`FLOW.md` §4.3),
  * `decision.spark_id` is `NOT NULL` and references `spark(id)`, and the delete path retracts only
- * *live* offers (`api/src/delete.ts`) — so `spark.pair_key` (any status) is a superset of every
+ * *live* offers (`core/src/vault/delete.ts`) — so `spark.pair_key` (any status) is a superset of every
  * decision. `spark ∪ suppressed_pair` is sufficient, provably, in one statement.
  *
  * ## Key-permanent (D4, Q2)
@@ -58,7 +58,7 @@ import type { GatedPair } from "./gate.js";
  * `recordRejections` must be called **after** the caller's **currency check** (§4/I): a run later
  * discarded as stale must not have suppressed pairs it never surfaced. W8 owns that placement — the
  * same reason W6's `adjudicate` writes nothing. The write itself is `store`'s
- * (`store/src/suppression.ts`), so the reason vocabulary is shared with K4's dismissal instead of
+ * (`core/src/store/suppression.ts`), so the reason vocabulary is shared with K4's dismissal instead of
  * re-typed here.
  */
 
@@ -79,7 +79,7 @@ export interface Suppression {
  * Every pair the vault has settled: any `spark` status, any suppression reason. One `UNION`, no
  * parameters, snapshot-consistent by construction (D2).
  */
-function settledKeys(db: DatabaseSync): Set<string> {
+function settledKeys(db: SqliteConnection): Set<string> {
   const rows = db
     .prepare(
       `SELECT pair_key FROM spark
@@ -90,7 +90,7 @@ function settledKeys(db: DatabaseSync): Set<string> {
   return new Set(rows.map((row) => row.pair_key));
 }
 
-export function createSuppression(db: DatabaseSync): Suppression {
+export function createSuppression(db: SqliteConnection): Suppression {
   return {
     eligiblePairs(pairs) {
       if (pairs.length === 0) return [];

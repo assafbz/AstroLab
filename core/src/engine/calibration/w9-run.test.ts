@@ -1,17 +1,17 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../../store/connection.js";
 
 import {
   currentVaultRevision,
   MIGRATIONS,
   migrate,
-  openStore,
   readClusters,
   readDomainMap,
   seedDomainTaxonomy,
   vaultMutation,
-} from "@astrolab/store";
+} from "../../store/index.js";
+import { openNodeStore } from "../../store/connection.node.js";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -46,8 +46,8 @@ import {
  * curve's definition.
  */
 
-function newDb(): DatabaseSync {
-  const db = openStore(":memory:");
+function newDb(): SqliteConnection {
+  const db = openNodeStore(":memory:");
   migrate(db, MIGRATIONS);
   seedDomainTaxonomy(db);
   return db;
@@ -64,7 +64,7 @@ function loadVault(): W9Idea[] {
 }
 
 /** Seed the vault into `idea`, through `vaultMutation` (§4's trigger). The harness's write, not the driver's. */
-function seedVault(db: DatabaseSync, ideas: readonly W9Idea[]): void {
+function seedVault(db: SqliteConnection, ideas: readonly W9Idea[]): void {
   vaultMutation(db, () => {
     const insert = db.prepare(
       `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,

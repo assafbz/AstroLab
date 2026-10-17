@@ -1,45 +1,53 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { MIGRATIONS } from "@astrolab/store";
+import { MIGRATIONS } from "../store/index.js";
 import { describe, expect, test } from "vitest";
 
 /**
- * The boundary and the privacy pin, as *checked* invariants (W2's pin 1 + pin 4; `ARCHITECTURE.md` §5,
- * §9, §11 PRIV1).
+ * The provider boundary and the privacy pin, as *checked* invariants (W2's pin 1 + pin 4;
+ * `ARCHITECTURE.md` §5, §9, §11 PRIV1; L3 · #166).
  *
- * Two claims that a single happy-path test cannot make true:
+ * v1 walked every *non-worker* package and failed if one imported the provider. The rebuild moves the
+ * boundary inside `core/`, so the edge is re-drawn rather than dropped:
  *
- * 1. **The vault cannot reach a provider.** NFR-A1 is "the vault works without the Spark" — and it holds
- *    because `api/` and `store/` have no reachable path to this module, not because nobody has got round
- *    to importing it. If one appears, the mechanism is falsified and the suite must say so.
+ * 1. **The vault cannot reach the provider** — re-homed at the other end of the same edge by L1
+ *    (`core/test/boundary-a1.test.ts`, which walks `core/src/vault/**`). Not duplicated here; this
+ *    file's first claim is the *door* instead: nothing but the boundary's own two directories may
+ *    reach it, and `core/src/index.ts` — the package entry the app resolves — stays closed, so the
+ *    app's engine-free entry is a fact and not a promise.
  * 2. **Every call pins `provider.zdr`.** One call site, guarded — an assertion inside `buildRequest`
- *    would only restate the field it just set (David's pin 4).
- * 3. **The boundary reaches nothing but its own siblings.** No DB handle, no vault, no second transport:
- *    every specifier under `provider/` resolves inside the directory (a `./sibling.js`, or a `node:`
- *    builtin that reaches no state). Claim 1 says the vault cannot reach *here*; this says this cannot
- *    reach *there*. Without it the first is only half a guarantee — `worker` already depends on
- *    `@astrolab/store`, so one line would hand the adapter the vault and no check would notice.
+ *    would only restate the field it just set.
+ * 3. **The boundary reaches nothing but its own siblings.** No DB handle, no vault, no second
+ *    transport: every specifier under `provider/` resolves inside the directory.
+ * 4. **The selection-internal vocabulary never leaves the selector** — the descriptor, its table, the
+ *    alignment axis, the thresholds and the adjudication draft are internal (§3.3 items 2–4;
+ *    `PRD.md` §3.3), which holds only while no surface can name them.
+ * 5. **One call site per operation** — how many places can hand user text to a model (§11 PRIV1).
+ * 6. **No synthetic seeds, no note import** (§7; `PRD.md` §3.4 item 3).
  *
- * All three are mutation-checked in the PR: plant a violation, watch it fail, restore.
+ * Every claim is mutation-checked in the PR: plant the violation, watch it fail, restore.
  */
 const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
-const PROVIDER_DIR = "worker/src/provider";
-const PROVIDER_MODULE = `${PROVIDER_DIR}/openrouter.ts`;
+
+/** The boundary: the AI provider, and the engine that is its only caller. */
+const SELECTOR_DIRS = ["core/src/provider", "core/src/engine"];
+/** The one non-selector that legitimately names the internal vocabulary: the schema and cache owner. */
+const SCHEMA_OWNER = "core/src/store";
 
 const SKIP_DIRS = new Set(["node_modules", ".git", "dist", "artifacts", ".agents", "data"]);
 
 /**
- * Everything that is *not* the worker. A provider import anywhere under these is the bug this file
- * exists for. Read from the root manifest rather than hardcoded, so a new package is guarded the day it
- * exists — the hardcoded `["api","store"]` left `client/` unguarded (§1 forbids the client reaching the
- * provider too), and nothing would have said so.
+ * The workspaces, read from the root manifest rather than hardcoded — the v1 guard's hardcoded
+ * `["api","store"]` left `client/` unguarded, and nothing said so (§1 forbids the client reaching the
+ * provider too). A new workspace is guarded the day it exists.
  */
 const WORKSPACES = (
   JSON.parse(readFileSync(join(ROOT, "package.json"), "utf8")) as { workspaces: string[] }
 ).workspaces;
-const VAULT_PACKAGES = WORKSPACES.filter((pkg) => pkg !== "worker");
+/** `app/` does not exist until L2 (#165); the walk and the app leg follow whatever is on disk. */
+const EXISTING = WORKSPACES.filter((name) => existsSync(join(ROOT, name)));
 
 /** Every extension a workspace's `src/` can hold — a `.jsx` or `.mjs` file is a production code path too. */
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
@@ -55,17 +63,21 @@ function sourceFiles(dir: string, found: string[] = []): string[] {
     ) {
       const path = join(dir, entry.name);
       // Only a package's `src/` — test fixtures are not production code paths. A React component is
-      // one, and a client provider import is the same bug as a vault one.
+      // one, and an app provider import is the same bug as a vault one.
       if (relative(ROOT, path).split(/[\\/]/).includes("src")) found.push(path);
     }
   }
   return found;
 }
 
-const FILES = sourceFiles(ROOT).map((path) => ({
+const FILES = EXISTING.flatMap((workspace) => sourceFiles(join(ROOT, workspace))).map((path) => ({
   rel: relative(ROOT, path).split(/[\\/]/).join("/"),
   text: readFileSync(path, "utf8"),
 }));
+
+const relOf = (file: { rel: string }): string => file.rel;
+const inDir = (file: { rel: string }, dir: string): boolean =>
+  file.rel === dir || file.rel.startsWith(`${dir}/`);
 
 /** Every module specifier in a file, static or dynamic — including a side-effect import. */
 function specifiers(text: string): string[] {
@@ -75,103 +87,145 @@ function specifiers(text: string): string[] {
 }
 
 /**
- * Which specifiers a file under `worker/src/provider/` may use: a `./sibling.js` (the boundary's own
- * modules), or a `node:` builtin that reaches no state. Refused: any bare package, any `../` escape —
- * and **`node:sqlite`**, a DB handle. The adapter must not take one (W3's carry, #28 review): a handle
- * would let it write, which demotes *"invalid output ⇒ nothing stored"* from a construction to a
- * promise. `node:crypto` stays allowed, so a stateless hash never has to fight the guard.
+ * Whether a specifier resolves into the provider boundary — the module or its directory, by whole
+ * path segment (`../provider/index.js`, `@astrolab/core/dist/provider/index.js`) — or into `core/`'s
+ * **source** through a bare package name, which the door ruling forbids (`@astrolab/core/src/…` is the
+ * second consumption mode; the app reaches the engine at `dist/` — David's ruling, 2026-10-17).
  */
-function boundarySpecifierAllowed(specifier: string): boolean {
-  if (specifier === "node:sqlite") return false;
-  return /^\.\/[A-Za-z0-9_.-]+\.js$/.test(specifier) || specifier.startsWith("node:");
+function reachesProvider(specifier: string): boolean {
+  if (/^@astrolab\/core\/src\//.test(specifier)) return true;
+  return specifier
+    .split("/")
+    .map((segment) => segment.replace(/\.(?:[cm]?[jt]sx?)$/, ""))
+    .some((segment) => segment === "provider");
 }
 
-describe("the vault cannot reach the AI boundary (NFR-A1, ARCH §9)", () => {
-  test("the scan is real — it sees the tree it is guarding", () => {
+/** The engine, by the same rule — the boundary's only caller, and what a vault screen must not reach. */
+function reachesEngine(specifier: string): boolean {
+  if (/^@astrolab\/core\/src\//.test(specifier)) return true;
+  return specifier
+    .split("/")
+    .map((segment) => segment.replace(/\.(?:[cm]?[jt]sx?)$/, ""))
+    .some((segment) => segment === "engine");
+}
+
+describe("the walk is real — it sees the tree it is guarding (non-vacuity)", () => {
+  test("every workspace on disk was reached, and the guard's own directories are in the set", () => {
     // Without this, a broken walk turns every assertion below into a silent pass.
-    expect(FILES.length).toBeGreaterThan(10);
-    expect(FILES.map((file) => file.rel)).toContain("worker/src/queue.ts");
-    // Both widenings are themselves non-vacuous. Per package, because a typo'd package name narrows the
-    // scan silently — the same failure mode as the `from`-only specifier extractor. And the walk must
-    // reach a `.tsx` file, or "the extension union" is a claim about nothing.
-    for (const pkg of VAULT_PACKAGES) {
+    expect(FILES.length).toBeGreaterThan(30);
+    for (const workspace of EXISTING) {
       expect(
-        FILES.some((file) => file.rel.startsWith(`${pkg}/`)),
-        `the scan reached no files under ${pkg}/`,
+        FILES.some((file) => file.rel.startsWith(`${workspace}/`)),
+        `the scan reached no files under ${workspace}/`,
       ).toBe(true);
     }
-    expect(FILES.map((file) => file.rel)).toContain("client/src/App.tsx");
+    // Per directory, because a typo'd path narrows the scan silently — the same failure mode as the
+    // `from`-only specifier extractor.
+    for (const dir of [...SELECTOR_DIRS, SCHEMA_OWNER, "core/src/vault", "core/src/export"]) {
+      expect(
+        FILES.some((file) => inDir(file, dir)),
+        `the scan reached no shipped files under ${dir}`,
+      ).toBe(true);
+    }
+    expect(FILES.map(relOf)).toContain("core/src/provider/openrouter.ts");
   });
 
   test("the specifier extractor sees every import form — a side-effect import has no `from`", () => {
-    // This is the form that got past the first version of this guard: `import "@astrolab/worker";` has no
+    // This is the form that got past the first version of this guard: `import "@astrolab/core";` has no
     // `from` clause, so a `from`-only regex walks straight past it. Pinned as a unit test so the hole
     // cannot reopen silently.
     const text = [
-      'import "@astrolab/worker";',
+      'import "@astrolab/core";',
       'import { a } from "./a.js";',
-      'import type { B } from "@astrolab/worker";',
-      'export * from "../worker/src/provider/index.js";',
+      'import type { B } from "@astrolab/core/dist/provider/index.js";',
+      'export * from "./schema.js";',
       'const c = await import("./c.js");',
     ].join("\n");
 
     expect(specifiers(text)).toEqual([
-      "@astrolab/worker",
+      "@astrolab/core",
       "./a.js",
-      "@astrolab/worker",
-      "../worker/src/provider/index.js",
+      "@astrolab/core/dist/provider/index.js",
+      "./schema.js",
       "./c.js",
     ]);
   });
+});
 
-  test("no non-worker source imports the provider module", () => {
-    const offenders: string[] = [];
-    for (const file of FILES) {
-      const pkg = file.rel.split("/")[0];
-      if (pkg === undefined || !VAULT_PACKAGES.includes(pkg)) continue;
-      for (const specifier of specifiers(file.text)) {
-        if (specifier === "@astrolab/worker" || /(^|\/)provider(\/index)?\.js$/.test(specifier)) {
-          offenders.push(`${file.rel} → ${specifier}`);
-        }
-      }
-    }
+describe("the AI boundary is reachable only from inside the selector (ARCH §5, §13.4)", () => {
+  test("nothing outside the provider or the engine reaches the provider", () => {
+    const offenders = FILES.filter(
+      (file) => !SELECTOR_DIRS.some((dir) => inDir(file, dir)),
+    ).flatMap((file) =>
+      specifiers(file.text)
+        .filter(reachesProvider)
+        .map((specifier) => `${file.rel} → ${specifier}`),
+    );
 
     expect(offenders).toEqual([]);
   });
 
-  test("neither vault package takes a dependency on the worker", () => {
-    for (const pkg of VAULT_PACKAGES) {
-      const manifest = JSON.parse(readFileSync(join(ROOT, pkg, "package.json"), "utf8")) as Record<
-        string,
-        Record<string, string> | undefined
-      >;
-      for (const section of ["dependencies", "devDependencies"]) {
-        expect(Object.keys(manifest[section] ?? {})).not.toContain("@astrolab/worker");
-      }
+  test("the package entry stays closed — the app's door is a `dist/` subpath, not the entry", () => {
+    // The property the `#148` app-side guard leans on: a screen imports `@astrolab/core` for the vault
+    // and the domain, and that specifier must not also hand it the engine (David's door ruling, A).
+    const entry = FILES.find((file) => file.rel === "core/src/index.ts");
+    expect(entry).toBeDefined();
+    const reached = specifiers(entry?.text ?? "").filter(
+      (specifier) => reachesProvider(specifier) || reachesEngine(specifier),
+    );
+    expect(reached).toEqual([]);
+    // Non-vacuity: the entry does re-export something, so "no reach" is a verdict about a live file.
+    expect(specifiers(entry?.text ?? "")).toContain("./store/index.js");
+  });
+
+  test("no shipped source takes the second consumption mode (`@astrolab/core/src/…`)", () => {
+    // `scripts/` reads `core/`'s source by *relative* path under tsx (the shape the W9 harness always
+    // used) — that is not a package specifier and is outside this walk. Inside a package's `src/`, the
+    // door is `dist/`; a `src/` specifier would put core's modules in a bundle twice.
+    const offenders = FILES.flatMap((file) =>
+      specifiers(file.text)
+        .filter((specifier) => specifier.startsWith("@astrolab/core/src/"))
+        .map((specifier) => `${file.rel} → ${specifier}`),
+    );
+
+    expect(offenders).toEqual([]);
+  });
+
+  test("when `app/` exists, no screen or component reaches the engine", () => {
+    // L2's `#148` guard is the app-side walk; this is the same edge from the core side, so a regression
+    // shows up whichever lane introduced it. Until L2 lands, the leg states the fact it would assert.
+    const app = join(ROOT, "app");
+    if (!existsSync(app)) {
+      expect(EXISTING).not.toContain("app");
+      return;
     }
+    expect(EXISTING).toContain("app");
+    const offenders = FILES.filter(
+      (file) => inDir(file, "app/src/screens") || inDir(file, "app/src/components"),
+    ).flatMap((file) =>
+      specifiers(file.text)
+        .filter((specifier) => reachesProvider(specifier) || reachesEngine(specifier))
+        .map((specifier) => `${file.rel} → ${specifier}`),
+    );
+    expect(offenders).toEqual([]);
   });
 });
 
-describe("the boundary reaches nothing but its own siblings (NFR-A1, ARCH §5, §11 PRIV1)", () => {
-  const PROVIDER_FILES = FILES.filter((file) => file.rel.startsWith(`${PROVIDER_DIR}/`));
+describe("the boundary reaches nothing but its own siblings (ARCH §5, §11 PRIV1)", () => {
+  const PROVIDER_FILES = FILES.filter((file) => inDir(file, "core/src/provider"));
 
   test("the boundary is scanned at all", () => {
     // Same non-vacuity rule as above: an empty list would make the assertion below pass by default.
-    expect(PROVIDER_FILES.map((file) => file.rel)).toContain(PROVIDER_MODULE);
+    expect(PROVIDER_FILES.map(relOf)).toContain("core/src/provider/openrouter.ts");
     expect(PROVIDER_FILES.length).toBeGreaterThan(3);
   });
 
-  test("every specifier under worker/src/provider/ resolves inside the directory", () => {
-    // `worker` depends on `@astrolab/store`, so `import { openStore } from "@astrolab/store"` in the
-    // adapter typechecks and passed 54/54 before this test existed. The adapter's *only* route to the
-    // vault would be an import, so closing the import closes the route: this is what makes "invalid
-    // output ⇒ nothing stored" true by construction rather than by discipline.
-    //
-    // A `node:` builtin reaches no state, so one is allowed; a **DB handle** is the exception, named
-    // and refused (`node:sqlite`) — see `boundarySpecifierAllowed`. A later stage that wants any other
-    // specifier should arrive as a *named* exception with its reason: W3's `idea_mechanism` cache write
-    // is exactly that, and it lives in `store/src/mechanism.ts` — above this line, and reachable from
-    // the API's delete path (V5 #16) — rather than in the adapter.
+  test("every specifier under core/src/provider/ resolves inside the directory", () => {
+    // The adapter's *only* route to the vault would be an import, so closing the import closes the
+    // route: this is what makes "invalid output ⇒ nothing stored" true by construction rather than by
+    // discipline. A `node:` builtin reaches no state, so one is allowed; a **DB handle** is the
+    // exception, named and refused (`node:sqlite`). A later stage that wants any other specifier
+    // arrives as a *named* exception with its reason.
     const offenders = PROVIDER_FILES.flatMap((file) =>
       specifiers(file.text)
         .filter((specifier) => !boundarySpecifierAllowed(specifier))
@@ -184,278 +238,108 @@ describe("the boundary reaches nothing but its own siblings (NFR-A1, ARCH §5, �
   test("the allowed-specifier rule accepts the boundary's own shape and refuses a DB handle", () => {
     // A positive control, per the guard-scope rule: the rule must accept one input and refuse one, or
     // a widened (or broken) rule reads exactly like a passing scan.
-    for (const allowed of ["./schema.js", "node:crypto"]) {
+    for (const allowed of ["./schema.js", "./key.js", "node:crypto"]) {
       expect(boundarySpecifierAllowed(allowed), allowed).toBe(true);
     }
-    for (const refused of ["node:sqlite", "@astrolab/store", "../queue.js", "./schema"]) {
+    for (const refused of ["node:sqlite", "@astrolab/core", "../store/index.js", "./schema"]) {
       expect(boundarySpecifierAllowed(refused), refused).toBe(false);
     }
   });
 });
 
-describe("the mechanism descriptor never leaves the worker (ARCH §3.3 items 2–4; PRD §3.3)", () => {
-  // The descriptor and its table are selection-internal: `docs/API.md` §0 and §3.3 forbid a
-  // `mechanism`, a distance, an alignment, or a "related ideas" readout anywhere in a response — which
-  // only holds if no surface can reach them. Scope is the *surfaces*, `api/` and `client/`, not
-  // `store/`: the store owns the shipped DDL and legitimately names the table in `0001_init` — that is
-  // the schema of record, not a surface.
-  const SURFACES = VAULT_PACKAGES.filter((pkg) => pkg !== "store");
-  const TABLE = /idea_mechanism/;
-  const TYPE = /MechanismDescriptor/;
-  const names = (pattern: RegExp): string[] =>
-    FILES.filter((file) => pattern.test(file.text)).map((file) => file.rel);
+/**
+ * Which specifiers a file under `core/src/provider/` may use: a `./sibling.js` (the boundary's own
+ * modules), or a `node:` builtin that reaches no state. Refused: any bare package, any `../` escape —
+ * and **`node:sqlite`**, a DB handle, which would let the adapter write and demote *"invalid output ⇒
+ * nothing stored"* from a construction to a promise.
+ */
+function boundarySpecifierAllowed(specifier: string): boolean {
+  if (specifier === "node:sqlite") return false;
+  return /^\.\/[A-Za-z0-9_.-]+\.js$/.test(specifier) || specifier.startsWith("node:");
+}
 
-  test("the scan reaches both surfaces, and each alternative bites somewhere", () => {
-    for (const pkg of SURFACES) {
+const PROVIDER_MODULE = "core/src/provider/openrouter.ts";
+
+describe("the selection-internal vocabulary never leaves the selector (ARCH §3.3 items 2–4; PRD §3.3)", () => {
+  // The descriptor, its cache table, the alignment axis, the gate thresholds and the adjudication draft
+  // are internal: §0 and §3.3 forbid a `mechanism`, a distance, an alignment or a "related ideas"
+  // readout on any surface — which holds only while no surface can reach them. The **selector** is
+  // `engine/` + `provider/`; `store/` is excluded because it owns the shipped DDL and the cache writes
+  // (the schema of record is not a surface).
+  const SURFACES = FILES.filter(
+    (file) => !SELECTOR_DIRS.some((dir) => inDir(file, dir)) && !inDir(file, SCHEMA_OWNER),
+  );
+  const VOCABULARY: Array<{ name: string; pattern: RegExp; bites: string }> = [
+    {
+      name: "the mechanism descriptor / its cache table",
+      pattern: /idea_mechanism|MechanismDescriptor/,
+      bites: "core/src/engine/mechanism.ts",
+    },
+    {
+      name: "Axis 1 (the distance, the normaliser, its method)",
+      pattern: /\bDomainDistance\b|TagNormalizer|normalizeTag/,
+      bites: "core/src/engine/domain.ts",
+    },
+    {
+      name: "Axis 2 (the similarity, the gated pair, the thresholds)",
+      pattern:
+        /descriptorSimilarity|gatedPairs|GatedPair|readGateConfig|min_domain_distance|min_alignment/,
+      bites: "core/src/engine/gate.ts",
+    },
+    {
+      name: "Stage 2's adjudication and the draft it carries",
+      pattern:
+        /SparkDraft|SparkAdjudicator|createAdjudicator|ConfirmedSpark|RejectedPair|\bAdjudication\b|\bAdjudicator\b/,
+      bites: "core/src/engine/adjudicate.ts",
+    },
+  ];
+
+  test("the scan reaches the surfaces, and every alternative bites inside the selector", () => {
+    expect(SURFACES.length).toBeGreaterThan(15);
+    for (const dir of ["core/src/vault", "core/src/domain", "core/src/export"]) {
       expect(
-        FILES.some((file) => file.rel.startsWith(`${pkg}/`)),
-        `no files under ${pkg}/`,
+        SURFACES.some((file) => inDir(file, dir)),
+        `no surface files under ${dir}`,
       ).toBe(true);
     }
-    // A typo'd pattern passes silently; show both halves matching something real.
-    expect(names(TABLE)).toContain("store/src/migrations.ts");
-    expect(names(TYPE)).toContain("worker/src/engine/mechanism.ts");
+    // A typo'd pattern passes silently; show each one matching something real.
+    for (const { name, pattern, bites } of VOCABULARY) {
+      expect(FILES.filter((file) => pattern.test(file.text)).map(relOf), name).toContain(bites);
+    }
   });
 
-  test("no api/ or client/ source names the descriptor or its table", () => {
-    const offenders = FILES.filter(
-      (file) =>
-        SURFACES.some((pkg) => file.rel.startsWith(`${pkg}/`)) &&
-        (TABLE.test(file.text) || TYPE.test(file.text)),
-    ).map((file) => file.rel);
+  test("no surface names any of it", () => {
+    const offenders = SURFACES.flatMap((file) =>
+      VOCABULARY.filter(({ pattern }) => pattern.test(file.text)).map(
+        ({ name }) => `${file.rel} → ${name}`,
+      ),
+    );
 
     expect(offenders).toEqual([]);
   });
 });
 
 describe("every call pins provider.zdr (ARCH §5, NFR-PRIV1) — pin 4", () => {
-  test("exactly one source file writes the pin", () => {
+  test("exactly one source file writes the pin, and exactly one sends a request", () => {
     // The pin's *form*, not the bare word — so a comment mentioning ZDR does not fail the suite while a
     // second `provider: { zdr: … }` site does. (The brand makes a second site unusable anyway; this is
     // the belt to that braces.)
-    const sites = FILES.filter((file) => /provider\s*:\s*\{[^}]*\bzdr\b/i.test(file.text)).map(
-      (file) => file.rel,
+    const pins = FILES.filter((file) => /provider\s*:\s*\{[^}]*\bzdr\b/i.test(file.text)).map(
+      relOf,
     );
+    const callers = FILES.filter((file) => file.text.includes(".send(")).map(relOf);
 
-    expect(sites).toEqual([PROVIDER_MODULE]);
-  });
-
-  test("exactly one source file sends a request", () => {
-    const callers = FILES.filter((file) => file.text.includes(".send(")).map((file) => file.rel);
-
+    expect(pins).toEqual([PROVIDER_MODULE]);
     expect(callers).toEqual([PROVIDER_MODULE]);
   });
 });
 
-describe("Axis 1 stays in the worker (ARCH §3.2; NFR-A1) — W4", () => {
-  // The distance module, the normaliser interface, and its method are the axis's names. None may
-  // appear under `api/` or `client/`: the vault path resolves no cluster and reaches no model — a
-  // domain tag is stored raw and read raw (`api/src/vault-summary.ts`'s exact match depends on it).
-  // `\b` so the axis *type* is matched as a whole word: W5's `minDomainDistance` / `parseDomainDistance`
-  // contain the substring `DomainDistance` without naming the type, and a substring match would flag them.
-  const AXIS = /\bDomainDistance\b|TagNormalizer|normalizeTag/;
-  const names = (): string[] =>
-    FILES.filter((file) => AXIS.test(file.text)).map((file) => file.rel);
-
-  test("the scan is real — each name bites somewhere in the worker", () => {
-    // Non-vacuity: a typo'd pattern would pass the assertion below by matching nothing.
-    expect(names()).toContain("worker/src/engine/domain.ts");
-    expect(names()).toContain("worker/src/provider/types.ts");
-  });
-
-  test("no api/ or client/ source names the axis, its normaliser, or its method", () => {
-    const offenders = FILES.filter(
-      (file) =>
-        VAULT_PACKAGES.some((pkg) => file.rel.startsWith(`${pkg}/`)) && AXIS.test(file.text),
-    ).map((file) => file.rel);
-
-    expect(offenders).toEqual([]);
-  });
-});
-
-describe("Axis 2 stays in the worker; thresholds stay out of schema and API (#30 Done) — W5", () => {
-  // Two #30 claims, stated structurally rather than in prose:
-  //
-  // 1. **The gate is selection-internal.** `descriptorSimilarity` / `gatedPairs` / `GatedPair` may not
-  //    appear on a *surface* (`api/`, `client/`) — an alignment number in a response is exactly what
-  //    `PRD.md` §3.3 item 4 forbids. `store/` is excluded because it owns `GateConfig` legitimately: the
-  //    thresholds' type lives beside their SQL, not on a surface.
-  // 2. **Changing a threshold touches no schema and no API.** The `config` table is created once (no
-  //    migration adds a threshold), and no `api/` or `client/` source names a threshold key or its reader.
-  const SURFACES = VAULT_PACKAGES.filter((pkg) => pkg !== "store");
-  const AXIS = /descriptorSimilarity|gatedPairs|GatedPair/;
-  const THRESHOLD = /readGateConfig|min_domain_distance|min_alignment/;
-  const onSurface = (file: { rel: string }): boolean =>
-    SURFACES.some((pkg) => file.rel.startsWith(`${pkg}/`));
-
-  test("the scan is real — each name bites somewhere, and every surface is reached", () => {
-    const hits = (pattern: RegExp): string[] =>
-      FILES.filter((file) => pattern.test(file.text)).map((file) => file.rel);
-    // A typo'd pattern would pass the assertions below by matching nothing.
-    expect(hits(/descriptorSimilarity/)).toContain("worker/src/engine/alignment.ts");
-    expect(hits(/gatedPairs/)).toContain("worker/src/engine/gate.ts");
-    expect(hits(/GateConfig/)).toContain("store/src/config.ts");
-    for (const pkg of SURFACES) {
-      expect(
-        FILES.some((file) => file.rel.startsWith(`${pkg}/`)),
-        `no files under ${pkg}/`,
-      ).toBe(true);
-    }
-  });
-
-  test("no api/ or client/ source names the alignment axis", () => {
-    const offenders = FILES.filter((file) => onSurface(file) && AXIS.test(file.text)).map(
-      (file) => file.rel,
-    );
-    expect(offenders).toEqual([]);
-  });
-
-  test("the `config` table is created once — no migration adds a threshold", () => {
-    const creators = MIGRATIONS.filter((migration) => /CREATE TABLE config\b/.test(migration.sql));
-    expect(creators.map((migration) => migration.version)).toEqual([1]);
-  });
-
-  test("no api/ or client/ source names a threshold key or its reader", () => {
-    const offenders = FILES.filter((file) => onSurface(file) && THRESHOLD.test(file.text)).map(
-      (file) => file.rel,
-    );
-    expect(offenders).toEqual([]);
-  });
-});
-
-describe("Stage 2's adjudication stays in the worker (PRD §3.3 item 4; API §0) — W6", () => {
-  // Stage 2's names, plus the draft it carries. `SparkDraft.mechanism` is an internal column (§2.3) and
-  // a `direction` / `claim` pair is exactly the "related ideas" readout `PRD.md` §3.3 item 4 forbids
-  // *before* a spark is offered — so none of this may appear on a surface. `store/` is excluded for the
-  // same reason as the blocks above: it owns `spark`'s DDL (`mechanism`, `domain_distance`,
-  // `structural_alignment` are its columns of record), and the schema of record is not a surface.
-  // `\b` around `Adjudication` and `Adjudicator` so each is matched as a **whole word**: the all-caps
-  // `ADJUDICATION_SYSTEM` / `ADJUDICATION_SCHEMA` are not dragged in by a substring, and the provider's
-  // own `SparkAdjudicator` keeps its own alternative. All five of `adjudicate.ts`'s exports are named
-  // here — the first version carried four, and a bare `Adjudicator` under `api/` left the suite green
-  // (W6 review, Max).
-  const SURFACES = VAULT_PACKAGES.filter((pkg) => pkg !== "store");
-  const ADJUDICATION =
-    /SparkDraft|SparkAdjudicator|createAdjudicator|ConfirmedSpark|RejectedPair|\bAdjudication\b|\bAdjudicator\b/;
-  const onSurface = (file: { rel: string }): boolean =>
-    SURFACES.some((pkg) => file.rel.startsWith(`${pkg}/`));
-
-  test("the scan is real — every name bites in the worker, and every surface is reached", () => {
-    const hits = (pattern: RegExp): string[] =>
-      FILES.filter((file) => pattern.test(file.text)).map((file) => file.rel);
-    // Each alternative, on its own: a typo'd pattern would pass the assertion below by matching nothing.
-    for (const name of ["SparkDraft", "SparkAdjudicator"]) {
-      expect(hits(new RegExp(name)), name).toContain("worker/src/provider/types.ts");
-    }
-    for (const name of ["createAdjudicator", "ConfirmedSpark", "RejectedPair", "Adjudication"]) {
-      expect(hits(new RegExp(name)), name).toContain("worker/src/engine/adjudicate.ts");
-    }
-    // The bare interface, as its own alternative — a substring match would find it inside
-    // `SparkAdjudicator` and say nothing about the pattern actually guarding the name.
-    expect(hits(/\bAdjudicator\b/)).toContain("worker/src/engine/adjudicate.ts");
-    for (const pkg of SURFACES) {
-      expect(
-        FILES.some((file) => file.rel.startsWith(`${pkg}/`)),
-        `no files under ${pkg}/`,
-      ).toBe(true);
-    }
-  });
-
-  test("no api/ or client/ source names the adjudication surface or its draft", () => {
-    const offenders = FILES.filter((file) => onSurface(file) && ADJUDICATION.test(file.text)).map(
-      (file) => file.rel,
-    );
-    expect(offenders).toEqual([]);
-  });
-});
-
-describe("Done 5 — no synthetic seeds, no note import (ARCH §7; PRD §3.4 item 3) — W7", () => {
-  // The negative requirement: **neither the engine nor the API generates ideas on the user's behalf**,
-  // and **nothing imports a user's notes**. Nothing in the product *does* the forbidden thing, so there
-  // is no positive surface to test — the risk is that a check nobody wrote regresses silently the first
-  // time someone reaches for the obvious shortcut. Three arms, each with a leg proving it is not
-  // vacuous (a typo'd pattern or a narrowed walk passes forever — `mem/astrolab-guard-scope`).
-  //
-  // The API is the user-intent path: `api/src/capture.ts` mints a root from a form the user filled, and
-  // `api/src/delete.ts` removes one. Both are *the user's* action, both are allowed, and their being
-  // seen is the positive control that the matcher bites. The engine and the client mint nothing.
-
-  test("A: no source outside api/ writes an idea table", () => {
-    // `\b` after the table name so `idea_mechanism` (a cache row, written by the worker) is not pulled
-    // in: `\b` fails between `idea` and `_`.
-    const IDEA_WRITE = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:idea|idea_version)\b/i;
-    const writers = FILES.filter((file) => IDEA_WRITE.test(file.text)).map((file) => file.rel);
-
-    // Positive control: the user-intent path is the writer, and the walk reaches it.
-    expect(writers).toContain("api/src/capture.ts");
-
-    const offenders = FILES.filter(
-      (file) => !file.rel.startsWith("api/") && IDEA_WRITE.test(file.text),
-    ).map((file) => file.rel);
-    expect(offenders).toEqual([]);
-  });
-
-  test("B: the only file-reading call in a workspace src/ is the shipped taxonomy", () => {
-    // "Imports existing notes" (`PRD.md` §3.4 item 3) is a file *read*. A live product can read exactly
-    // one file — `store/src/domain-seed.ts`'s shipped taxonomy (`ARCHITECTURE.md` §3.2). The build
-    // scripts under `scripts/` are tooling, not a package's `src/`; `worker/src/boot.ts` creates a
-    // directory (a write), not a read.
-    // The **call**, not the name: importing `readFileSync` reads nothing, and a comment that mentions
-    // it is not a read — so the paren is what makes this the claim it says it is.
-    const READ = /(?:readFileSync|readFile|createReadStream|readdirSync)\s*\(/;
-    const readers = FILES.filter((file) => READ.test(file.text)).map((file) => file.rel);
-
-    // Exact, not "contains": a second reader is the bug, whatever it reads.
-    expect(readers).toEqual(["store/src/domain-seed.ts"]);
-    // Non-vacuity: the walk excludes test files, and every other reader in the repo is a test — so if
-    // the walk ever started including one, this list would grow and the test would say so.
-    expect(FILES.some((file) => file.rel.endsWith(".test.ts"))).toBe(false);
-  });
-
-  test("C: no exported provider operation returns an idea-shaped payload", () => {
-    // The engine's only route to *mint* an idea would be a provider op whose output is one. The
-    // provider's *inputs* carry idea text on purpose (`IdeaText` is the operation payload, §5); the
-    // claim is about what an operation *returns*. `MechanismDescriptor` (extract) and `SparkDraft`
-    // (adjudicate) are the two returns; neither may carry an idea's identity fields.
-    const providerTypes = FILES.find((file) => file.rel === "worker/src/provider/types.ts");
-    expect(providerTypes).toBeDefined();
-    const body = (name: string): string => {
-      const match = providerTypes?.text.match(
-        new RegExp(`export interface ${name} \\{[\\s\\S]*?\\n\\}`),
-      );
-      return match?.[0] ?? "";
-    };
-    const IDEA_FIELDS = /\b(?:hypothesis|problem|monetization|status|lineage_kind|domain_tags)\b/;
-
-    for (const returned of ["MechanismDescriptor", "SparkDraft"]) {
-      const text = body(returned);
-      expect(text, `${returned} not found in provider/types.ts`).not.toBe("");
-      expect(IDEA_FIELDS.test(text), returned).toBe(false);
-    }
-    // Positive control: the matcher and the field set are real — the input type does carry them, so a
-    // renamed field or a broken body-slicer cannot make the assertions above pass by matching nothing.
-    expect(IDEA_FIELDS.test(body("IdeaText"))).toBe(true);
-  });
-});
-
 describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6", () => {
-  // The data-flow audit's structural half: **how many places can hand user text to a model?** §5's
-  // payload rule — "only the operation's payload is sent" — is checkable *at a call site*, and it is
-  // unenumerable the moment a second one appears. So the claim is one call site per operation.
-  //
-  // A **provider call site** is a `.op(` whose receiver is *declared with that operation's interface
-  // type* in the same file. The anchor is the declaration, not the method name: `run.ts` calls
-  // `adjudicator.adjudicate(eligible)`, but `adjudicator` is typed `Adjudicator` — the engine's own
-  // stage, whose single provider call lives in `engine/adjudicate.ts` — so a bare `\.adjudicate\(`
-  // would count two and this one counts one. Without the anchor the guard would be about spelling.
-  //
-  // **Two arms, two jobs.** The *anchored* arm below states the precise claim — one counted call site
-  // per operation, in its own module — and it fails on a second call in the *same* file. The
-  // *tripwire* arm is the file set: a product file that **names** an operation at all is enumerated,
-  // call or citation, so a new route goes red even when the anchored arm cannot see it. The first
-  // version matched only the call *shape* (`receiver.op(`) in both arms, and a value reference —
-  // `const { extract } = provider; extract(text)` — has neither a receiver nor a `.op(`, so it walked
-  // past both (EV6 review, Eli).
+  // **How many places can hand user text to a model?** §5's payload rule — "only the operation's
+  // payload is sent" — is checkable *at a call site*, and it is unenumerable the moment a second one
+  // appears. A **provider call site** is a `.op(` whose receiver is *declared with that operation's
+  // interface type* in the same file: the anchor is the declaration, not the method name, because
+  // `run.ts` calls `adjudicator.adjudicate(eligible)` on the engine's own stage.
   const IFACES: Record<string, string> = {
     extract: "MechanismExtractor",
     adjudicate: "SparkAdjudicator",
@@ -472,34 +356,18 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
 
   /** The three operations, and the one product module each is called from (`ARCHITECTURE.md` §3.3). */
   const OPERATIONS = [
-    { op: "extract", module: "worker/src/engine/mechanism.ts" },
-    { op: "adjudicate", module: "worker/src/engine/adjudicate.ts" },
-    { op: "normalizeTag", module: "worker/src/engine/domain.ts" },
+    { op: "extract", module: "core/src/engine/mechanism.ts" },
+    { op: "adjudicate", module: "core/src/engine/adjudicate.ts" },
+    { op: "normalizeTag", module: "core/src/engine/domain.ts" },
   ];
-  // The W9 calibration driver is a **second** consumer of `extract`/`adjudicate`: it fires the same
-  // prompts against the same adapter, on purpose. It is a *named* exception — never reachable from the
-  // boot path, asserted below — rather than a directory quietly filtered out of the scan.
-  const CALIBRATION = "worker/src/engine/calibration/";
-  const productFiles = FILES.filter((file) => !file.rel.startsWith(CALIBRATION));
-
-  /**
-   * The operation **names**, as whole words — the data-flow vocabulary. A product source file that
-   * names one is the event this arm exists for, *whatever the naming is*: a call with a receiver
-   * (`extractor.extract(`), a call with **none** (the value-reference hole above), an import path
-   * (`./adjudicate.js`), a type, or a doc citation. So this is deliberately over-inclusive, and the
-   * file set below is the assertion — a code-position matcher (a call, or a member access) was
-   * considered and rejected: it is two files narrower and blind to a destructure in property position
-   * (`const { extract: e } = provider`), which is the same hole in a different spelling.
-   *
-   * `\b` on both sides so `extraction` / `extractionUser` / `EXTRACTOR_VERSION` are not the vocabulary:
-   * only the exact operation name is.
-   */
+  /** The W9 calibration driver is a *named* exception: it fires the same prompts on purpose. */
+  const CALIBRATION = "core/src/engine/calibration";
+  const productFiles = FILES.filter((file) => !inDir(file, CALIBRATION));
+  /** The operation **names**, as whole words — the data-flow vocabulary (deliberately over-inclusive). */
   const OP_NAME = /\b(?:extract|adjudicate|normalizeTag)\b/;
   const namesOperation = (file: { text: string }): boolean => OP_NAME.test(file.text);
 
   test("the tripwire sees a call with, and without, a receiver — the hole it was widened for", () => {
-    // Both halves on the *real* ambiguity. The anchored arm's matcher (`opCalls`) sees the receiver
-    // form and is **blind** to the value reference — which is why the tripwire does not use it.
     const anchored = { text: "const d = await extractor.extract(text);" };
     const valueRef = { text: "const { extract } = provider;\nreturn extract(text as never);" };
     expect(namesOperation(anchored)).toBe(true);
@@ -511,9 +379,6 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
   });
 
   test("the anchor is the receiver's declaration, not the method name", () => {
-    // Both controls on the *real* ambiguity: `provider.adjudicate(` anchored by `provider:
-    // SparkAdjudicator` is a provider site; `adjudicator.adjudicate(` under `adjudicator: Adjudicator`
-    // (what `run.ts` actually does) is not. A rule that matched the name alone would call both one.
     const holder = {
       text: "function f(provider: SparkAdjudicator) { return provider.adjudicate(a, b); }",
     };
@@ -540,71 +405,117 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
   test("no product file names an operation the anchor did not account for", () => {
     // The exact set, not a filter: a *new* naming of an operation anywhere under a package's `src/` is
     // a privacy-relevant event — §5's payload rule has to be re-checked at the new site — so the guard
-    // **names every file that mentions one today**, call or citation. Over-inclusive on purpose: three
-    // of these nine name an operation only in an import path or a doc citation (`compose.ts`,
-    // `suppression.ts`, `prompts.ts`), and they are here precisely so that a *documentation* mention in
-    // a new file is also a stop-and-look rather than a silent addition to the vocabulary.
-    expect(
-      productFiles
-        .filter(namesOperation)
-        .map((file) => file.rel)
-        .sort(),
-    ).toEqual([
-      "worker/src/compose.ts",
-      "worker/src/engine/adjudicate.ts",
-      "worker/src/engine/domain.ts",
-      "worker/src/engine/mechanism.ts",
-      "worker/src/engine/run.ts",
-      "worker/src/engine/suppression.ts",
-      "worker/src/provider/openrouter.ts",
-      "worker/src/provider/prompts.ts",
-      "worker/src/provider/types.ts",
+    // **names every file that mentions one today**, call or citation. Three of these name an operation
+    // only in an import path or a doc citation (`compose.ts`, `suppression.ts`, `prompts.ts`), and they
+    // are here precisely so a *documentation* mention in a new file is also a stop-and-look.
+    expect(productFiles.filter(namesOperation).map(relOf).sort()).toEqual([
+      "core/src/engine/adjudicate.ts",
+      "core/src/engine/compose.ts",
+      "core/src/engine/domain.ts",
+      "core/src/engine/mechanism.ts",
+      "core/src/engine/run.ts",
+      "core/src/engine/suppression.ts",
+      "core/src/provider/openrouter.ts",
+      "core/src/provider/prompts.ts",
+      "core/src/provider/types.ts",
     ]);
     // Non-vacuity, the way the walk's are: the tripwire must reach the three modules whose *call* the
     // arm above counts, or a typo'd pattern would pass by matching nothing.
-    for (const module of OPERATIONS.map(({ module }) => module)) {
-      expect(
-        productFiles.filter(namesOperation).map((file) => file.rel),
-        module,
-      ).toContain(module);
+    for (const { module } of OPERATIONS) {
+      expect(productFiles.filter(namesOperation).map(relOf), module).toContain(module);
     }
-    // Named, not filtered: the calibration harness names all three ops on purpose (it fires the same
-    // prompts), and it is the one file the walk reaches outside `productFiles`.
+    // Named, not filtered: the calibration harness names all three ops on purpose.
     expect(
-      FILES.filter((file) => file.rel.startsWith(CALIBRATION) && namesOperation(file)).map(
-        (file) => file.rel,
-      ),
-    ).toEqual(["worker/src/engine/calibration/w9-run.ts"]);
+      FILES.filter((file) => inDir(file, CALIBRATION) && namesOperation(file)).map(relOf),
+    ).toEqual(["core/src/engine/calibration/w9-run.ts"]);
     // The residual, stated rather than hidden: the event this arm names is a new **file** in the
-    // vocabulary, so a second naming *inside* a file already listed (`mechanism.ts` gaining a value
-    // reference beside its anchored call) does not move the set. What covers that is the anchored arm
-    // above, and only for a second *anchored* call; nothing here counts unanchored mentions per file,
-    // because that would be an assertion about prose.
+    // vocabulary, so a second naming *inside* a file already listed does not move the set. What covers
+    // that is the anchored arm above, and only for a second *anchored* call.
   });
 
   test("the calibration exception is script-only — no src module outside it imports the harness", () => {
     // "Named exception" has to mean *unreachable from the boot path*, or it is a hole with a comment on
-    // it. Two halves: nothing the walk reaches outside `calibration/` imports it, and the only importer
-    // is a dev script. `scripts/` is outside the walk by design (not a package's `src/`), so it is read
-    // here directly — otherwise the second half would be prose.
-    // The *import*, not the text: `store/src/config.ts` names the harness's path in a doc comment
-    // (`W9_WIDE_TAUS`), and a text match would read a citation as a dependency.
+    // it. Two halves: nothing the walk reaches outside `calibration/` imports it, and the only importers
+    // are dev scripts.
     const importsHarness = (text: string): boolean =>
       specifiers(text).some((specifier) => /(^|\/)calibration\//.test(specifier));
     expect(
-      FILES.filter((file) => !file.rel.startsWith(CALIBRATION) && importsHarness(file.text)).map(
-        (file) => file.rel,
-      ),
+      FILES.filter((file) => !inDir(file, CALIBRATION) && importsHarness(file.text)).map(relOf),
     ).toEqual([]);
 
     // `scripts/w9-calibrate.ts` fires the calibration and `scripts/w9-c5-fixture.ts` mints the C5
-    // regression fixture from its artifact — both dev scripts. Non-empty, so the exception is a fact
-    // about the tree and not an empty set that would read the same if the harness were orphaned.
+    // regression fixture from its artifact — both dev scripts, both reading `core/`'s source by path.
     const scriptImporters = readdirSync(join(ROOT, "scripts"))
       .filter((name) => SOURCE_EXTENSIONS.some((ext) => name.endsWith(ext)))
       .filter((name) => importsHarness(readFileSync(join(ROOT, "scripts", name), "utf8")));
     expect(scriptImporters.length, "no dev script imports the calibration harness").toBeGreaterThan(
       0,
     );
+  });
+});
+
+describe("Done 5 — no synthetic seeds, no note import (ARCH §7; PRD §3.4 item 3) — W7", () => {
+  // The negative requirement: **neither the engine nor an app surface generates ideas on the user's
+  // behalf**, and **nothing imports a user's notes**. Nothing does the forbidden thing, so there is no
+  // positive surface to test — the risk is that a check nobody wrote regresses silently the first time
+  // someone reaches for the obvious shortcut.
+
+  test("A: no source outside the vault writes an idea table", () => {
+    // `\b` after the table name so `idea_mechanism` (a cache row, written by the engine) is not pulled
+    // in: `\b` fails between `idea` and `_`.
+    const IDEA_WRITE = /\b(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+(?:idea|idea_version)\b/i;
+    const writers = FILES.filter((file) => IDEA_WRITE.test(file.text)).map(relOf);
+
+    // Positive control: the user-intent path is the writer, and the walk reaches it.
+    expect(writers).toContain("core/src/vault/capture.ts");
+    expect(
+      FILES.filter((file) => !inDir(file, "core/src/vault") && IDEA_WRITE.test(file.text)).map(
+        relOf,
+      ),
+    ).toEqual([]);
+  });
+
+  test("B: the only file-reading call in a shipped src/ is the shipped taxonomy", () => {
+    // "Imports existing notes" (`PRD.md` §3.4 item 3) is a file *read*. A live product can read exactly
+    // one file — `core/src/store/domain-seed.ts`'s shipped taxonomy (`ARCHITECTURE.md` §3.2). The build
+    // scripts under `scripts/` are tooling, not a package's `src/`. The **call**, not the name:
+    // importing `readFileSync` reads nothing, and a comment mentioning it is not a read.
+    const READ = /(?:readFileSync|readFile|createReadStream|readdirSync)\s*\(/;
+    expect(FILES.filter((file) => READ.test(file.text)).map(relOf)).toEqual([
+      "core/src/store/domain-seed.ts",
+    ]);
+    // Non-vacuity: the walk excludes test files, and every other reader in the repo is a test — so if
+    // the walk ever started including one, this list would grow and the test would say so.
+    expect(FILES.some((file) => file.rel.endsWith(".test.ts"))).toBe(false);
+  });
+
+  test("C: no exported provider operation returns an idea-shaped payload", () => {
+    // The engine's only route to *mint* an idea would be a provider op whose output is one. The
+    // provider's *inputs* carry idea text on purpose (`IdeaText` is the operation payload, §5); the
+    // claim is about what an operation *returns*.
+    const providerTypes = FILES.find((file) => file.rel === "core/src/provider/types.ts");
+    expect(providerTypes).toBeDefined();
+    const body = (name: string): string => {
+      const match = providerTypes?.text.match(
+        new RegExp(`export interface ${name} \\{[\\s\\S]*?\\n\\}`),
+      );
+      return match?.[0] ?? "";
+    };
+    const IDEA_FIELDS = /\b(?:hypothesis|problem|monetization|status|lineage_kind|domain_tags)\b/;
+
+    for (const returned of ["MechanismDescriptor", "SparkDraft"]) {
+      const text = body(returned);
+      expect(text, `${returned} not found in provider/types.ts`).not.toBe("");
+      expect(IDEA_FIELDS.test(text), returned).toBe(false);
+    }
+    // Positive control: the matcher and the field set are real — the input type does carry them.
+    expect(IDEA_FIELDS.test(body("IdeaText"))).toBe(true);
+  });
+});
+
+describe("thresholds stay out of the schema (ARCH §3.4; #30 Done) — W5", () => {
+  test("the `config` table is created once — no migration adds a threshold", () => {
+    const creators = MIGRATIONS.filter((migration) => /CREATE TABLE config\b/.test(migration.sql));
+    expect(creators.map((migration) => migration.version)).toEqual([1]);
   });
 });

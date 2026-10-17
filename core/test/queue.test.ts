@@ -1,25 +1,25 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../src/store/connection.js";
 
-import { MIGRATIONS, enqueueRun, migrate, openStore, stampAndEnqueue } from "@astrolab/store";
+import { MIGRATIONS, enqueueRun, migrate, stampAndEnqueue } from "../src/store/index.js";
+import { openNodeStore } from "../src/store/connection.node.js";
 import { describe, expect, test } from "vitest";
 
 import {
   cutVault,
   runOnce,
-  startWorker,
   stubRunBody,
   type RunOutcome,
   type VaultCut,
-} from "./queue.js";
+} from "../src/engine/queue.js";
 
 /** A fresh migrated in-memory vault — the same schema `main` ships (`0001_init` + `0002`). */
-function newDb(): DatabaseSync {
-  const db = openStore(":memory:");
+function newDb(): SqliteConnection {
+  const db = openNodeStore(":memory:");
   migrate(db, MIGRATIONS);
   return db;
 }
 
-function seedIdea(db: DatabaseSync, id: string): void {
+function seedIdea(db: SqliteConnection, id: string): void {
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                        lineage_parent_id, status, visibility, current_version, created_at, updated_at)
@@ -27,7 +27,7 @@ function seedIdea(db: DatabaseSync, id: string): void {
   ).run(id);
 }
 
-function runRows(db: DatabaseSync): Array<{
+function runRows(db: SqliteConnection): Array<{
   id: string;
   vault_revision: number;
   status: string;
@@ -172,35 +172,5 @@ describe("cutVault", () => {
     seedIdea(db, "b");
 
     expect(cutVault(db, 7)).toEqual({ revision: 7, ideaIds: ["a", "b", "c"] });
-  });
-});
-
-describe("startWorker — an idle worker stays resident (deployed shape)", () => {
-  // The poll timer is the only thing that can keep the process alive between runs. `unref`'d, it
-  // cannot: node exits the moment the queue is empty, so a run enqueued *after* boot is never
-  // drained and the spark deck never updates (`docs/ARCHITECTURE.md` §1, ADR-0004). `unref`'d
-  // timers are absent from `getActiveResourcesInfo`, so the difference is observable in-process.
-  const refdTimeouts = (): number =>
-    process.getActiveResourcesInfo().filter((r) => r === "Timeout").length;
-
-  test("keepAlive (the default) references its timer", () => {
-    const before = refdTimeouts();
-    // idleMs is long so the first tick cannot fire and reschedule during the synchronous assertion.
-    const worker = startWorker(newDb(), stubRunBody, { idleMs: 60_000 });
-    try {
-      expect(refdTimeouts()).toBe(before + 1);
-    } finally {
-      worker.stop();
-    }
-  });
-
-  test("keepAlive: false does not — the negative control that makes the guard non-vacuous", () => {
-    const before = refdTimeouts();
-    const worker = startWorker(newDb(), stubRunBody, { idleMs: 60_000, keepAlive: false });
-    try {
-      expect(refdTimeouts()).toBe(before);
-    } finally {
-      worker.stop();
-    }
   });
 });

@@ -1,6 +1,7 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
-import { currentVaultRevision, MIGRATIONS, migrate, openStore } from "@astrolab/store";
+import { currentVaultRevision, MIGRATIONS, migrate } from "../store/index.js";
+import { openNodeStore } from "../store/connection.node.js";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -27,14 +28,14 @@ import type { GatedPair } from "./gate.js";
  * surfaced (D1).
  */
 
-function newDb(): DatabaseSync {
-  const db = openStore(":memory:");
+function newDb(): SqliteConnection {
+  const db = openNodeStore(":memory:");
   migrate(db, MIGRATIONS);
   return db;
 }
 
 /** `hypothesis` carries the id, so a fake adjudicator can name the pair it was handed. */
-function seedIdea(db: DatabaseSync, id: string): void {
+function seedIdea(db: SqliteConnection, id: string): void {
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                        lineage_parent_id, status, visibility, current_version, created_at, updated_at)
@@ -108,7 +109,7 @@ function scriptedAdjudicator(answers: Record<string, Answer>): Scripted {
  * mocked stand-in. (`FROM idea\b` does not match `FROM idea_mechanism`: `_` is a word character, so
  * there is no boundary after `idea`.)
  */
-function countingDb(db: DatabaseSync): { db: DatabaseSync; reads: string[] } {
+function countingDb(db: SqliteConnection): { db: SqliteConnection; reads: string[] } {
   const reads: string[] = [];
   const wrapping = new Proxy(db, {
     get(target, property) {

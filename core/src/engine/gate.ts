@@ -1,9 +1,9 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
-import { readGateConfig, type GateConfig } from "@astrolab/store";
+import { readGateConfig, type GateConfig } from "../store/index.js";
 
 import type { MechanismDescriptor } from "../provider/index.js";
-import type { VaultCut } from "../queue.js";
+import type { VaultCut } from "./queue.js";
 import { descriptorSimilarity } from "./alignment.js";
 import type { DomainDistance } from "./domain.js";
 import type { MechanismCache } from "./mechanism.js";
@@ -78,7 +78,7 @@ export interface Gate {
  * The candidate set, in the cut's `id ASC` order: `ACTIVE` ideas carrying at least one domain tag
  * (§3.5 excludes `NEEDS_COMPLETION` and domain-less ideas from candidate generation). One `SELECT`.
  */
-function candidates(db: DatabaseSync, cut: VaultCut): Array<{ id: string; tags: string[] }> {
+function candidates(db: SqliteConnection, cut: VaultCut): Array<{ id: string; tags: string[] }> {
   if (cut.ideaIds.length === 0) return [];
   const placeholders = cut.ideaIds.map(() => "?").join(", ");
   const rows = db
@@ -137,16 +137,16 @@ function sameLineage(
  * The **candidate ids** at a cut (§3.5) — the same predicate `gatedPairs`'s Stage 1 uses, since a
  * sweep that read a *different* set would retract an offer whose idea the gate would still consider.
  *
- * W8's sweep (`store/src/sparks.ts`'s `retractOffersOutside`) takes exactly this list: a **live**
+ * W8's sweep (`core/src/store/sparks.ts`'s `retractOffersOutside`) takes exactly this list: a **live**
  * offer whose ideas are no longer both candidates is retracted (§4's recompute; V5 `#16` ⑤). A
  * resolved spark is history and is untouched by the sweep, which filters `status = 'OFFERED'`.
  */
-export function candidateIds(db: DatabaseSync, cut: VaultCut): string[] {
+export function candidateIds(db: SqliteConnection, cut: VaultCut): string[] {
   return candidates(db, cut).map((row) => row.id);
 }
 
 export function createGate(
-  db: DatabaseSync,
+  db: SqliteConnection,
   mechanisms: MechanismCache,
   distance: DomainDistance,
   config?: GateConfig,

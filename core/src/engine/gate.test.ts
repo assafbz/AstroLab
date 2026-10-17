@@ -1,17 +1,17 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
 import {
   currentVaultRevision,
   MIGRATIONS,
   migrate,
-  openStore,
   seedDomainTaxonomy,
   type ClusterOption,
-} from "@astrolab/store";
+} from "../store/index.js";
+import { openNodeStore } from "../store/connection.node.js";
 import { describe, expect, test } from "vitest";
 
 import type { MechanismDescriptor } from "../provider/index.js";
-import type { VaultCut } from "../queue.js";
+import type { VaultCut } from "./queue.js";
 import { descriptorSimilarity } from "./alignment.js";
 import { createDomainDistance, type DomainDistance } from "./domain.js";
 import { createGate, type Gate } from "./gate.js";
@@ -26,13 +26,13 @@ import type { MechanismCache } from "./mechanism.js";
  * AI-free scan, and the fact that the gate **writes nothing**.
  */
 
-function newDb(): DatabaseSync {
-  const db = openStore(":memory:");
+function newDb(): SqliteConnection {
+  const db = openNodeStore(":memory:");
   migrate(db, MIGRATIONS);
   return db;
 }
 
-function seedIdea(db: DatabaseSync, id: string, tags: string[], status = "ACTIVE"): void {
+function seedIdea(db: SqliteConnection, id: string, tags: string[], status = "ACTIVE"): void {
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                        lineage_parent_id, status, visibility, current_version, created_at, updated_at)
@@ -42,7 +42,7 @@ function seedIdea(db: DatabaseSync, id: string, tags: string[], status = "ACTIVE
 
 /** A node with an explicit lineage edge — `FORK` carrying `lineage_parent_id`. */
 function seedForkedIdea(
-  db: DatabaseSync,
+  db: SqliteConnection,
   id: string,
   tags: string[],
   parentId: string,

@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
 import type { IdeaText, SparkAdjudicator, SparkDraft } from "../provider/index.js";
 import type { GatedPair } from "./gate.js";
@@ -89,7 +89,7 @@ function byKey(a: { key: string }, b: { key: string }): number {
   return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
 }
 
-export function createAdjudicator(db: DatabaseSync, provider: SparkAdjudicator): Adjudicator {
+export function createAdjudicator(db: SqliteConnection, provider: SparkAdjudicator): Adjudicator {
   return {
     async adjudicate(pairs) {
       const confirmed: ConfirmedSpark[] = [];

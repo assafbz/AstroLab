@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
 import {
   claimNextRun,
@@ -6,16 +6,22 @@ import {
   finishRun,
   type OfferedSpark,
   type SparkRun,
-} from "@astrolab/store";
+} from "../store/index.js";
 
 /**
- * The worker's run loop (`ARCHITECTURE.md` §4; `ADR-0004`). The queue *rows* live in the store
- * (`@astrolab/store`'s `runs.ts`); this module owns the order of operations —
+ * One run's lifecycle (`ARCHITECTURE.md` §4; `ADR-0004`). The queue *rows* live in the store
+ * (`core/src/store/runs.ts`); this module owns the order of operations —
  * **claim → cut → body → currency check → finish**.
  *
- * The **run body is the seam**: W1 ships `stubRunBody`, which reaches no provider, and W2 swaps in
- * the AI-backed engine. Keeping the default AI-free is what makes NFR-A1 hold *by construction* —
- * no vault path can reach the boundary, because the vault never runs a body at all.
+ * **There is no loop here any more.** v1's `startWorker` polled on a timer; the rebuild's driver runs
+ * on the app's **foreground** lifecycle and calls `runOnce` once per wake (`app/src/engine/
+ * runScheduler.ts`, L3 · #166) — polling is banned by the harness (`AGENTS.md`, *Harness overrides*
+ * 1), and a phone that polls in the background is a battery complaint. A kill mid-run is recovered by
+ * the boot's `requeueOrphanedRuns` (`core/src/boot.ts`), so the resume path is the *row*, not a timer.
+ *
+ * The **run body is the seam**: `stubRunBody` reaches no provider, and `engineFromProvider` swaps in
+ * the AI-backed engine. Keeping the default AI-free is what makes NFR-A1 hold *by construction* — no
+ * vault path can reach the boundary, because the vault never runs a body at all.
  */
 
 /** The vault as one run sees it: the revision it was cut from, and the ideas it covers. */
@@ -78,7 +84,7 @@ export interface RunResult {
  * otherwise; corrected 2026-10-14). Upgrade if the cut ever reads a non-covering row, or the table drops
  * the id index — then the clause is load-bearing and worth its own mutation-checked test.
  */
-export function cutVault(db: DatabaseSync, revision: number): VaultCut {
+export function cutVault(db: SqliteConnection, revision: number): VaultCut {
   const ideaIds = (
     db.prepare("SELECT id FROM idea ORDER BY id ASC").all() as Array<{ id: string }>
   ).map((row) => row.id);
@@ -113,7 +119,7 @@ export const stubRunBody: RunBody = () => ({ candidates: [] });
  * insert is guarded, the noise insert is `DO NOTHING`).
  */
 export async function runOnce(
-  db: DatabaseSync,
+  db: SqliteConnection,
   body: RunBody = stubRunBody,
   commit?: RunCommit,
 ): Promise<RunResult | null> {
@@ -138,64 +144,4 @@ export async function runOnce(
   if (!discarded && commit !== undefined) commit(outcome, cut);
   finishRun(db, run.id, "DONE", discarded ? `discarded: superseded by revision ${revision}` : null);
   return { run, outcome, discarded, error: null };
-}
-
-export interface WorkerOptions {
-  /** Idle delay between empty polls. The worker process may wait; tests call `runOnce` directly. */
-  idleMs?: number;
-  /** Observed instead of thrown, so one bad run cannot kill the loop. */
-  onError?: (err: unknown) => void;
-  /** W8: the run's write hook, forwarded to every `runOnce` (S2). Absent ⇒ the loop writes nothing. */
-  commit?: RunCommit;
-  /**
-   * Hold the process open while the loop is idle. **Default `true`**, because a deployed worker is a
-   * long-lived process (`docs/ARCHITECTURE.md` §1, ADR-0004): with an `unref`'d timer nothing keeps
-   * the event loop alive, so the process exits the moment the queue is empty — and a run enqueued
-   * *after* boot is then never drained. Pass `false` from a caller that starts a loop and does not
-   * want to have to `stop()` it (or that never expects the loop to survive).
-   */
-  keepAlive?: boolean;
-}
-
-/**
- * Starts the poll loop: `runOnce` repeatedly, waiting `idleMs` between passes. The timer is
- * **referenced** by default — an idle worker stays resident — which is what makes the deployed shape
- * work; see `keepAlive` for the exception.
- */
-export function startWorker(
-  db: DatabaseSync,
-  body: RunBody = stubRunBody,
-  options: WorkerOptions = {},
-): { stop: () => void } {
-  const idleMs = options.idleMs ?? 1000;
-  const keepAlive = options.keepAlive ?? true;
-  let stopped = false;
-  let handle: NodeJS.Timeout | undefined;
-
-  const tick = async (): Promise<void> => {
-    if (stopped) return;
-    try {
-      const result = await runOnce(db, body, options.commit);
-      if (result?.error != null) options.onError?.(new Error(result.error));
-    } catch (err) {
-      // `runOnce` already records a body failure on the run; anything thrown here is the queue
-      // itself, which must not take the loop down.
-      options.onError?.(err);
-    }
-    if (!stopped) handle = park(idleMs);
-  };
-
-  /** The one place a poll timer is created, so `keepAlive` cannot apply to one site and not the other. */
-  function park(ms: number): NodeJS.Timeout {
-    const timer = setTimeout(tick, ms);
-    return keepAlive ? timer : timer.unref();
-  }
-
-  handle = park(0);
-  return {
-    stop: () => {
-      stopped = true;
-      if (handle !== undefined) clearTimeout(handle);
-    },
-  };
 }

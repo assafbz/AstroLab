@@ -73,7 +73,7 @@ export interface SparkAdjudicator {
 
 /**
  * One cluster the normaliser may choose from (`ARCHITECTURE.md` §2.4). Structurally identical to
- * `store/src/domain-map.ts`'s `ClusterOption` — deliberately not imported, so this boundary keeps no
+ * `core/src/store/domain-map.ts`'s `ClusterOption` — deliberately not imported, so this boundary keeps no
  * path to the store (`boundary.test.ts` claim 3).
  */
 export interface ClusterOption {

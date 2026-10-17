@@ -1,12 +1,7 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
-import {
-  currentVaultRevision,
-  MIGRATIONS,
-  migrate,
-  openStore,
-  stampAndEnqueue,
-} from "@astrolab/store";
+import { currentVaultRevision, MIGRATIONS, migrate, stampAndEnqueue } from "../store/index.js";
+import { openNodeStore } from "../store/connection.node.js";
 import { describe, expect, test } from "vitest";
 
 import {
@@ -16,7 +11,7 @@ import {
   type SparkAdjudicator,
   type SparkDraft,
 } from "../provider/index.js";
-import { runOnce } from "../queue.js";
+import { runOnce } from "./queue.js";
 import { createAdjudicator } from "./adjudicate.js";
 import { createEngineRun, type EngineRun } from "./run.js";
 import type { Gate, GatedPair } from "./gate.js";
@@ -34,14 +29,14 @@ import { createSuppression } from "./suppression.js";
  * over a scripted provider, and suppression is real — the composer's behaviour on each is the point.
  */
 
-function newDb(): DatabaseSync {
-  const db = openStore(":memory:");
+function newDb(): SqliteConnection {
+  const db = openNodeStore(":memory:");
   migrate(db, MIGRATIONS);
   return db;
 }
 
 /** `hypothesis` carries the id, so the fake adjudicator can name the pair it was handed. */
-function seedIdea(db: DatabaseSync, id: string, tags: string[], status = "ACTIVE"): void {
+function seedIdea(db: SqliteConnection, id: string, tags: string[], status = "ACTIVE"): void {
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                        lineage_parent_id, status, visibility, current_version, created_at, updated_at)
@@ -118,7 +113,7 @@ function scriptedAdjudicator(answers: Record<string, Answer>): {
 
 /** The run surface, wired exactly as the composition root wires it (D4). */
 function engineFor(
-  db: DatabaseSync,
+  db: SqliteConnection,
   pairs: GatedPair[],
   answers: Record<string, Answer> = {},
 ): { engine: EngineRun; calls: string[] } {
@@ -132,28 +127,28 @@ function engineFor(
 }
 
 /** A `spark` row written directly — the history a later run must read and respect. */
-function seedSpark(db: DatabaseSync, aId: string, bId: string, status = "OFFERED"): void {
+function seedSpark(db: SqliteConnection, aId: string, bId: string, status = "OFFERED"): void {
   db.prepare(
     `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, status, created_at)
      VALUES (?, ?, ?, ?, 'd', 'c', ?, 't')`,
   ).run(`spark-${aId}-${bId}`, aId, bId, [aId, bId].sort().join("|"), status);
 }
 
-function sparkRows(db: DatabaseSync): Array<{ pair_key: string; status: string }> {
+function sparkRows(db: SqliteConnection): Array<{ pair_key: string; status: string }> {
   return db.prepare("SELECT pair_key, status FROM spark ORDER BY pair_key, status").all() as Array<{
     pair_key: string;
     status: string;
   }>;
 }
 
-function runRows(db: DatabaseSync): Array<{ status: string; error: string | null }> {
+function runRows(db: SqliteConnection): Array<{ status: string; error: string | null }> {
   return db.prepare("SELECT status, error FROM spark_run ORDER BY vault_revision").all() as Array<{
     status: string;
     error: string | null;
   }>;
 }
 
-function suppressedRows(db: DatabaseSync): Array<{ pair_key: string; reason: string }> {
+function suppressedRows(db: SqliteConnection): Array<{ pair_key: string; reason: string }> {
   return db
     .prepare("SELECT pair_key, reason FROM suppressed_pair ORDER BY pair_key")
     .all() as Array<{ pair_key: string; reason: string }>;

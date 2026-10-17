@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
-import { readDescriptors, upsertDescriptor } from "@astrolab/store";
+import { readDescriptors, upsertDescriptor } from "../store/index.js";
 
 import { DESCRIPTOR_SCHEMA, EXTRACTION_SYSTEM } from "../provider/index.js";
 import type { IdeaText, MechanismDescriptor, MechanismExtractor } from "../provider/index.js";
@@ -34,7 +34,7 @@ import type { IdeaText, MechanismDescriptor, MechanismExtractor } from "../provi
  *
  * ## The write path
  *
- * The persistence is `store/src/mechanism.ts` (`upsertDescriptor`/`readDescriptors`), not raw SQL
+ * The persistence is `core/src/store/mechanism.ts` (`upsertDescriptor`/`readDescriptors`), not raw SQL
  * here: the API's delete path (V5 #16) must reach the same rows, and moving it into `store` is what
  * keeps that reachable without a new `api → worker` dependency. That module carries the *named
  * exception* to `vaultMutation` and its reason. A cache write that still fails **propagates** — the
@@ -74,7 +74,7 @@ export interface MechanismCache {
  * `worker/src/provider/types.ts` defines). `domain_tags` is absent: extraction is about structure, not
  * classification, so a tag edit must not invalidate the descriptor.
  */
-export function readIdeaText(db: DatabaseSync, ideaId: string): IdeaText | null {
+export function readIdeaText(db: SqliteConnection, ideaId: string): IdeaText | null {
   const row = db
     .prepare("SELECT hypothesis, problem, monetization FROM idea WHERE id = ?")
     .get(ideaId) as { hypothesis: string; problem: string; monetization: string } | undefined;
@@ -95,7 +95,7 @@ export function hashIdeaText(text: IdeaText, producer: MechanismProducer): strin
 }
 
 export function createMechanismCache(
-  db: DatabaseSync,
+  db: SqliteConnection,
   extractor: MechanismExtractor,
   producer: MechanismProducer,
 ): MechanismCache {
@@ -109,7 +109,7 @@ export function createMechanismCache(
 
       const [cached] = readDescriptors(db, [ideaId]);
       // Trusted as written — the boundary validated it against the schema before it was stored, so a
-      // read does not re-validate, the way `store/src/runs.ts` reads rows.
+      // read does not re-validate, the way `core/src/store/runs.ts` reads rows.
       if (cached !== undefined && cached.source_hash === hash) {
         return JSON.parse(cached.descriptor) as MechanismDescriptor;
       }

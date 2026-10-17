@@ -1,6 +1,7 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
-import { currentVaultRevision, MIGRATIONS, migrate, openStore } from "@astrolab/store";
+import { currentVaultRevision, MIGRATIONS, migrate } from "../store/index.js";
+import { openNodeStore } from "../store/connection.node.js";
 import { describe, expect, test } from "vitest";
 
 import type { MechanismDescriptor, SparkAdjudicator } from "../provider/index.js";
@@ -25,13 +26,13 @@ import { createSuppression, type Suppression } from "./suppression.js";
  * to it and a check here could not see the statement.
  */
 
-function newDb(): DatabaseSync {
-  const db = openStore(":memory:");
+function newDb(): SqliteConnection {
+  const db = openNodeStore(":memory:");
   migrate(db, MIGRATIONS);
   return db;
 }
 
-function seedIdea(db: DatabaseSync, id: string, status = "ACTIVE"): void {
+function seedIdea(db: SqliteConnection, id: string, status = "ACTIVE"): void {
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                        lineage_parent_id, status, visibility, current_version, created_at, updated_at)
@@ -39,14 +40,14 @@ function seedIdea(db: DatabaseSync, id: string, status = "ACTIVE"): void {
   ).run(id, JSON.stringify([id]), status);
 }
 
-function seedSpark(db: DatabaseSync, id: string, key: string, status: string): void {
+function seedSpark(db: SqliteConnection, id: string, key: string, status: string): void {
   db.prepare(
     `INSERT INTO spark (id, idea_a_id, idea_b_id, pair_key, direction, claim, status, created_at)
      VALUES (?, ?, ?, ?, 'd', 'c', ?, 't')`,
   ).run(id, ...key.split("|"), key, status);
 }
 
-function seedSuppression(db: DatabaseSync, key: string, reason: string): void {
+function seedSuppression(db: SqliteConnection, key: string, reason: string): void {
   db.prepare(`INSERT INTO suppressed_pair (pair_key, reason, updated_at) VALUES (?, ?, 't')`).run(
     key,
     reason,
@@ -54,7 +55,7 @@ function seedSuppression(db: DatabaseSync, key: string, reason: string): void {
 }
 
 function suppressedRows(
-  db: DatabaseSync,
+  db: SqliteConnection,
 ): Array<{ pair_key: string; reason: string; updated_at: string }> {
   return db
     .prepare("SELECT pair_key, reason, updated_at FROM suppressed_pair ORDER BY pair_key")

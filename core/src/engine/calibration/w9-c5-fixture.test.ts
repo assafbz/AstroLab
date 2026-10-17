@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../../store/connection.js";
 
 import {
   MIGRATIONS,
   migrate,
-  openStore,
   seedDomainTaxonomy,
   upsertDescriptor,
   vaultMutation,
-} from "@astrolab/store";
+} from "../../store/index.js";
+import { openNodeStore } from "../../store/connection.node.js";
 import { describe, expect, test } from "vitest";
 
 import type { IdeaText, MechanismDescriptor } from "../../provider/index.js";
@@ -74,8 +74,8 @@ interface Fixture {
 const fixture = JSON.parse(readFileSync(FIXTURE_URL, "utf8")) as Fixture;
 const MODEL = fixture.provenance.producer.model;
 
-function newDb(): DatabaseSync {
-  const db = openStore(":memory:");
+function newDb(): SqliteConnection {
+  const db = openNodeStore(":memory:");
   migrate(db, MIGRATIONS);
   seedDomainTaxonomy(db);
   return db;
@@ -90,7 +90,7 @@ const textOf = (idea: W9Idea): IdeaText => ({
 });
 
 /** Seed the vault into `idea` through `vaultMutation` (§4's trigger), exactly as the run's harness did. */
-function seedVault(db: DatabaseSync, ideas: readonly W9Idea[]): void {
+function seedVault(db: SqliteConnection, ideas: readonly W9Idea[]): void {
   vaultMutation(db, () => {
     const insert = db.prepare(
       `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
@@ -115,7 +115,7 @@ function seedVault(db: DatabaseSync, ideas: readonly W9Idea[]): void {
  * if the extraction contract or the vault text has moved, the hashes no longer line up and the throwing
  * extractor fires rather than the test passing on a stale cache.
  */
-function seedDescriptors(db: DatabaseSync, ideas: readonly W9Idea[], model = MODEL): void {
+function seedDescriptors(db: SqliteConnection, ideas: readonly W9Idea[], model = MODEL): void {
   const byId = new Map(ideas.map((idea) => [idea.id, idea]));
   for (const row of fixture.descriptors) {
     const idea = byId.get(row.ideaId);
@@ -138,7 +138,7 @@ const providerCall = (what: string) => ({
 });
 
 /** The run over a warm cache: seeder, both throwers, and the fixture's own floor passed explicitly. */
-function runFixture(db: DatabaseSync, unionTau = FLOOR) {
+function runFixture(db: SqliteConnection, unionTau = FLOOR) {
   seedDescriptors(db, loadVault());
   const calls = providerCall("extractor/adjudicator fired");
   return createCalibrationRun(db, {

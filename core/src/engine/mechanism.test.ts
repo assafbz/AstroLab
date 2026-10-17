@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
-import { MIGRATIONS, migrate, openStore } from "@astrolab/store";
+import { MIGRATIONS, migrate } from "../store/index.js";
+import { openNodeStore } from "../store/connection.node.js";
 import { describe, expect, test } from "vitest";
 
 import { DESCRIPTOR_SCHEMA, EXTRACTION_SYSTEM } from "../provider/index.js";
@@ -15,8 +16,8 @@ import {
 } from "./mechanism.js";
 
 /** A fresh migrated in-memory vault — the schema `main` ships (`0001_init` + `0002`). */
-function newDb(): DatabaseSync {
-  const db = openStore(":memory:");
+function newDb(): SqliteConnection {
+  const db = openNodeStore(":memory:");
   migrate(db, MIGRATIONS);
   return db;
 }
@@ -26,7 +27,7 @@ const TEXT: IdeaText = { hypothesis: "h", problem: "p", monetization: "m" };
 /** The producer identity a call site resolves once and hands to both the adapter and the cache. */
 const PRODUCER: MechanismProducer = { version: EXTRACTOR_VERSION, model: "test/model" };
 
-function seedIdea(db: DatabaseSync, id: string, text: IdeaText = TEXT): void {
+function seedIdea(db: SqliteConnection, id: string, text: IdeaText = TEXT): void {
   db.prepare(
     `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
                        lineage_parent_id, status, visibility, current_version, created_at, updated_at)
@@ -59,7 +60,7 @@ function fakeExtractor(respond: (call: number) => MechanismDescriptor): {
   };
 }
 
-function cacheRows(db: DatabaseSync): Array<{ descriptor: string; source_hash: string }> {
+function cacheRows(db: SqliteConnection): Array<{ descriptor: string; source_hash: string }> {
   return db.prepare("SELECT descriptor, source_hash FROM idea_mechanism").all() as Array<{
     descriptor: string;
     source_hash: string;

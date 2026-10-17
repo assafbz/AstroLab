@@ -1,4 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
 import {
   insertOfferedSparks,
@@ -6,9 +6,9 @@ import {
   recordNoise,
   retractOffersOutside,
   type OfferedSpark,
-} from "@astrolab/store";
+} from "../store/index.js";
 
-import type { RunBody, RunCommit, RunOutcome, VaultCut } from "../queue.js";
+import type { RunBody, RunCommit, RunOutcome, VaultCut } from "./queue.js";
 import type { Adjudicator, ConfirmedSpark } from "./adjudicate.js";
 import { candidateIds, type Gate } from "./gate.js";
 import type { Suppression } from "./suppression.js";
@@ -38,7 +38,7 @@ import type { Suppression } from "./suppression.js";
  * | sweep stale live offers | `retractOffersOutside` | an offer whose ideas are no longer candidates (§4) |
  *
  * **Nothing here stamps `vault_meta.revision` or enqueues a run.** The three writes are
- * non-stamping by construction (`store/src/sparks.ts`, `store/src/suppression.ts`): `spark` and
+ * non-stamping by construction (`core/src/store/sparks.ts`, `core/src/store/suppression.ts`): `spark` and
  * `suppressed_pair` are not among §4's four trigger tables, and a run whose writes stamped would
  * enqueue its own successor forever. Asserted end-to-end in `run.test.ts`, not assumed.
  *
@@ -100,7 +100,7 @@ function toOfferedSpark(confirmed: ConfirmedSpark): OfferedSpark {
   };
 }
 
-export function createEngineRun(db: DatabaseSync, deps: EngineRunDeps): EngineRun {
+export function createEngineRun(db: SqliteConnection, deps: EngineRunDeps): EngineRun {
   const { gate, suppression, adjudicator } = deps;
   return {
     async body(cut: VaultCut): Promise<RunOutcome> {

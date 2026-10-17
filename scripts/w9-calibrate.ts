@@ -4,13 +4,13 @@
  * **Run it:**
  *
  * ```sh
- * npm run build -w store          # required — see below
  * npx tsx scripts/w9-calibrate.ts post
  * ```
  *
- * The build is **not** optional. The driver imports `@astrolab/store` bare, whose runtime entry is
- * `dist/index.js`; `tsx` does not apply `vitest.config.ts`'s source alias, so on a fresh checkout the
- * harness dies with `ERR_MODULE_NOT_FOUND` without `npm run build -w store` first (David, 2026-10-14).
+ * **No build step** (L3 · #166). The driver imported `@astrolab/store` bare, whose runtime entry was
+ * `dist/index.js`, so a fresh checkout needed `npm run build -w store` first (David, 2026-10-14).
+ * It now imports `../core/src/…` by path — the same shape the W9 scripts always used for the
+ * worker's modules — so `tsx` compiles the source and there is nothing to build first.
  *
  * ## Commands, and the spend rule they implement
  *
@@ -58,9 +58,9 @@
  * now holds by construction. Re-ratified 2026-10-14: 67 pairs · expected 68–70 attempts · cap 201 ·
  * ceiling ≈$0.0137.
  *
- * ## Why this lives in `scripts/` and not in `worker/src/`
+ * ## Why this lives in `scripts/` and not in `core/src/`
  *
- * It reads a file and writes `idea`, and `worker/src/provider/boundary.test.ts` forbids both inside a
+ * It reads a file and writes `idea`, and `core/src/provider/boundary.test.ts` forbids both inside a
  * package's `src/` (`ARCHITECTURE.md` §7; `PRD.md` §3.4 item 3). A calibration fixture is neither of
  * those things, but the guards are path-based, and widening them with a carve-out is where a check
  * starts lying — so the harness lives where the repo keeps its tools, and both guards stand as
@@ -72,12 +72,13 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../core/src/store/connection.js";
 
-import { readDescriptors, vaultMutation } from "@astrolab/store";
+import { readDescriptors, vaultMutation } from "../core/src/store/index.js";
 
-import { bootWorker } from "../worker/src/boot.js";
-import { descriptorSimilarity } from "../worker/src/engine/alignment.js";
+import { bootVault } from "../core/src/boot.js";
+import { openNodeStore } from "../core/src/store/connection.node.js";
+import { descriptorSimilarity } from "../core/src/engine/alignment.js";
 import {
   coverageViolations,
   createCalibrationRun,
@@ -90,7 +91,7 @@ import {
   type CalibrationPair,
   type CalibrationRun,
   type W9Idea,
-} from "../worker/src/engine/calibration/w9-run.js";
+} from "../core/src/engine/calibration/w9-run.js";
 import {
   ADJUDICATION_SYSTEM,
   adjudicationUser,
@@ -101,7 +102,7 @@ import {
   type MechanismPair,
   type Provider,
   type SparkDraft,
-} from "../worker/src/provider/index.js";
+} from "../core/src/provider/index.js";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const ARTIFACTS = join(ROOT, "artifacts", "w9");
@@ -115,7 +116,7 @@ function loadVault(): W9Idea[] {
 }
 
 /** Upsert the vault into `idea`, through `vaultMutation` (§4's trigger). Idempotent: a re-run updates. */
-function seedVault(db: DatabaseSync, ideas: readonly W9Idea[]): void {
+function seedVault(db: SqliteConnection, ideas: readonly W9Idea[]): void {
   vaultMutation(db, () => {
     const upsert = db.prepare(
       `INSERT INTO idea (id, hypothesis, problem, monetization, domain_tags, lineage_kind,
@@ -138,7 +139,7 @@ function seedVault(db: DatabaseSync, ideas: readonly W9Idea[]): void {
 }
 
 /** How many of the vault's ideas already carry a cached descriptor. `report`/`p2` refuse at 0-cost otherwise. */
-function cachedCount(db: DatabaseSync, ideas: readonly W9Idea[]): number {
+function cachedCount(db: SqliteConnection, ideas: readonly W9Idea[]): number {
   const rows = readDescriptors(
     db,
     ideas.map((idea) => idea.id),
@@ -217,7 +218,7 @@ function requireConfirm(what: string, confirm: number | undefined, actual: numbe
  * the live pass it spends on therefore filter the identical set (never two filters kept in sync).
  */
 function runFor(
-  db: DatabaseSync,
+  db: SqliteConnection,
   provider: Provider,
   floor: number = W9_UNION_TAU,
 ): CalibrationRun {
@@ -494,7 +495,7 @@ function p2PromptChars(
  * `0` calls — it reads the vault and the cached descriptors, nothing more.
  */
 function adjudicationCost(
-  db: DatabaseSync,
+  db: SqliteConnection,
   ideas: readonly W9Idea[],
   union: readonly CalibrationPair[],
 ) {
@@ -559,7 +560,7 @@ function maskedField(
  * `data/` cache. These are the rows `matrix()` reads — plus `source_hash`, which ties each to the
  * vault text — so the alignment column is recomputable from the artifact alone.
  */
-function descriptorRows(db: DatabaseSync, ideas: readonly W9Idea[]) {
+function descriptorRows(db: SqliteConnection, ideas: readonly W9Idea[]) {
   return readDescriptors(
     db,
     ideas.map((idea) => idea.id),
@@ -629,7 +630,8 @@ function sourcesOf(
 async function main(): Promise<void> {
   const [command, ...argv] = process.argv.slice(2);
   const ideas = loadVault();
-  const db = bootWorker(DB_PATH);
+  const db = openNodeStore(DB_PATH);
+  bootVault(db);
   seedVault(db, ideas);
 
   const coverage = coverageViolations(db, ideas);

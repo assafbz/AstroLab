@@ -1,11 +1,11 @@
-import type { DatabaseSync } from "node:sqlite";
+import type { SqliteConnection } from "../store/connection.js";
 
 import {
   readClusterAdjacency,
   readClusters,
   readDomainMap,
   upsertDomainTag,
-} from "@astrolab/store";
+} from "../store/index.js";
 
 import type { ClusterOption, TagNormalizer } from "../provider/index.js";
 
@@ -50,7 +50,10 @@ export interface DomainDistance {
   between(tagsA: readonly string[], tagsB: readonly string[]): Promise<number | null>;
 }
 
-export function createDomainDistance(db: DatabaseSync, normalizer: TagNormalizer): DomainDistance {
+export function createDomainDistance(
+  db: SqliteConnection,
+  normalizer: TagNormalizer,
+): DomainDistance {
   let taxonomy: {
     clusters: ClusterOption[];
     adjacency: Map<string, Map<string, number>>;
