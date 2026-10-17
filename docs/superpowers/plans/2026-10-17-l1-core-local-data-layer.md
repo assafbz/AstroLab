@@ -26,7 +26,10 @@ are binding here and are cited by number below).
 - **One language: TypeScript**; explicit type annotations on exported signatures.
 - **No vector DB / ANN index**; **no user-facing similarity surface**.
 - **Never sleep or poll** in tests or code. **Only merges need a human**; the assigned reviewer merges.
-- **A held-lane PR carries no closing keyword + `#n`** anywhere in body or commits; write `Part of #164`.
+- **The closing PR for #164 is this one**, so its *body* carries the closing keyword + `#164`
+  (`AGENTS.md`, _Harness overrides_ 3) and closes the issue on merge. The held-lane rule — no closing
+  keyword anywhere — is for a lane whose issue must stay open; L1's issue closes here, and no commit in
+  the lane carries a closing keyword either way.
 - **Any PR touching `.github/` must show the three required jobs still report** (`lint · format ·
   typecheck · test · build`, `citation ref-lint`, `o1-taxonomy`); a `paths:`-filtered required job is a
   permanent freeze, not a weaker gate.
@@ -114,8 +117,12 @@ are binding here and are cited by number below).
       (non-vacuity: the scanner is checked against all three import forms and the walk asserts it saw
       the file that *does* import it). **Seen failing** with a planted export in `src/index.ts`.
 - [x] Run `npm test -w core` green; `npm run typecheck`, `npm run lint`, `npm run format` green.
-- [x] **Pin the device engine:** record `expo-sqlite@58.0.13` as the app's dependency in the PR body
-      (L1 does not install it into `core/` — the app owns that dependency).
+- [x] **Pin the device engine:** `expo-sqlite@58.0.13` (invariant 1a — *L1 creates the pin*). Created as a
+      root `overrides` entry (`"expo-sqlite": "58.0.13"`), so wherever L2's `app/` declares the
+      dependency it resolves to the verified version; nothing is installed into `core/`, which never
+      resolves `expo-*` (invariant 5), and `npm ci` is unchanged (verified against the real command).
+      Recorded in the PR body and in `connection.ts`'s port note, so it is a fact about the repo rather
+      than prose in one place.
 
 ### T2 · Move the store and retarget it onto the port
 

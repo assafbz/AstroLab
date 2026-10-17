@@ -7,6 +7,9 @@
     "app",
     "core"
   ],
+  "overrides": {
+    "expo-sqlite": "58.0.13"
+  },
   "engines": {
     "node": ">=22.13"
   },
