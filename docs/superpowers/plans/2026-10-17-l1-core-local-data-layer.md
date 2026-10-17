@@ -76,6 +76,20 @@ are binding here and are cited by number below).
 - **`workspaces: ["app","core"]` is safe before `app/` exists** — npm treats each entry as a glob and
   ignores a directory that is not there (verified with `npm install --package-lock-only` on a
   throwaway workspace set). L2 only has to create the directory.
+- **The NFR suites retire *with a successor named*, not silently.** `api/src/*.test.ts`'s three HTTP
+  suites (`nfr-a1` · `nfr-p1` · `nfr-u1`) cannot move — they drive `api/src/server.ts`, which retires.
+  So they are deleted in T3 and **re-homed by the lane §11 assigns**: A1 → L1 (T7's
+  `core/test/nfr-a1.test.ts`, in process); p1 → L3 (its in-flight half stays in
+  `worker/src/nfr-p1.test.ts` until L3 moves the engine); u1 → L2 (a completed-flow test). `nfr-q1`
+  and `nfr-d1` are in-process already and move with their modules
+  (`core/test/nfr-q1.test.ts`, `core/src/export/nfr-d1.test.ts`). The other two live in `git show`
+  for their lanes — named here so nothing is lost between the retirement and the re-home.
+- **Flagged, not decided: the package entry exports the store's surface only.** `core/src/index.ts`
+  re-exports `./store/index.js`; the vault use-cases (`core/src/vault/*`) and the domain modules
+  (`core/src/domain/*`, `core/src/types.ts`) are reachable *within* the package but not from
+  `@astrolab/core`. `core/package.json` carries no `exports` map, so the app must consume them by
+  subpath (`@astrolab/core/src/vault/capture.js`) or L2/L3 widen the entry. Left to L2's intake: it
+  owns the app's first real import, and the shape of that import is the app's decision, not L1's.
 
 ---
 
@@ -100,7 +114,7 @@ are binding here and are cited by number below).
       (non-vacuity: the scanner is checked against all three import forms and the walk asserts it saw
       the file that *does* import it). **Seen failing** with a planted export in `src/index.ts`.
 - [x] Run `npm test -w core` green; `npm run typecheck`, `npm run lint`, `npm run format` green.
-- [ ] **Pin the device engine:** record `expo-sqlite@58.0.13` as the app's dependency in the PR body
+- [x] **Pin the device engine:** record `expo-sqlite@58.0.13` as the app's dependency in the PR body
       (L1 does not install it into `core/` — the app owns that dependency).
 
 ### T2 · Move the store and retarget it onto the port
@@ -109,15 +123,15 @@ are binding here and are cited by number below).
 `core/test/*`; modify `core/src/store/{store,config,migrate,runs,vault,sparks,suppression,domain-map,
 domain-seed,mechanism}.ts` and their tests; re-scope `core/test/{harness.ts,writer.ts,writers.test.ts}`.
 
-- [ ] Write the failing test: `openStore(conn)` sets `foreign_keys=ON` and WAL; `writeTransaction`
+- [x] Write the failing test: `openStore(conn)` sets `foreign_keys=ON` and WAL; `writeTransaction`
       commits on success and rolls back + rethrows when the body throws.
-- [ ] `git mv` the three trees.
-- [ ] Retarget `openStore`/`writeTransaction` onto `SqliteConnection`, keeping `BEGIN IMMEDIATE`, the
+- [x] `git mv` the three trees.
+- [x] Retarget `openStore`/`writeTransaction` onto `SqliteConnection`, keeping `BEGIN IMMEDIATE`, the
       short transaction and `withRetry` as a guard whose comment now says it is no longer load-bearing
       (single in-process writer).
-- [ ] Replace the `DatabaseSync` type imports with the port's type; fix `TAXONOMY_PATH` to `../../seed/`.
-- [ ] Run `npm test -w core` — the v1 store suites pass against the node adapter.
-- [ ] Re-scope or delete the two-process tests (`harness.ts` spawns a child; `writers.test.ts`) — a
+- [x] Replace the `DatabaseSync` type imports with the port's type; fix `TAXONOMY_PATH` to `../../seed/`.
+- [x] Run `npm test -w core` — the v1 store suites pass against the node adapter.
+- [x] Re-scope or delete the two-process tests (`harness.ts` spawns a child; `writers.test.ts`) — a
       second process is not the model; single-writer assertions replace them.
 
 ### T3 · Move the vault use-cases off HTTP
@@ -126,54 +140,66 @@ domain-seed,mechanism}.ts` and their tests; re-scope `core/test/{harness.ts,writ
 and `export.ts` → `core/src/export/export.ts`, a **verbatim relocation L4 owns**); `metrics*.ts` move as
 local queries.
 
-- [ ] Write the failing test: a use-case returns a **typed result** where the v1 handler returned a
+- [x] Write the failing test: a use-case returns a **typed result** where the v1 handler returned a
       status code.
-- [ ] Strip the HTTP wrapping, the bearer auth and the error envelope; keep the use-case bodies.
-- [ ] Run the moved suites green.
+- [x] Strip the HTTP wrapping, the bearer auth and the error envelope; keep the use-case bodies.
+- [x] Run the moved suites green.
 
 ### T4 · Move the domain and re-home the types
 
 **Files:** `git mv client/src/api/types.ts` → `core/src/types.ts`; `git mv client/src/domain/*` →
 `core/src/domain/*`.
 
-- [ ] `git mv` both; re-point the 16 `../api/types.ts` specifiers at `../types.js`.
-- [ ] Fix the two **runtime** imports (`onboarding.ts` → `createIdea`; `decision.test.ts` → `ApiError`).
-- [ ] Re-point `types.ts`'s `§` citations at ARCHITECTURE v2 §2/§6.
-- [ ] **Do not port `domain/deck-interaction.test.ts`** (node-only source-text guard; its intent is L2-5).
-- [ ] Run the domain suites green.
+- [x] `git mv` both; re-point the 16 `../api/types.ts` specifiers at `../types.js`.
+- [x] Fix the two **runtime** imports (`onboarding.ts` → `createIdea`; `decision.test.ts` → `ApiError`).
+- [x] Re-point `types.ts`'s `§` citations at ARCHITECTURE v2 §2/§6.
+- [x] **Do not port `domain/deck-interaction.test.ts`** (node-only source-text guard; its intent is L2-5).
+- [x] Run the domain suites green.
 
 ### T5 · The taxonomy has one source
 
 **Files:** `core/src/store/domain-seed.ts`, `core/src/domain/taxonomy.ts` (+ its test), the
 `o1-taxonomy` job's paths.
 
-- [ ] Write the failing test: `core/domain/taxonomy.ts` resolves the picker vocabulary from the **seeded
+- [x] Write the failing test: `core/domain/taxonomy.ts` resolves the picker vocabulary from the **seeded
       `domain_cluster` rows**, not an inline list.
-- [ ] Drop the mirror; keep the types and the curated ordering. Keep `o1_check.py` + `schema.test.ts`
+- [x] Drop the mirror; keep the types and the curated ordering. Keep `o1_check.py` + `schema.test.ts`
       guarding the YAML.
-- [ ] Update the **required** `o1-taxonomy` job's paths (`store/seed/…` → `core/seed/…`,
+- [x] Update the **required** `o1-taxonomy` job's paths (`store/seed/…` → `core/seed/…`,
       `store/test/o1_check.py` → `core/test/o1_check.py`).
-- [ ] Run the migration suite (`0003`/`0004` rebuilds, `PRAGMA foreign_keys`, `ux_spark_live`,
+- [x] Run the migration suite (`0003`/`0004` rebuilds, `PRAGMA foreign_keys`, `ux_spark_live`,
       `ON CONFLICT`, WAL) against `node:sqlite`; record the emulator/OPFS row as a **manual sign-off
       item** (invariant 8/9).
 
 ### T6 · Retire the server packages and fix the workspace
 
-- [ ] `git rm -r api/ store/ client/ deploy/ .github/workflows/deploy.yml` — **not `worker/`**.
-- [ ] `workspaces: ["app","core"]`; fix `tsconfig` references, `.prettierignore` (`core/seed/`),
+- [x] `git rm -r api/ store/ client/ deploy/ .github/workflows/deploy.yml` — **not `worker/`**.
+- [x] `workspaces: ["app","core"]`; fix `tsconfig` references, `.prettierignore` (`core/seed/`),
       `.env.example` (drop the deploy/API/bearer values).
-- [ ] Park `scripts/w9-calibrate.ts` + `scripts/w9-c5-fixture.ts` from the root project, with the
+- [x] Park `scripts/w9-calibrate.ts` + `scripts/w9-c5-fixture.ts` from the root project, with the
       comment naming L3 (see *Corrections*).
-- [ ] `npm run lint && npm run format && npm run typecheck && npm test && npm run build` — green.
-- [ ] Confirm all three required jobs still report (this PR touches `.github/`).
+- [x] `npm run lint && npm run format && npm run typecheck && npm test && npm run build` — green.
+- [x] Confirm all three required jobs still report (this PR touches `.github/`).
 
-### T7 · The A1 boundary guard (new)
+### T7 · The A1 guard — the structural edge **and** the fault injection (new + carried)
 
-**Files:** `core/test/boundary-a1.test.ts`.
+**Files:** `core/test/boundary-a1.test.ts`, `core/test/nfr-a1.test.ts`.
 
-- [ ] Write the guard: no file under `core/src/vault/**` imports `core/src/provider/**` or
-      `core/src/engine/**`, with a **non-vacuity** assertion (the vault dir holds ≥1 module).
-- [ ] **See it fail** with a planted import; restore; see it pass.
+ARCHITECTURE §4 names **both** halves of NFR-A1, and the carry-over table (§13) says the A1
+fault-injection *keeps its shape*. So T7 is two files, not one: the new **structural** guard (§13.4)
+and the in-process re-home of v1's `api/src/nfr-a1.test.ts`, whose lane this is (§11 NFRs → L1 (A1)).
+
+- [x] Write the structural guard: no non-test module under `core/src/vault/**` imports
+      `core/src/provider/**` or `core/src/engine/**`, with the walk and the boundary rule each
+      **non-vacuous** (the vault dir holds ≥12 modules; the rule refuses a provider/engine reach and
+      accepts the vault's own `./engine-state.js`).
+- [x] **See it fail** with a planted import (`core/src/vault/ideas.ts` → `../provider/index.js`),
+      restore; see it pass — and the same pipeline fails on a synthetic planted module, so the
+      mutation is reproducible without editing a real file.
+- [x] Re-home the **fault injection** in process: capture · list · detail · iterate · fork · delete,
+      each passing while `engineState` reads **E4**, with the discriminating **E1** fixture and the
+      non-vacuity vault (v1's claims 1–3, HTTP swapped for in-process calls; the injection itself is
+      L3's, attributed not restated).
 
 **Deliverable:** `core/` builds and its store + vault + domain suites are green in CI; the server
 packages are gone; the boundary guards bite.

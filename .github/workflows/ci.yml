@@ -21,14 +21,14 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      # The seed resolves from `src/` under tsx and from `dist/` under the built `main` the API
-      # imports — a path that only works under tsx passes every test and dies at deploy. Prove it.
-      - name: the built store still resolves its seed file
+      # The seed resolves from `src/` under tsx and from `dist/` under the built entry the app
+      # imports — a path that only works under tsx passes every test and dies in the bundle. Prove it.
+      - name: the built core still resolves its seed file
         run: |
           node --input-type=module -e "
             const { readFileSync } = await import('node:fs');
-            const { TAXONOMY_PATH } = await import('@astrolab/store');
-            console.log('built store reads', TAXONOMY_PATH, readFileSync(TAXONOMY_PATH).length, 'bytes');
+            const { TAXONOMY_PATH } = await import('@astrolab/core');
+            console.log('built core reads', TAXONOMY_PATH, readFileSync(TAXONOMY_PATH).length, 'bytes');
           "
 
   o1-taxonomy:
