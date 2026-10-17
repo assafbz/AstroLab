@@ -102,10 +102,12 @@ are binding here and are cited by number below).
 4. **`app/src/engine/runScheduler.ts` and the two key adapters need `app/`** (L2, in flight), so the
    lane runs in two halves on one branch: **T1–T4 are core-only and land first; T5 is held until L2's
    scaffold is on `main`.** Flagged in the lane's pickup, not guessed.
-5. **The E4 cause vocabulary lives in `core/src/types.ts`, not in the provider.** NFR-A1 forbids
-   `vault → provider`, and `vault/engine-state.ts` is what reports E4 — so a provider-owned enum
-   could not be read there. The **tag** is shared vocabulary; the provider *classifies* an error into
-   it, and the vault *parses* it back out of the run's `error` column.
+5. **The E4 cause vocabulary lives in `core/src/failure.ts`, not in the provider — and not in
+   `types.ts` either.** NFR-A1 forbids `vault → provider`, and `vault/engine-state.ts` is what reports
+   E4, so a provider-owned enum could not be read there. The **tag** is shared vocabulary; the provider
+   *classifies* an error into it, and the vault *parses* it back out of the run's `error` column.
+   *(Built as its own module rather than inside `types.ts`: that file is the contract's shapes, and this
+   is behaviour — the tag writer, the tag reader and the cause list want their own round-trip test.)*
 
 ## Tasks
 
@@ -180,6 +182,14 @@ core/src/engine/queue.ts` · `git mv worker/src/boot.ts core/src/boot.ts` (rewri
       (web-unsupported, invariant 10) and document the 1 MiB sync cap at the export seam.
 
 **Deliverable:** the boundary is key-driven and every provider failure lands in a named E4 arm.
+
+**Built (core half, `7bf19bd` → this branch):** the `KeyStore` port + `readKey` + `NoKeyError` with the
+hygiene guard (`key.test.ts`, 6/6 planted leaks bite); the transport reads the key **per request** and
+stamps the surface (`native`/`web`) on a network failure; `core/src/failure.ts` owns the cause
+vocabulary and its round-trip test; `provider/failure.ts` owns the one status→cause table;
+`provider/web.ts` is the browser reach table; the run lifecycle tags a failed row and the vault reports
+the cause in E4. Residuals named in the PR: the guard's app leg activates with L2, and the two
+device-only rows (emulator parity, web-OPFS export paging) stay manual sign-off.
 
 ### T5 · The app half — HELD until L2's scaffold is on `main`
 
