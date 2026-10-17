@@ -1,5 +1,11 @@
 # API Contract: Astrolab (MVP v1.0)
 
+> **⚠ RETIRED as an HTTP contract (2026-10-17)** — by `docs/ARCHITECTURE.md` v2 §6 and
+> `docs/adr/0006-local-only-expo-app.md`. The local-only rebuild has **no server**: every endpoint below becomes
+> an **in-process `core/vault` call**. The *semantics* (idempotency, undo arms, error distinctions, invariants)
+> survive in `ARCHITECTURE.md` §6 and the code; the transport, the bearer auth, the status codes and the SSE
+> stream do not. **Kept as history — do not build against it.**
+
 > **Status:** Frozen for the MVP build — issue **F4** (frozen v6 issue set, 2026-10-13).
 > **Scope:** The request/response contract for every endpoint in `docs/ARCHITECTURE.md` §6, plus
 > `/healthz`. This is the interface the client lane builds against, and the shape the API skeleton

@@ -1,5 +1,9 @@
 # DEPLOY — the host layer
 
+> **⚠ RETIRED (2026-10-17).** The server tier and the AWS deploy were cancelled by the owner's call (`d178c664`);
+> the local-only rebuild (`docs/ARCHITECTURE.md` v2; ADR-0006) has **no host to deploy to**. Nothing was ever
+> deployed and no host was touched. **Kept as history.**
+
 How AstroLab runs outside a developer's machine: one host, the same three units the architecture names
 (`docs/ARCHITECTURE.md` §1) — the API, the worker, and the SQLite file behind them — plus the static
 client, served on the same origin as `/v1`.

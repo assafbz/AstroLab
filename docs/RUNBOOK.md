@@ -1,5 +1,9 @@
 # RUNBOOK — Backup · Restore · Export
 
+> **⚠ RETIRED (2026-10-17).** These are **host-operator** procedures for a server tier that no longer exists. The
+> rebuild's durability path is **export/import from the device** — `docs/ARCHITECTURE.md` v2 §8, ADR-0006. **Kept
+> as history.**
+
 The vault's durability and portability procedures (`docs/PRD.md` NFR-D1; `docs/ARCHITECTURE.md` §8).
 Operator-facing: what to run, what it guarantees, and — in the last two sections — what it does not.
 

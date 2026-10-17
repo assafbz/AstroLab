@@ -1,493 +1,415 @@
-# Architecture: Astrolab (MVP v1.0)
+# Architecture: Astrolab (MVP) — the local-only rebuild
 
-> **Status:** Merged on `main`.
-> **Scope:** The technical design the PRD defers to. `docs/PRD.md` §4 names **no** technologies and
-> re-homes every one here: *"a separate security/architecture document and ADRs."* This is it.
-> **Grounded in the merged specs:** `docs/PRD.md` v2.0.0 · `docs/VISION.md` · `docs/FLOW.md` r3.3 ·
-> `DESIGN.md` (Nightfall) · `README.md`.
+> **Status:** **v2** — the local-only rebuild (2026-10-17). **Supersedes v1's server design** (`docs/ARCHITECTURE.md`
+> on `main` before this revision: one host, an API service, a worker process, SQLite-on-host, an AWS deploy).
+> The product intent is unchanged; the deployment shape is gone.
+> **Scope:** the technical design the PRD defers to. `docs/PRD.md` §4 names **no** technologies and re-homes every
+> one here. This is it.
+> **Grounded in the merged specs:** `docs/PRD.md` v2.0.0 · `docs/VISION.md` · `docs/FLOW.md` r3.8 ·
+> `DESIGN.md` (Nightfall) · `README.md` · `docs/SCHEMA.md` · `docs/adr/`.
+> **The increment that produced it:** the owner's in-channel call (`d178c664`), 2026-10-17 — *store app · all data
+> on device · AI kept on the user's own API key · server tier + AWS deploy cancelled · rebuild, not reuse* — and
+> David's re-triage (`0a14a749`).
 > **Vocabulary:** the engine is **the Spark**; its outputs are **sparks**. *(Never "collision.")*
 
 ---
 
 ## 0. How to read this document
 
-This document **does not add product opinion**. Every requirement it satisfies already exists in the PRD,
-VISION, or FLOW; every technology choice here is a free variable the PRD deliberately left open (§4). Where a
-choice is load-bearing it is recorded as an **ADR** in `docs/adr/` and summarised in §10.
+This document **does not add product opinion**. Every requirement it satisfies already exists in the PRD, VISION,
+or FLOW; every technology choice here is a free variable those documents deliberately left open. Where a choice is
+load-bearing it is recorded as an **ADR** in `docs/adr/` and summarised in §10. What survives from v1, and what is
+deleted, is **§13's carry-over table** — the deliverable of this revision.
 
-**Two hard constraints inherited from the docs, not reinterpreted here:**
+**Two hard constraints inherited from the docs, not reinterpreted here** — both unchanged by the rebuild:
 
 - **No vector database / ANN index in the MVP** (`PRD.md` §3.3 item 7). Candidates are compared directly at
   personal vault scale.
-- **No user-facing similarity or retrieval surface** (`VISION.md` §8 item 4; `DESIGN.md` §7). Nothing the user
-  sees scores, ranks, or explains the similarity of two ideas. Any closeness machinery is *selection-
-  internal* (`PRD.md` §3.3 item 2).
+- **No user-facing similarity or retrieval surface** (`VISION.md` §8 item 4; `DESIGN.md` §7). Nothing the user sees
+  scores, ranks, or explains the similarity of two ideas. Any closeness machinery is *selection-internal*
+  (`PRD.md` §3.3 item 2).
 
-**MVP posture:** single-user, single-tenant, private. Everything below is sized to one creator's vault
-(hundreds of ideas, not millions), and to shipping the creative loop — *Capture → Spark → Fork* — not
-*Build* (`PRD.md` §1.2).
+**MVP posture.** Single-user, single-tenant, private, **and now single-device**: everything below is sized to one
+creator's vault (hundreds of ideas, not millions) running **inside one mobile app**, and to shipping the creative
+loop — *Capture → Spark → Fork* — not *Build* (`PRD.md` §1.2).
 
 ---
 
 ## 1. System context & components
 
 ```
-                       ┌─────────────────────────────────────────────┐
-                       │                 Client (PWA)                │
-                       │  React + TS · mobile-first · Nightfall      │
-                       │  deck / vault / capture / lineage (S0–S6)   │
-                       └───────────────┬─────────────────────────────┘
-                                       │  HTTPS JSON  (bearer token)
-                       ┌───────────────▼─────────────────────────────┐
-                       │              API service (Node/TS)          │
-                       │  vault CRUD · decisions · undo · export     │
-                       │  spark read model · run status (E0–E4)      │
-                       └───────┬───────────────────────┬─────────────┘
-                               │ SQL (WAL, 2 writers)  │ enqueue run
-                       ┌───────▼───────────┐   ┌───────▼─────────────┐
-                       │  Store (SQLite)   │   │  Spark worker (TS)  │
-                       │  ideas · lineage  │◄──┤  in-process queue   │
-                       │  provenance ·     │   │  2-stage engine     │
-                       │  sparks · decis.  │   └───────┬─────────────┘
-                       └───────────────────┘           │ HTTPS (only on
-                                                       │ a run, only the
-                                       ┌───────────────▼─────────────┐
-                                       │  AI-provider boundary       │
-                                       │  interface + adapter (§5)   │
-                                       └─────────────────────────────┘
+   ┌──────────────────────────────────────────────────────────────────────────┐
+   │                        The app — one device, one process                  │
+   │                                                                          │
+   │   ┌────────────────────────────┐        ┌──────────────────────────────┐  │
+   │   │  app/  (Expo · React Native)│        │  core/  (portable TS)        │  │
+   │   │  S0–S6 screens · deck       │ calls  │  domain/   rules (pure)      │  │
+   │   │  gestures · nav · tokens    │───────►│  vault/    use-cases         │  │
+   │   │  export/import UI           │        │  store/    12-table SQLite   │  │
+   │   │  secure store (key)         │        │  engine/   the Spark          │  │
+   │   └───────────┬────────────────┘        │  provider/ the ONE AI boundary│  │
+   │               │ injects                 └───────┬──────────┬───────────┘  │
+   │               │ SqliteConnection (port)         │ SQL      │ HTTPS (only  │
+   │   ┌───────────▼────────────┐        ┌────────────▼──────┐   │ on a run,   │
+   │   │ expo-sqlite (device)   │        │ SQLite file       │   │ only the    │
+   │   │ node:sqlite (tests/CI) │        │ (app sandbox)     │   │ run payload)│
+   │   └────────────────────────┘        └───────────────────┘   │             │
+   │                                                             │             │
+   └─────────────────────────────────────────────────────────────┼─────────────┘
+                                                                 ▼
+                                          ┌───────────────────────────────────┐
+                                          │  AI provider (OpenRouter)         │
+                                          │  user's own key · provider.zdr=true│
+                                          └───────────────────────────────────┘
 ```
+
+**One process, one writer, no host.** The app owns the vault, the engine, and the provider call. There is no API
+server, no worker process, no message broker, and no remote store. The only egress is the AI call, and only while
+a run executes (§3, §5).
 
 | Component | Responsibility | Must NOT do |
 | :--- | :--- | :--- |
-| **Client (PWA)** | Render S0–S6 (`FLOW.md` §2.1); capture gestures; issue decisions with a `decision_id`; show engine state E0–E4. | Compute scores; hold the only copy of an idea; reach the AI provider directly. |
-| **API service** | The vault: create/read/iterate/fork/delete, decisions, undo, export, vault summary, spark read-model, run status. | Call AI on any vault path. Block a vault request on a spark run. |
-| **Spark worker** | Run the two-stage engine (§3) asynchronously; extract mechanisms; write spark candidates and suppressions. | Serve user requests; mutate idea content; run inline in the request path. |
-| **Store (SQLite)** | One durable home for ideas, versions, lineage edges, provenance edges, sparks, decisions, suppressions, config. | Take a write without WAL + busy-timeout + retry (§9). |
-| **AI-provider boundary** | One interface the worker depends on; a swappable adapter behind it. | See idea data outside a requested run; retain or train on it. |
+| **`app/`** (Expo · React Native) | Render S0–S6 (`FLOW.md` §2.1); capture gestures (swipe **and** 44px buttons); hold the bottom nav; render engine state E0–E4; host the export/import UI; hold the API key in the platform secure store. | Compute scores; reach the provider directly (it calls the engine, never the adapter); persist the key anywhere but the secure store. |
+| **`core/domain/`** | Pure rules — capture validation, completion, lineage, spread gate, onboarding, deck state, run trigger. No IO, no framework. | Import `react`, `expo-*`, or the provider boundary. |
+| **`core/vault/`** | The use-cases: create / read / iterate / fork / delete, decisions, undo, vault summary, spark read-model, export. | Call AI on any vault path; block a vault request on a spark run. |
+| **`core/store/`** | The 12-table SQLite schema, migrations, and the writers. Opened through the `SqliteConnection` port. | Take a write outside a transaction; assume a second process. |
+| **`core/engine/`** | Run the two-stage engine (§3) asynchronously; extract mechanisms; write candidates and suppressions. | Serve user requests; mutate idea content; run inline in a vault request. |
+| **`core/provider/`** | The one AI boundary (§5): the interface, the OpenRouter adapter, the prompts, the schemas. | See idea data outside a requested run; retain or train on it. |
 
-**Deployment shape (MVP):** one host, three units — the **API service**, the **worker**, and the **SQLite
-file** — plus an **outbound-only** dependency on the AI provider. The API and worker are two processes of one
-codebase; the API owns vault-table writes and the worker owns spark-table writes, but **both open the same
-SQLite file**, so writes are *serialized by SQLite's file lock*, not by a single process. One named
-exception to that split: a candidate-affecting vault mutation also **writes `spark_run`** (§4) inside the
-mutation's own transaction — it enqueues its run and drops the superseded pending one — so the revision
-stamp and its run commit together or not at all. The store runs in **WAL mode** with a `busy_timeout` and
-bounded retry (§9, ADR-0001); every write is a short transaction. Stateless service, state on disk and in
-the provider — no message broker (ADR-0004).
+**The store connection is a port, and that is what keeps the suite.** `core/store` opens SQLite through a
+`SqliteConnection` port with **two** adapters: `expo-sqlite` (the device) and `node:sqlite` (tests and CI). The
+v1 `store`/`api` vitest suites run against the `node:sqlite` adapter **unchanged in substance**, which is what
+makes L1 a *move*, not a rewrite (§13, row `store/src/**`).
+
+**What retired** (the v1 deployment shape — detail and evidence in §13):
+
+| Retired | Why |
+| :--- | :--- |
+| `api/` (HTTP service, bearer auth, error envelope, SSE) | no server, no transport; the route handlers become `core/vault/` calls (§6) |
+| `worker/` (a process with an in-process queue) | the engine runs in the app process (§4); it is a module now, not a service |
+| `store/`-on-host, `deploy/`, the CI deploy job, AWS | no host, no deploy |
+| the two-writer concurrency model (WAL + `busy_timeout` + retry-for-`SQLITE_BUSY`) | one process writes the file; ADR-0001 is **amended**, not superseded (§10) |
+| `client/` (Vite PWA) | the client is re-authored as Expo/RN; only its portable half survives, into `core/` (§13) |
 
 ---
 
 ## 2. Data model (concrete)
 
-SQLite (ADR-0001). Field names are the contract; types are indicative.
+**Unchanged in substance.** SQLite, the same **twelve tables** of v1 §2.1–§2.4 plus `idea_mechanism`
+(`docs/SCHEMA.md` is the schema of record and tracks them: `0001_init` … `0006_idea_new_domain`). Field names
+remain the contract; `docs/SCHEMA.md` wins if it and this section disagree. The rebuild changes **where the file
+lives and how it is opened**, not its shape:
 
-### 2.1 Idea and its history
+- **One writer.** v1's file had two writer processes (the API owned vault tables, the worker owned spark tables)
+  and leant on WAL + `busy_timeout` + retry to make that workable. The app is one process, so the writers are
+  serialized by construction. The `SqliteConnection` port keeps `foreign_keys = ON` and a short-transaction write
+  shape; the retry-with-backoff stays only as a harmless guard, and WAL is kept as a normal on-device setting
+  (§9). *This is the whole of ADR-0001's amendment.*
+- **The file lives in the app sandbox** — the platform's protected data directory — and is **excluded from
+  platform backup** (§8). It is the vault's only copy.
+- **Delete semantics (T26) are unchanged**: the row's owner cascades (`idea_version`, `idea_mechanism`,
+  `provenance_edge`'s derived side), historical refs dangle (`lineage_parent_id`, the provenance *source* side, a
+  spark's pair, `decision.result_idea_id`), and a live `OFFERED` spark named by the deleted idea is **retracted**.
+- **The taxonomy** (`domain_cluster` + `domain_map`, §2.4 of v1) still ships as a curated table, seeded from
+  `store/seed/domain-taxonomy.yaml`. Under the rebuild the seed and its consumer live in the **same** package
+  (`core/`), which is what finally lets the S0 picker's mirror stop being a *mirror* (§13, the taxonomy rows).
 
-```
-idea(
-  id                 TEXT PK,          -- opaque id (uuid)
-  hypothesis         TEXT NOT NULL,    -- ≤ 280 chars (PRD §2)
-  problem            TEXT NOT NULL,
-  monetization       TEXT NOT NULL,
-  domain_tags        TEXT NOT NULL,    -- JSON array; ≥ 1 (PRD §2: no domain ⇒ no spark)
-  lineage_kind       TEXT NOT NULL,    -- ROOT | FORK (iteration is a version, not a lineage kind)
-  lineage_parent_id  TEXT NULL,        -- NOT a foreign key (T26): set only for FORK (single parent)
-  mutation_delta     TEXT NULL,        -- the fork's mutation delta (V4 #15, `0005`); set only for a FORK
-  new_domain         INTEGER NULL,     -- has this idea widened the vault? (EV1 #43, `0006`); a recorded
-                                       -- 1 is durable; 1 | 0 | NULL = not recorded (§4.13's ACCEPT, predating rows)
-  status             TEXT NOT NULL,    -- ACTIVE | NEEDS_COMPLETION
-  visibility         TEXT NOT NULL,    -- PRIVATE (MVP only)
-  current_version    INTEGER NOT NULL,
-  created_at, updated_at  TEXT
-)
-
-idea_version(                          -- iteration history, same node (PRD §3.2 item 1)
-  idea_id  TEXT FK ON DELETE CASCADE,  -- the idea's own rows: meaningless without it
-  version INTEGER, hypothesis, problem, monetization, domain_tags, created_at,
-  PRIMARY KEY(idea_id, version)
-)
-```
-
-- **Iteration** writes a new `idea_version` row and bumps `idea.current_version`; it creates **no** lineage
-  edge (`FLOW.md` §2.3, L1).
-- **Fork** inserts a new `idea` with `lineage_kind=FORK` and `lineage_parent_id` = the source. **Lineage is
-  single-parent, forever** (`PRD.md` §2, §3.2 item 2).
-- `NEEDS_COMPLETION`: a spark-derived idea whose mandatory fields could not be fully prefilled (`FLOW.md`
-  §4.3, T27). It is **excluded from spark candidate selection** until complete (ADR-0002).
-
-### 2.2 Provenance — explicitly **not** lineage
-
-```
-provenance_edge(
-  derived_idea_id TEXT FK idea(id) ON DELETE CASCADE,
-                                       -- the accepted / inspired idea (a ROOT). The edge belongs to it,
-                                       -- so it goes when the idea does
-  source_idea_id  TEXT NOT NULL,       -- one of the two source ideas; deliberately NOT a foreign key —
-                                       -- deleting a source leaves this ref dangling (T26)
-  spark_id        TEXT NOT NULL,       -- the spark it came from
-  PRIMARY KEY(derived_idea_id, source_idea_id, spark_id)
-)
-```
-
-`PRD.md` §2 adds **Provenance** as a field distinct from Lineage; `FLOW.md` §2.3 makes the two relations
-concrete. An accepted spark is a **ROOT** (`lineage_parent_id IS NULL`) that carries 0..N provenance edges.
-Provenance is muted metadata on Idea Detail; it is **never** traversed as ancestry, and never surfaced as a
-similarity signal. This is what closes decision **D1** (no two-parent fork). *Invariant:* **an idea that
-bears provenance edges has no lineage parent** — `provenance-bearing ⇒ lineage_parent_id IS NULL`. Provenance
-and lineage are mutually exclusive on a node; this is the rule that makes D1 hold for *every* idea, not only a
-same-spark one.
-
-### 2.3 Sparks, runs, decisions, suppression, mechanism cache
-
-```
-spark(
-  id                  TEXT PK,
-  idea_a_id, idea_b_id TEXT,           -- ordered ids; NOT foreign keys — a spark's pair is history,
-                                       -- so a resolved spark keeps them when an idea is deleted
-  pair_key            TEXT,            -- canonical unordered key: min(a,b) || '|' || max(a,b)
-  direction           TEXT,            -- the proposed idea (headline)
-  claim               TEXT,            -- one–two lines, why it matters
-  what_it_takes       TEXT,            -- expanded view
-  first_step          TEXT,
-  mechanism           TEXT,            -- extracted shared mechanism (internal; never surfaced)
-  domain_distance     REAL,            -- internal score (§3)
-  structural_alignment REAL,           -- internal score (§3)
-  status              TEXT,            -- OFFERED | RESOLVED-ACCEPTED | RESOLVED-DISMISSED | RESOLVED-INSPIRED
-  created_at          TEXT
-)
--- partial unique index: at most one live offer per pair (§3.5)
---   CREATE UNIQUE INDEX ux_spark_live ON spark(pair_key) WHERE status = 'OFFERED';
-
-idea_mechanism(                        -- per-idea descriptor cache (§3.3 step 1; W3)
-  idea_id      TEXT PK FK idea(id) ON DELETE CASCADE,  -- one descriptor per idea; the idea's own row
-  descriptor   TEXT,                   -- JSON {verb, object_class, constraint, transferable_structure}
-  source_hash  TEXT,                   -- hash of the idea text the descriptor was extracted from
-  extracted_at TEXT
-)
-
-decision(                              -- one row per RESOLVING action (FLOW.md §4.3)
-  id            TEXT PK,               -- === the client-supplied decision_id (FLOW.md §2.2)
-  spark_id      TEXT FK spark(id),
-  kind          TEXT,                  -- ACCEPT | DISMISS | INSPIRED
-  result_idea_id TEXT NULL,            -- the root created by ACCEPT or a committed seeded save;
-                                       -- NOT a foreign key — it dangles if that idea is deleted later
-                                       -- (FLOW.md §5.4's permanence point)
-  decided_at    TEXT
-)
--- idempotency key IS the primary key: (spark_id, decision_id) is unique because `id` is
--- globally unique (== decision_id). A repeated insert is a no-op returning the first row.
-
-spark_run(id TEXT PK, vault_revision INTEGER, status TEXT, started_at, finished_at, error TEXT)
-                                         -- PENDING|RUNNING|DONE|FAILED
-suppressed_pair(pair_key TEXT PK, reason TEXT, updated_at TEXT)          -- CLICHE|NOISE|DISMISSED
-vault_meta(revision INTEGER)            -- monotonic; bumped on every vault mutation (§4)
-config(key TEXT PK, value TEXT)                                          -- thresholds (§3.4)
-```
-
-**Delete semantics (T26).** The references above split one way, and it is the schema that says so rather
-than each call site: **the row's owner cascades** — `idea_version`, `idea_mechanism`, and `provenance_edge`'s
-*derived* side go with the idea — while **historical refs dangle** — `lineage_parent_id`, the provenance
-*source* side, a spark's pair, and `decision.result_idea_id` survive it. One case is neither: a **live
-`OFFERED` spark** named by the deleted idea is **retracted**, because a live offer is a promise made from the
-vault's current state and the state changed; a *resolved* spark is history and keeps its dangling pair
-(`docs/API.md` §4.8).
-
-**Status vocabulary** is `FLOW.md` §3's verbatim: a spark is `OFFERED`, then terminal `RESOLVED-ACCEPTED` /
-`RESOLVED-DISMISSED` / `RESOLVED-INSPIRED` (H). There is no separate `ACCEPTED`/`INSPIRED` spelling.
-
-- **Mechanism cache** (`idea_mechanism`): one descriptor per idea, keyed by `idea_id`; `source_hash` is a
-  hash of the idea's text, so extraction is re-run only when the text changes (§3.3 step 1, W3). The
-  descriptor and its cache are internal and **never surfaced**.
-
-- **`decision_id` idempotency** (`FLOW.md` §2.2, §4.3): the client generates `decision_id`, **persists and
-  reuses it on retry**. The primary key on `id` (the client-supplied `decision_id`) plus an upsert makes a
-  raced swipe+tap or a retry a **single** decision — the second write is a no-op returning the first result.
-  *This is the mechanism that makes "commits exactly once" true.*
-- **Provenance write on ACCEPT / committed INSPIRE** is transactional with the `idea` insert and the `spark`
-  status change (one SQLite transaction).
-
-### 2.4 Domain vocabulary (for distance)
-
-```
-domain_cluster(id TEXT PK, name TEXT, adjacency TEXT)   -- JSON: {other_cluster_id: hops}
-domain_map(tag TEXT PK, cluster_id TEXT)                -- free-text tag → cluster
-```
-
-A small shipped taxonomy (§3.2). Not an embedding store; not queryable by similarity.
-
-**Why SQLite:** single user, one file, relational edges (lineage, provenance, idempotency constraint),
-trivial file-level backup and export (NFR-D1), and **no vector index** (PRD §3.3 item 7). Postgres is the
-documented scale-out path once multi-user ships (`PRD.md` §6) — ADR-0001.
+The rest of v1 §2 — `idea` and its history, the lineage/provenance split and the **D1 invariant**
+(`provenance-bearing ⇒ lineage_parent_id IS NULL`), sparks/runs/decisions/suppression, the
+`ux_spark_live` partial unique index, the `decision_id` idempotency key — **carries forward verbatim.** Read v1
+§2 or `docs/SCHEMA.md` for the DDL.
 
 ---
 
 ## 3. Spark engine
 
-The engine turns a vault into offered sparks. It is **selection-internal**: it computes two axes, uses them to
-*choose*, and never surfaces either (`PRD.md` §3.3 items 2–4). It runs entirely in the **worker**, never in the
-API path (NFR-A1/P1).
+**Unchanged in substance** (ADR-0002 **stands**). The engine turns a vault into offered sparks. It is
+**selection-internal**: it computes two axes, uses them to *choose*, and never surfaces either (`PRD.md` §3.3
+items 2–4). What changes is **where it runs** and **whose meter it runs on**.
 
 ### 3.1 Two-stage, ANN-free, O(N + gated) AI calls
 
 | Stage | Where | AI? | Cost |
 | :--- | :--- | :-- | :--- |
-| **Extract** | once per idea, cached | **yes** (1 call) | O(N) calls, re-run only when an idea's text changes |
+| **Extract** | once per idea, cached in `idea_mechanism` | **yes** (1 call) | O(N) calls, re-run only when an idea's text changes |
 | **Gate** | local, deterministic | no | O(N²) comparisons — fine at personal scale |
 | **Adjudicate** | once per **gated** pair | **yes** (1 call) | O(pairs that pass the gate) |
 
-This is the key sizing decision (ADR-0002): AI cost is **O(N + gated)**, not O(N²). The O(N²) work is a
-cheap local filter, which is exactly what "compares pairs directly" (`PRD.md` §3.3 item 7) permits. "Gated" is the
-set that clears both thresholds — bounded well below N² by the gate, and the quantity the thresholds tune.
+AI cost is **O(N + gated)**, not O(N²); the O(N²) work is a cheap local filter (`PRD.md` §3.3 item 7). "Gated" is
+the set that clears both thresholds.
 
-### 3.2 Axis 1 — domain distance (deterministic, worker-only)
+### 3.2 Axis 1 — domain distance (deterministic, engine-only)
 
-**Capture never calls the boundary (A).** `POST /v1/ideas` stores each domain tag **raw**. All clustering
-happens in the **worker**, during a run:
+Unchanged from v1 §3.2: tags are stored **raw** on capture; clustering happens **in the engine, during a run**
+(map deterministically from the shipped `domain_map`; a new tag is **provisional** — its own cluster — and is
+normalised to a cluster by an AI call **once per distinct tag**, written back to `domain_map`); distance =
+taxonomy hops, `0` for same-cluster.
 
-1. **Map (deterministic first):** each tag present in the shipped `domain_map` resolves to a **cluster** with
-   no AI. A tag not in the map is **provisional** — it is its own cluster until the worker normalises it.
-2. **Normalise (worker, AI, cached):** an unmapped tag is normalised to the nearest cluster by an AI call and
-   written back to `domain_map`, so it is paid for **once per distinct tag**, never per pair and never on the
-   vault path.
-3. **Distance** = **taxonomy hops** between the two ideas' clusters (`domain_cluster.adjacency`); `0` for
-   same-cluster. Two ideas whose every tag resolves to one cluster are **same-domain** → cliché
-   (`PRD.md` §3.3 item 3).
-
-**The `x/3` summary stays AI-free.** `GET /v1/vault/summary` returns **two** deterministic counts from
-`domain_map` alone: **resolved** clusters (tags present in the shipped seed map) and **provisional** clusters
-(unmapped tags, each its own). It never blocks on the provider, and the worker's later normalisation can only
-*collapse* provisional tags into a cluster — never split one — so **`resolved` is monotone non-decreasing**
-(A).
-
-**The spread gate and `x/3` read `resolved` only (R1).** An unmapped tag is **provisional** and never opens
-the gate: two raw tags that both normalise to one cluster (`#fintech` + `#banking`) would otherwise read as
-"2 domains", open the S0→S1 exit, then collapse — onboarding the user straight into an **E0 Cold** vault, the
-exact class `FLOW.md` **H2** fixed. Gating on `resolved` makes the gate and the post-run `E0` count the
-**same** quantity, so a pass cannot be false.
-
-**S0 domain input is drawn from the shipped taxonomy (R1, option a), plus an `Other → free text` escape
-(owner-approved, 2026-10-13).** Onboarding capture picks each mapped domain from the shipped cluster taxonomy
-(a picker), so every **picked** S0 tag is **resolved** deterministically and the gate is reachable with **no run
-and no AI**; a typed `Other` lane is **provisional** — its own cluster, and it **never opens the gate** —
-normalised by the worker once, on the first run. Free-text domain input remains available from **S3 onward**,
-where a provisional cluster is harmless — the vault is already warm and has run once. This changes the S0 input
-contract, so it is logged as `FLOW.md` spec touches in §12 (§12 item 6).
-
-No embeddings, no ANN — a small curated table. Domain is "the axis along which distance is measured"
-(`PRD.md` §2), and this measures it deterministically on the vault path.
+The two v1 invariants carry forward: the `x/3` summary stays **AI-free** and reads `resolved` clusters only, and
+**the spread gate and `x/3` read `resolved` only** (R1) — a provisional tag never opens the gate, so the gate and
+the post-run `E0` count are the same quantity and a false pass is impossible. **S0 domain input is the shipped
+taxonomy picker plus an `Other → free text` escape** (owner-approved 2026-10-13); a typed lane is provisional and
+never opens the gate.
 
 ### 3.3 Axis 2 — structural alignment (AI-extracted, locally compared)
 
-1. **Extract** (Stage 1): one AI call per idea returns a normalised **mechanism descriptor** — a small
-   structured object, e.g. `{verb, object_class, constraint, transferable_structure}` — cached in
-   `idea_mechanism`. This is "identifying each idea's transferable structure" (`PRD.md` §3.3 item 6).
-2. **Gate**: alignment = a deterministic similarity over the two descriptors (normalised field/token match).
-   Pairs must clear **both** `min_domain_distance` and `min_alignment` (`config`).
-3. **Adjudicate** (Stage 2, AI): for pairs that pass the gate, one call confirms the shared mechanism is real
-   *and* yields the spark's **direction / claim / first step / what it takes** (`PRD.md` §3.3 item 4). Pairs the
-   model rejects become **suppressed (noise)**.
+Unchanged from v1 §3.3: **Extract** → a normalised mechanism descriptor
+`{verb, object_class, constraint, transferable_structure}` cached in `idea_mechanism`; **Gate** → a deterministic
+similarity over the two descriptors, pairs must clear **both** `min_domain_distance` and `min_alignment`;
+**Adjudicate** → one call per gated pair confirms the shared mechanism and yields the spark's
+direction/claim/first-step/what-it-takes; a refusal is **suppressed noise**, not an error.
 
 ### 3.4 Thresholds
 
-`domain_distance` / `alignment` cut-offs live in `config`, seeded with defaults and tuned empirically
-(`PRD.md` §3.3 item 3: *"tuning parameters, not fixed requirements"*). Changing a threshold never changes the
-schema or the API.
-
-**`min_alignment` — W9 τ\* = `0.02` (2026-10-15).** `min_domain_distance` is spec-pinned at `1` (§3.5); the
-alignment axis is the calibrated one, and W9 (#34, issue #106) closes with **τ\* = `0.02`** — the
-**widened** sweep's floor (`W9_WIDE_TAUS`, bar §4 step 6.4, the pre-authorized *"extend below 0.35"* phase),
-i.e. **below** the bar's ratified range (`W9_TAUS` = 0.35–0.65, bar §4 step 3), not at its edge — and the
-lowest τ on which the bar's yield condition (**C4**: ≥ 5 good) holds: 67 surfaced · 21 good · precision
-**0.31**. That is a deliberate **C3 amendment** (≥ 80% precision), **not** a C3 pass: precision is
-**uncertified** until a scorer reproduces itself (`W9_CALIBRATION.md` §2, the `instrument` label), so these
-thresholds must never be read as *"clears C3 ∧ C4"*. The bar's own selector still enforces C3, so `selectTau`
-returns `null` on this vault while `config` seeds `0.02` — the seed is the owner's pinned value (2026-10-15,
-"B alone"), **not** the rule's output. Convention: **`alignment ≥ τ`, inclusive, on the exact value**
-(τ = 0.05 → 10 surfaced / 5 good / 0.50). Seeding is **insert-only**, so the new default reaches **new** stores
-only — a store already seeded under the former provisional `0.5` keeps that value until an operator tunes it.
-Basis on record: `W9_CALIBRATION.md` §6; the field set stays **CONFIRMED** (§12 item 2).
+Unchanged. `domain_distance` / `alignment` cut-offs live in `config`, seeded insert-only. **`min_alignment` — W9
+τ\* = `0.02`** (2026-10-15), the widened sweep's floor, seeded for coverage with precision **uncertified**; the
+field set stays **CONFIRMED**. Basis on record: `W9_CALIBRATION.md` §6; v1 §3.4 carries the full argument and it is
+not restated here. **One rebuild delta:** the seed now ships **in the app bundle** and is applied at first launch
+(insert-only, so an existing install keeps its tuned value). And because `core/` holds both the seed **and** its
+reader, the S0 picker reads the **seeded `domain_cluster` rows** rather than a mirror — `core/domain/taxonomy.ts`
+keeps its types and the curated cluster ordering, and loses only the copied constant that existed to dodge a
+cross-package import (§13.3).
 
 ### 3.5 Cliché / noise suppression and re-offer rules
 
-- **Cliché** (high alignment, low distance) and **noise** (high distance, low alignment) are dropped by the
-  gate — the two quadrants the product exists to avoid (`VISION.md` §3).
-- A **dismissed** pair is written to `suppressed_pair`; it is **not re-offered unchanged**
-  (`PRD.md` §3.3 item 5). A materially changed vault may surface a *different* pair (`FLOW.md` §5.3).
-- An **accepted** pair is retired from the deck; only **one live offer per pair** exists (`spark` unique key).
-- Ideas with `status = NEEDS_COMPLETION` or **no domain** are excluded from candidate generation
-  (`PRD.md` §2).
-- A **pair** whose two ideas are **lineage-related** — one is the other's ancestor or descendant on the
-  single-parent `lineage_parent_id` chain (`lineage_kind = FORK`) — is excluded from candidate
-  generation (`#141`). A fork copies its parent's mechanism text verbatim (§4.7) while refusing a
-  same-domain fork, so the pair clears both thresholds *by construction* and would otherwise present as
-  a fake cross-domain spark. Siblings (two forks of one parent) are not related and may still pair.
+Unchanged from v1 §3.5, including the **lineage exclusion** (`#141`): a pair whose two ideas are lineage-related
+is excluded from candidate generation, because a fork copies its parent's mechanism verbatim while refusing a
+same-domain fork, so the pair would clear both thresholds by construction.
 
 ---
 
-## 4. Async pipeline & degradation (NFR-A1, NFR-P1)
+## 4. Run lifecycle & degradation
 
-**Trigger.** Any vault mutation that can change the candidate set (create / complete / iterate / fork /
-delete) stamps `vault_meta.revision` (monotonic) and enqueues a **spark run** (§4) carrying that revision. The
-mutation itself commits and returns **immediately** — it never waits on the engine (NFR-P1).
+The engine is asynchronous and **never blocks a vault write** (NFR-P1), and the vault works **with the provider
+down and with no network at all** (NFR-A1).
 
-**Run lifecycle & idempotency (I).** `PENDING → RUNNING → DONE | FAILED`, each run tagged with the
-`vault_revision` it was cut from. A run is **idempotent per revision**: if `vault_meta.revision` has advanced
-past a run's stamp, that run is stale — its results are discarded and a newer run supersedes it, rather than
-queueing behind it. Re-running the same revision reproduces the same candidates.
+### 4.1 Trigger and lifecycle
 
-**Delivery & the bound (N, F).** `GET /v1/sparks/state` (E0–E4) and `GET /v1/sparks?state=offered` are the
-read model; the client **subscribes** to run progress on `GET /v1/sparks/events` (SSE), with a **polling
-fallback** (bounded backoff, only while state = E1). New offers therefore surface **on the event, not on a
-timer**; the deck is never blocked waiting.
+**Trigger.** Any vault mutation that can change the candidate set (create / complete / iterate / fork / delete)
+stamps `vault_meta.revision` (monotonic) and enqueues a **spark run** carrying that revision. The mutation commits
+and returns immediately.
 
-> **Bounded delivery (NFR-P1 target):** with a responsive provider, a run completes **p95 ≤ 60 s for a vault
-> of ≤ 500 ideas**; if the provider is slow or down, the run fails per the matrix below rather than holding
-> the bound. This is the number the timed test asserts.
+**Enqueueing is a table write, not a call.** The mutation writes a durable `PENDING` `spark_run` row **inside its
+own transaction** — it does **not** call into `core/engine`, which the NFR-A1 boundary forbids (§4.3). Recompute
+(§6) takes the same shape. The app's engine driver *observes the table* and picks up the work. This is v1's own
+mechanism (the one named exception to the API/worker split), and it is what makes the boundary guard satisfiable
+rather than merely aspirational.
 
-**Degradation matrix** (`FLOW.md` §5.6):
+**The body may warm the extract cache; only the commit writes results.** The run body is side-effect-free *with
+respect to the vault* — it writes no offer and no suppression. One deliberate exception, because it is not a
+result: the **mechanism-extraction cache** (`idea_mechanism`) is keyed by `source_hash`, so it is a memo of a pure
+function of the idea text and its write is valid at any revision. The body may persist it **incrementally, in its
+own short transaction**, as each extract completes — otherwise a suspension mid-run would throw away every O(N)
+extract call and the next foreground would re-pay all of them (P1). A stale run's cache writes are therefore
+harmless; its *results* still never land (§4.1). What resume re-does is bounded to the **uncached extracts and the
+adjudications**.
+
+**Lifecycle.** `PENDING → RUNNING → DONE | FAILED`, each run tagged with the `vault_revision` it was cut from. A
+run is **idempotent per revision**: if `vault_meta.revision` has advanced past a run's stamp, the run is **stale**
+— its results are discarded and a newer run supersedes it. This is v1's model, unchanged, and it is the reason the
+run's **body/commit split** carries forward verbatim: the body (gate → suppression → adjudicate) computes *what*
+to write and **writes nothing**; the commit performs the writes **only when the run is current**. A stale run
+therefore writes nothing at all.
+
+**New to the rebuild — the run is resumable and foreground-bound.** v1's run lived in a long-lived worker process.
+The app is suspended or killed by the OS at will, so:
+
+- **Durable run state.** `spark_run` (status + `vault_revision`) is the resume point. A run interrupted by a
+  suspension is re-entered on the next foreground; a `RUNNING` run that outlived its process is re-run, not
+  resumed mid-call — the body is side-effect-free, so a re-run is safe.
+- **Foreground only.** Mobile platforms do not grant sustained background execution. A run advances **only while
+  the app is foregrounded**; a vault mutation with the app closed is picked up the next time the app opens. This
+  is a **stated product constraint**, not a defect — it bounds NFR-P1 (§11).
+- **Single-flight.** The press-scoped single-flight guard (`domain/run-trigger.ts`, O5) is unchanged: *See your
+  sparks* runs; *Skip* does not; the S0→S1 exit never auto-runs.
+
+### 4.2 Delivery
+
+v1 delivered run progress over **SSE** (`GET /v1/sparks/events`) with a polling fallback. **Both retire** — there
+is no server to poll and no second process to stream from. In their place, the engine emits **in-process events**
+to the app (a plain subscriber callback): "run started / run finished / offers changed". The client renders E0–E4
+exactly as before; E1 (Computing) is now driven by the in-process event rather than a stream. New offers surface
+**on the event, not on a timer**, and the deck is never blocked waiting.
+
+### 4.3 Degradation matrix
 
 | Failure | Vault | Deck (S1) | Recovery |
 | :--- | :--- | :--- | :--- |
-| AI provider down / times out | **fully available** — capture, read, iterate, fork, delete | **E4 Unavailable** (quiet + Retry); already-offered sparks stay reviewable | run marked `FAILED`; Retry re-enqueues |
-| Run fails mid-way | unaffected | previous offers remain | new run supersedes |
-| Network error client↔API | — | non-destructive error, **Retry** | no committed idea lost (NFR-D1) |
+| **No API key set / key invalid** *(new)* | fully available | **E4 Unavailable**, with copy that names the cause: *"Add your AI key to see sparks."* | user sets a key (secure store) → Retry |
+| **Offline / provider unreachable** | fully available | **E4 Unavailable** (quiet + Retry); already-offered sparks stay reviewable | Retry re-enqueues on reconnect |
+| **Provider down / times out / rate-limited (429)** | fully available | **E4 Unavailable** | run marked `FAILED`; Retry re-enqueues |
+| **Provider blocked by browser CORS** *(web only)* | fully available | **E4 Unavailable** with a provider-specific reason, never a silent failure | L3's per-provider header map, or a native-only provider (§5) |
+| **Run fails mid-way / app suspended** | unaffected | previous offers remain | next foreground re-runs; a stale run supersedes |
+| **Local persistence error** | — | non-destructive error, **Retry** | no committed idea lost (NFR-D1, §8) |
 
 **The load-bearing rule (NFR-A1):** *no vault code path calls the AI boundary.* Enforced by module boundary —
-the vault module has no import of the provider interface — and verified by a fault-injection test that
-disables the provider and runs the vault suite (ADR-0004).
+`core/vault/**` may not import `core/provider/**` — and verified by a fault-injection test that disables the
+provider and runs the vault suite. **This is v1's guard, re-homed** (the v1 form guarded `api/` and `store/`
+against `worker/src/provider`); see §13, row NFR-A1.
 
 ---
 
 ## 5. AI-provider boundary (NFR-PRIV1)
 
-**One interface, one adapter.** The worker depends on an interface, not a vendor SDK:
+**One interface, one adapter** (ADR-0003, **amended** — same contract, now in the app, on the user's key). The
+engine depends on an interface, not a vendor SDK:
 
 ```
-interface MechanismExtractor { extract(idea): MechanismDescriptor }   // §3.3 step 1
+interface MechanismExtractor { extract(idea): MechanismDescriptor }                        // §3.3 step 1
 interface SparkAdjudicator   { adjudicate(ideaA, ideaB, mechanisms): SparkDraft | null }  // §3.3 step 3
-interface TagNormalizer      { normalizeTag(tag, clusters): string }  // §3.2 step 2
+interface TagNormalizer      { normalizeTag(tag, clusters): string }                      // §3.2 step 2
 ```
 
-**Model choice.** The adapter is configured by env (`AI_PROVIDER`, `AI_MODEL`); MVP pins one hosted
-frontier-class chat model behind the adapter, chosen for structured-output reliability at low volume. The
-exact model is a **config value**, re-pointable without code change — the ADR records the *class* and the
-contract, not a vendor lock (ADR-0003).
+**Provider and model.** MVP pins **OpenRouter** (`AI_PROVIDER=openrouter`) and one hosted frontier-class chat
+model (`AI_MODEL`), chosen for structured-output reliability at low volume; the model is a **config value**,
+re-pointable without code change. The adapter is otherwise unchanged from v1 — the **request shape, the privacy
+pin, and output validation** stay exactly as shipped.
+
+**The one real change: the key is the user's, held on the device.** There is no server to hold a token, so the
+app reads the key from the **platform secure store** and signs the device→provider call itself.
+
+- **Key hygiene (a guard, not a promise).** The key must never reach the vault, the export, or a log. It is read
+  from the secure store at call time and passed only into the transport. This is asserted structurally in L3:
+  no module outside the provider adapter imports the key accessor, and the export codec is checked to be
+  key-free. *(The v1 analogue — "the adapter has no DB access", asserted in prose and never checked — is the
+  failure this guard exists to avoid.)*
+- **Web has no secure store** *(verified, not assumed — Ari, 2026-10-17: `expo-secure-store` lists
+  `android · ios · tvos · expo-go` and **no web**; `expo-sqlite` lists `web`)*. On web the key is therefore held
+  **session-only, in memory**, and never persisted to `localStorage`/`IndexedDB`. The consequence is stated
+  plainly: on a served origin the web build cannot promise a secret at rest; the user re-enters the key per
+  session. **Native-first** — the store builds (iOS/Android) are the primary target; web is a constrained second
+  target from the same codebase (§9).
+- **Device→provider direct is a web-only fork, per provider** *(verified — Ari, 2026-10-17: an OpenAI preflight
+  returns `access-control-allow-origin`; an Anthropic preflight does not, and needs
+  `anthropic-dangerous-direct-browser-access: true`)*. Native RN has no CORS, so the pinned provider works there
+  with plain `fetch`. On web, L3 carries a **per-provider header map**, and a provider with no web path is
+  **native-only** with a stated reason — never a silent E4.
 
 **Output contract.** Every call requests **structured output** (JSON) validated against a schema before storage;
-invalid output = a failed call, retried per §4, never stored.
+invalid output = a failed call, retried per §4, never stored. Unchanged.
 
-**Privacy (NFR-PRIV1).**
-- **Only the operation's payload is sent:** the idea text needed for extraction; the two ideas' text +
-  descriptors for adjudication; the one free-text tag and the offered `id — name` cluster list for tag
-  normalisation. No account identity, no vault listing, no unrelated ideas, no other tags.
-- **No training, no retention — enforced by routing, not assumed.** Every worker call sets
-  `provider: { zdr: true }` (equivalently `data_collection: "deny"`), so OpenRouter routes only to endpoints it
-  classifies as Zero Data Retention — which "are also unable to train on your data." OpenRouter itself stores
-  no prompt content unless prompt logging is opted in; *Private Input & Output Logging* and *OpenRouter Use of
-  Inputs/Outputs* stay off (both default off). Residuals, stated not hidden: OpenRouter's per-endpoint ZDR
-  classification is **provider-attested, not independently audited**; request **metadata** (tokens, latency —
-  not content) is always stored; OpenRouter is itself an intermediary that transiently sees the prompt.
-  Verified by asserting `provider.zdr=true` on every call and capturing `GET /api/v1/endpoints/zdr` at build
-  time. The capture (`scripts/capture-zdr.mjs`) has a **consumer** (`scripts/audit-zdr.ts`, the
-  `zdr-evidence` job): it asserts the model the adapter will call appears in that list, because the pin is
-  only a routing control if the model is classified ZDR — otherwise it is a call that can never be served.
-  The data-flow half is the other way round: `provider/boundary.test.ts` names every call site per
-  operation, so "only the operation's payload is sent" is checkable where a call is made.
+**Privacy (NFR-PRIV1).** Strengthened by the rebuild — no server ever sees the data — and unchanged in its
+mechanism:
+
+- **Only the operation's payload is sent** (the idea text for extraction; the two ideas' text + descriptors for
+  adjudication; the one free-text tag and the offered cluster list for normalisation). No account identity, no
+  vault listing, no unrelated ideas.
+- **No training, no retention — enforced by routing, not assumed.** Every call pins `provider: { zdr: true }`, so
+  OpenRouter routes only to endpoints it classifies Zero Data Retention. Residuals, stated not hidden: the
+  per-endpoint ZDR classification is **provider-attested, not independently audited**; request **metadata** is
+  always stored; OpenRouter transiently sees the prompt. The pin is enforced **by the app on the user's own
+  account** — if the account cannot be routed to a ZDR endpoint for the pinned model, the call **fails closed**
+  (§4.3), it is not silently downgraded. The build-time evidence (`scripts/capture-zdr.mjs` + `scripts/audit-zdr.ts`,
+  the `zdr-evidence` CI job) is retained and retargeted onto `core/provider`.
 - **No third-party transmission beyond a requested operation:** the engine runs only when a vault mutation
-  requests it; there is no background telemetry or periodic upload.
+  requests it; there is no background telemetry and no periodic upload.
 
 ---
 
-## 6. Surface / API contract
+## 6. Module contract (was: the HTTP surface)
 
-HTTP/JSON, bearer-authenticated. Endpoints map 1:1 to `FLOW.md` surfaces; decision semantics are
-`FLOW.md` §4.3.
+v1 §6 was an HTTP/JSON contract — endpoints, a bearer token, a status-code error envelope. **All of that retires**
+(no server). What survives is the **semantic** contract, now expressed as in-process calls into `core/vault/`:
 
-| Surface (`FLOW.md`) | Endpoint | Notes |
-| :--- | :--- | :--- |
-| **S0** Onboarding | `POST /v1/ideas` · `GET /v1/vault/summary` | capture is **domain-mandatory** (T02); the S0 domain input is a **pick from the shipped taxonomy plus an `Other → free text` escape** — picked tags resolve deterministically (**no AI on this path**, §3.2); a typed lane is **provisional** and never opens the gate; summary returns `domains covered` = the **resolved** cluster count (§3.2) |
-| **S0 → S1** exit | — | gate on **≥ 2 resolved domains** (T04); client computes the gate from the summary's `resolved` count only (R1) |
-| **S1** Sparks deck | `GET /v1/sparks?state=offered` · `GET /v1/sparks/state` · `GET /v1/sparks/events` (SSE) | `state` = E0–E4 (§4). Deck order = server order. Events stream new offers (N) |
-| **S1b** Spark detail | `GET /v1/sparks/{id}` | direction / claim / what-it-takes / first-step / tags. **No scores, no similarity readout** |
-| **decision** | `POST /v1/sparks/{id}/decision` `{decision_id, kind: ACCEPT\|DISMISS}` | idempotent on `(spark_id, decision_id)`; returns the created idea id for ACCEPT |
-| **INSPIRE (open seeded capture)** | `POST /v1/sparks/{id}/inspire` | **not a resolution** — writes no `decision`; returns the seed payload; the spark stays `OFFERED` until a committed seeded save (B) |
-| **undo** | `POST /v1/decisions/{decision_id}/undo` | one step; within window; retracts derived idea + provenance, re-offers. Covers ACCEPT, DISMISS **and a committed seeded save** — which carries its own `decision_id` (C). `409` if not reversible (`FLOW.md` §5.4) |
-| **S2** Capture | `POST /v1/ideas` (blank, or **seeded** with `{origin_spark_id, decision_id}`) | mandatory-field validation; a seeded save writes its `decision` row (kind=INSPIRED) **transactionally** and is idempotent on `decision_id` (D); 280-char counter client-side, enforced server-side |
-| **S3** Vault | `GET /v1/ideas?domain=&lineage=&status=` | |
-| **S4** Idea detail | `GET /v1/ideas/{id}` | fields + lineage chain + provenance (muted) |
-| **S6** Iterate | `POST /v1/ideas/{id}/iterate` | new version, same node |
-| **S5** Fork | `POST /v1/ideas/{id}/fork` `{mutation_delta, domain_tags}` | rejects same-domain (offers Iterate), `FLOW.md` T25; the text fields are **copied from the parent** (two-field request, `docs/API.md` §4.7) |
-| **delete** | `DELETE /v1/ideas/{id}` | orphan-with-warning; fork children keep parent ref; provenance source ⇒ dangling ref (`FLOW.md` T26) |
-| **Recompute** | `POST /v1/sparks/run` | enqueues a run (E1) |
-| **Export** | `GET /v1/export` | NFR-D1 (§8) |
+| Surface (`FLOW.md`) | v1 endpoint | v2 in-process call | Notes |
+| :--- | :--- | :--- | :--- |
+| **S0** Onboarding | `POST /v1/ideas` · `GET /v1/vault/summary` | `core/vault.createIdea` · `core/vault.vaultSummary` | capture is **domain-mandatory**; S0 domain input is the shipped-taxonomy picker + `Other → free text` escape; summary returns `resolved` cluster count |
+| **S0 → S1** exit | — | — | gate on **≥ 2 resolved domains**; client computes it from the summary's `resolved` count |
+| **S1** Sparks deck | `GET /v1/sparks` · `…/state` · `…/events` (SSE) | `core/vault.listOfferedSparks` · `…engineState` · an **in-process event** | `state` = E0–E4; delivery is the callback of §4.2 |
+| **S1b** Spark detail | `GET /v1/sparks/{id}` | `core/vault.sparkDetail` | no scores, no similarity readout |
+| **decision** | `POST /v1/sparks/{id}/decision` | `core/vault.resolveDecision` | idempotent on `(spark_id, decision_id)`; returns the created idea id for ACCEPT |
+| **INSPIRE** | `POST /v1/sparks/{id}/inspire` | `core/vault.inspireSeed` | **not a resolution** — writes no `decision` |
+| **undo** | `POST /v1/decisions/{decision_id}/undo` | `core/vault.undoDecision` | one step; windowed; retracts derived idea + provenance, re-offers; the three refusal arms survive as typed results |
+| **S2** Capture | `POST /v1/ideas` (blank/seeded) | `core/vault.createIdea` | mandatory-field validation; a seeded save writes its `decision` row transactionally, idempotent on `decision_id` |
+| **S3** Vault · **S4** detail · **S5** fork · **S6** iterate | `GET/POST /v1/ideas…` | `core/vault.listIdeas · getIdeaDetail · forkIdea · iterateIdea` | fork rejects same-domain; iterate is a version, not a lineage kind |
+| **delete** | `DELETE /v1/ideas/{id}` | `core/vault.deleteIdea` | orphan-with-warning; fork children keep the parent ref; provenance source ⇒ dangling ref |
+| **Recompute** | `POST /v1/sparks/run` | writes a `PENDING` `spark_run` row (`core/store`) | E1 — enqueueing is a **table write**, never an engine import (§4.1) |
+| **Export** | `GET /v1/export` | `core/export.exportVault` | §8 |
 
-**`decision_id` persist-and-reuse** (`FLOW.md` §2.2, N4): for **every resolving action — ACCEPT, DISMISS, and
-a committed seeded save** — the client generates the id, persists it, and reuses it on retry; the server treats
-a repeated `(spark_id, decision_id)` as the same decision. *(FLOW §2.2 spells out ACCEPT/DISMISS and §5.4/N3
-already extends undo to the committed seeded save; this document gives that save the same client-generated
-`decision_id`, written at commit. A one-line FLOW §2.2 clarification is a recommended follow-up — not a
-contradiction, since FLOW §5.4 already requires the capability.)*
+**What changes is the transport; what is preserved is the semantics.** `decision_id` persist-and-reuse, the
+one-step undo window and its three refusal arms, the invariants ("domain-mandatory capture", "single-parent
+lineage", "provenance ≠ lineage", "at most one live offer per pair") — all survive, and they move from
+server-enforced to **DB-enforced plus `core/vault`-enforced**:
 
-**Invariants the API enforces (not the client):** domain-mandatory capture; single-parent lineage; provenance
-≠ lineage; at most one live offer per pair; mandatory-field validation on every write.
+- **The idempotency key becomes the platform's.** `decision.id` (the client-supplied `decision_id`) is still the
+  primary key, and the DB constraint still makes a double-tap or a retry a **single** decision. In v1 the *server*
+  enforced it; in v2 the *SQLite primary key* does — the same key, one layer down, which is *stronger* (it cannot
+  be bypassed by a second caller).
+- **Error classes replace status codes.** v1's `401/404/409/422/500` (`docs/API.md` §2) become typed results
+  carrying the same distinctions — `NotFound`, `Conflict`, `ValidationFailed` — because the *distinction* is what
+  callers act on, not the number. `docs/API.md` is retired as an HTTP document (§13); the codes that carried no
+  meaning off the wire (401, 500) have no successor.
+
+**Invariants `core/` enforces (not the screen):** domain-mandatory capture; single-parent lineage; provenance ≠
+lineage; at most one live offer per pair; mandatory-field validation on every write.
 
 ---
 
 ## 7. Bootstrap
 
-- **Domain-mandatory capture** (`FLOW.md` T02; `PRD.md` §2): `POST /v1/ideas` rejects an idea with no domain.
-  An idea without a domain cannot take part in a spark, so allowing one would silently defeat the bootstrap.
-- **Spread gate** (`FLOW.md` T04; `PRD.md` §3.4 item 2 / NFR-U1): the onboarding exit is available at **≥ 2
-  distinct *resolved* domains** (the spark floor, §3.2), with S0 domain input drawn from the shipped taxonomy
-  (plus the `Other → free text` escape) so the count is deterministic and AI-free; `≥ 3` is shown as `x/3`
-  **progress**, not a gate. A provisional (unmapped or typed) tag never counts toward the gate — see R1, §3.2.
-- **No synthetic seeds, no note import** (`PRD.md` §3.4 item 3): neither the engine nor the API generates ideas
-  on the user's behalf.
+Unchanged from v1 §7: **domain-mandatory capture** (`FLOW.md` T02); the **spread gate** at **≥ 2 distinct
+*resolved* domains** with `x/3` as progress, not a gate (`FLOW.md` T04, R1); **no synthetic seeds, no note
+import**.
 
 ---
 
-## 8. Portability (NFR-D1)
+## 8. Portability, durability, and the transfer path (NFR-D1)
 
-**Export — open, portable, complete.** `GET /v1/export` returns a single **JSON** document (UTF-8):
-`{schema_version, exported_at, ideas[], idea_versions[], lineage_edges[], provenance_edges[], decisions[],
-domain_tags[]}`. It is self-describing and dependency-free — no vendor format, no proprietary ids required to
-read it. Every committed idea is present (`NFR-D1`).
+v1 §8 shipped `GET /v1/export` (a single JSON document) and used SQLite-on-host's **file copy** as backup. The
+export format and its guarantees carry forward; **the backup path does not** — and this is the rebuild's sharpest
+restatement.
 
-**Backup / restore.** The store is a single SQLite file: backup = checkpoint WAL + copy the file; restore =
-replace the file and run migrations forward. **No committed idea is lost** on either path.
+**Export/import is the transfer path.** `core/export.exportVault` returns the same self-describing JSON document
+(`{schema_version, exported_at, ideas[], idea_versions[], lineage_edges[], provenance_edges[], decisions[],
+domain_tags[]}`), and `core/export.importVault` reads it back. On device the app writes it out and reads it in
+through the platform's share/provide/file flow. **Google Drive sync is post-MVP** (owner, 2026-10-17); until it
+lands, export/import is *the* path.
 
-**Verification.** A backup→wipe→restore test and an export→re-import round-trip test, both asserting idea
-counts and lineage/provenance edges survive. Both are **EV5 `#47`**: V6 `#17` builds the endpoint and the
-operator runbook (`docs/RUNBOOK.md`), EV5 proves them (build ≠ prove).
+**Durability, restated (and it is weaker — stated, not hidden).** On a host, NFR-D1's "no committed idea lost"
+was met by a file copy and a wipe→restore test. On a device there is **no file to copy** (the sandbox is not a
+filesystem a user can reach) and **no second copy**. So:
+
+- **The device is the only copy.** *Device loss = vault loss*, unless the user has exported. NFR-D1 holds
+  **through export**, not automatically — the app must make exporting easy and prompt it at the right moments
+  (a stated product obligation, L4).
+- **The vault file is excluded from platform backup** — `allowBackup=false` (Android) and
+  `NSURLIsExcludedFromBackupKey` (iOS). This is a **decision on record** (David, 2026-10-17), and it is the
+  faithful reading of the owner's requirement *"nothing leaves to the cloud"*: an iCloud/Google Drive backup **is**
+  the cloud. The consequence is written plainly rather than hidden: excluding backups **raises** the loss-on-
+  device-failure risk and makes export the user's own escape hatch.
+- **Migration from a v1 vault is not required** — nothing was ever deployed (David, 2026-10-17). A v1 export JSON
+  imports, because the format is unchanged.
+
+**Verification.** A backup→wipe→restore test becomes **export → wipe/reinstall → import**, asserting idea counts
+and lineage/provenance edges survive (L4). The v1 EV5 `#47` round-trip is the shape; the transport is the only
+difference.
 
 ---
 
 ## 9. Stack & security posture
 
-**Stack (MVP), one language across the client and server:**
+**Stack (MVP), one language — TypeScript — across app and core:**
 
 | Layer | Choice | Rationale |
 | :--- | :--- | :--- |
-| Client | **React + TypeScript, Vite, mobile-first PWA** | `DESIGN.md` is *"shadcn-based"* (it names no framework) — React is the implementation inference (ADR-0005); a PWA ships the mobile-first deck without app-store overhead; one language with the server |
-| API | **Node + TypeScript**, HTTP/JSON | same language as the client; small surface; portable contract |
-| Worker | **Node + TypeScript**, in-process queue | no broker for a single user (ADR-0004) |
-| Store | **SQLite**, one file, two writers (API + worker) | WAL + `busy_timeout` + bounded retry (§9); §2.4; ADR-0001 |
-| AI | **hosted model behind an adapter** | §5; ADR-0003 |
+| App | **Expo (React Native)**, iOS + Android store builds; web from the same codebase | the store-app requirement (`d178c664`); one codebase, three targets; ADR-0006 |
+| Store | **SQLite**, one file in the app sandbox, one writer, opened through the `SqliteConnection` port (`expo-sqlite` on device, `node:sqlite` in tests/CI) | §2; the v1 schema and suites carry; ADR-0001 *amended* |
+| Engine | **`core/engine`**, in-process, run on foreground (§4) | no broker, no worker process; ADR-0004 *amended* |
+| AI | **OpenRouter behind the adapter** (§5), **user's key** in the platform secure store | ADR-0003 *amended* |
+| Design | **Nightfall tokens** (palette, Geist/JetBrains Mono, 8px/44px, motion) implemented in **RN** | `DESIGN.md` is *shadcn-based*; the **tokens bind, the shadcn implementation does not** (RN is not the DOM). Re-scoped in §13 |
 
 **Security posture.**
-- **Single-tenant by construction.** The MVP is one user (`PRD.md` §1.3), so there is no tenant boundary to
-  enforce; `PRD.md` §4 deliberately removed row-level security as a non-requirement. Multi-user isolation is
-  future scope (`PRD.md` §6) and is where RLS/tenancy would be introduced — not here.
-- **Concurrency (E).** SQLite gives **one file-wide write lock**, so the API and worker writers serialize — they
-  are *not* a single writer. The store runs in **WAL mode** (readers don't block the writer), with
-  `busy_timeout` (e.g. 5 s) and **bounded retry-with-backoff** on `SQLITE_BUSY`; every write is a short
-  transaction. This is the correct MVP posture for two processes on one file; if write contention ever
-  appears, the fallback is to funnel all writes through one process (ADR-0001).
-- **Auth.** Bearer token over HTTPS; secrets in env, never in the repo.
-- **Data at rest.** Private by default (`visibility = PRIVATE`); encryption at rest is deferred
-  (`PRD.md` §6), noted rather than claimed.
-- **AI boundary.** Outbound-only, operation-scoped, no-training / zero-retention (§5).
-- **Least data.** The provider sees the two ideas in a run, nothing else.
+
+- **Single-tenant by construction** and now **single-device**: one user, one vault file, no tenant boundary and no
+  network boundary to enforce. Multi-user is future scope (`PRD.md` §6).
+- **Auth is gone.** v1's bearer token existed to authenticate a browser to a server; there is no server. The app
+  is the only caller of its own vault. *(The token, `API_TOKEN`/`VITE_API_TOKEN`, is retired.)*
+- **At rest.** The **OS app sandbox / platform file protection** is the at-rest defence — **not** app-layer
+  encryption. **Encryption at rest (SQLCipher) is OUT for the MVP**, matching `PRD.md` §6's existing deferral of
+  "encryption at rest"; it is the named post-MVP upgrade **behind the `SqliteConnection` port**, so it never
+  touches vault logic, with the key in the secure store. Decision on record, §12.
+- **Least data, least egress.** The provider sees the two ideas in a run and nothing else; the only egress is a
+  requested run (§5).
 
 ---
 
@@ -495,174 +417,186 @@ operator runbook (`docs/RUNBOOK.md`), EV5 proves them (build ≠ prove).
 
 Load-bearing decisions, one file each, in `docs/adr/`:
 
-| ADR | Decision | Closes |
-| :--- | :--- | :--- |
-| **0001** | SQLite as the MVP store; Postgres as the scale-out path | §2.4, NFR-D1 |
-| **0002** | Two-stage, ANN-free spark engine; AI cost O(N + gated) | §3, PRD §3.3 item 7 |
-| **0003** | One AI-provider interface + swappable adapter; structured output; no-training/zero-retention | §5, NFR-PRIV1 |
-| **0004** | Async in-process queue; vault code never imports the AI boundary | §4, NFR-A1/P1 |
-| **0005** | Client = React/TS mobile-first PWA (one language with the server) | §9 |
+| ADR | Decision | Status after the rebuild | Closes |
+| :--- | :--- | :--- | :--- |
+| **0001** | SQLite as the MVP store | **Amended** — same engine, now embedded; **single writer**; the two-writer/WAL/retry posture retired (it was an artifact of the API+worker split) | §2, NFR-D1 |
+| **0002** | Two-stage, ANN-free spark engine; O(N + gated) | **Stands** | §3, `PRD.md` §3.3 item 7 |
+| **0003** | One AI-provider interface + swappable adapter; structured output; ZDR routing | **Amended** — same interface; now in the app, on the **user's** key; key hygiene guard added; per-provider web map | §5, NFR-PRIV1 |
+| **0004** | Async in-process queue; vault never imports the AI boundary | **Amended** — the queue is in the app process; the boundary rule carries to `core/vault` vs `core/provider` | §4, NFR-A1/P1 |
+| **0005** | React/TS mobile-first **PWA** client | **Superseded** by ADR-0006 | v1 §9 |
+| **0006** | **Local-only Expo app · on-device SQLite · device-direct provider on the user's key · no server tier** | **New** — this revision | §1, §5, §9 |
 
 ---
 
 ## 11. NFR traceability
 
-Every non-functional requirement in `PRD.md` §4 → a design element and its verification method.
+Every non-functional requirement in `PRD.md` §4 → a design element and its verification, **with the rebuild's
+restatements stated**. Rows marked **Δ** changed meaning and the change is the point.
 
 | NFR | Requirement | Design element | Verification |
 | :--- | :--- | :--- | :--- |
-| **A1** Availability | Vault works without the Spark | Vault module has no dependency on the AI boundary (§4, §9); engine is a separate worker (§1) | **Fault injection:** disable the provider, run the vault suite — capture/read/iterate/fork/delete pass; S1 shows E4 |
-| **P1** Performance | Sparks async, never block vault; bounded delivery | Mutation commits then enqueues a run (§4); client reads state/SSE, never waits. Bound: **p95 ≤ 60 s at ≤ 500 ideas** with a responsive provider (§4) | **Timed test** with injected AI delay/failure — vault request latency unchanged; sparks delivered within the bound |
-| **D1** Durability/Portability | No idea lost; open export | SQLite + WAL; `GET /v1/export` JSON (§8) | **Backup→wipe→restore** + **export round-trip** tests |
-| **PRIV1** Privacy | No training; no third-party transmission beyond a requested op | Operation-scoped payloads; **ZDR routing control** (`provider: { zdr: true }` on every call); no telemetry (§5) | **Data-flow audit** (grep the boundary; assert one call site per operation) + **routing control**: assert `provider.zdr=true` on every call; capture `GET /api/v1/endpoints/zdr` at build time |
-| **Q1** Quality | Spark quality instrumented (acceptance proxy) | `decision` records kind + whether the accepted idea landed in a **new domain** (§3.5, §5 metrics) | **Instrumentation test** + reporting query over `decision` |
-| **U1** Usability | New user onboards spanning domains | Domain-mandatory capture (S0 picks from the shipped taxonomy) + `≥ 2`-**resolved**-domain spread gate with `x/3` progress (§3.2, §7) | **Onboarding completion test** (assert ≥ 2 distinct **resolved** domains at exit; and assert `E0` is not Cold on the first run) |
+| **A1** Availability | Vault works without the Spark | `core/vault` may not import `core/provider` (§4); the engine is a module, not the vault (§1) — **and the vault now needs no network at all** *(Δ strengthening)* | **Fault injection:** disable the provider, run the vault suite — capture/read/iterate/fork/delete pass; S1 shows E4. Module-boundary guard, re-homed from v1 |
+| **P1** Performance | Sparks async, never block vault; bounded delivery | Mutation commits then enqueues (§4); the deck reads state/events, never waits. **Δ restated:** the v1 bound (p95 ≤ 60 s at ≤ 500 ideas, *responsive provider*) becomes **p95 ≤ 60 s of active foreground time at ≤ 500 ideas**, because a run now advances only while the app is foregrounded and runs on the user's key (§4.1) | **Timed test** with an injected provider delay; vault request latency unchanged; sparks delivered within the foreground bound. *The number is re-derived in L1/L3 against the device* |
+| **D1** Durability/Portability | No idea lost; open export | SQLite + WAL; `core/export` JSON (§8). **Δ restated:** the on-host file-copy backup is gone; durability holds **through export**; the device is the only copy; the vault is excluded from platform backup (§8) | **Export → wipe → import** round-trip; counts and lineage/provenance edges survive. L4 |
+| **PRIV1** Privacy | No training; no third-party transmission beyond a requested op | Operation-scoped payloads; **ZDR routing control** (`provider:{zdr:true}` on every call); no telemetry; **key hygiene guard** (§5). **Δ strengthened:** no server ever holds the data; **Δ new residual:** the key is the user's, and on web there is no secure store | **Data-flow audit** (grep the boundary; one call site per operation) + **key-hygiene guard** (key never in vault/export/logs) + **routing control** (`zdr-evidence` job, retargeted) |
+| **Q1** Quality | Spark quality instrumented (acceptance proxy) | `decision` records kind + whether the accepted idea landed in a **new domain** (`idea.new_domain`). **Δ restated:** the **instrument survives; the server-side reporting service does not.** Metrics are computed **locally** and are visible only to the user; there is **no telemetry** and no fleet aggregation (see §12) | **Instrumentation test** + a local reporting query over `decision`. *Product-level NSM tracking across users is out of scope without a server — flagged, not invented* |
+| **U1** Usability | New user onboards spanning domains | Domain-mandatory capture + `≥ 2`-**resolved**-domain spread gate with `x/3` progress (§3.2). **Unchanged** — computed locally | **Onboarding completion test** (≥ 2 distinct resolved domains at exit; E0 not Cold on the first run) |
 
 ---
 
 ## 12. Open questions (for the reviewer / owner)
 
-1. ~~Hosted vs local model.~~ **Resolved — hosted (owner, 2026-10-13).** Provider: **OpenRouter**; initial model
-   **`deepseek/deepseek-v4-flash`** (env-overridable: `AI_PROVIDER` / `AI_MODEL`). A local/on-device model
-   remains a drop-in adapter later — it would strengthen NFR-PRIV1 at higher operational cost; **not** MVP.
-   **NFR-PRIV1 sub-item — closed by routing, not a vendor term (Max's verdict 2026-10-13; numbers
-   re-verified by David).** Every call pins `provider: { zdr: true }`, so OpenRouter routes only to endpoints it
-   classifies Zero Data Retention; retention depends on the **routed endpoint**, not on DeepSeek's terms. The
-   provider choice is unchanged and **needs no paid tier** (ZDR is a request/account setting). §5, §11 and
-   ADR-0003 state the one rule; the control is **provider-attested, not independently audited** (§5).
-2. **Mechanism descriptor schema.** The exact fields of the descriptor (§3.3) are a tuning artifact; the
-   contract (structured, cached, locally comparable) is the decision. Confirm the field set with the first
-   calibration run. **Field set CONFIRMED — 2026-10-15 (#34).** Evidence: on the stored P2 outcomes
-   (union 67 · confirmed 21 · rejected 46), the descriptor-derived `alignment` separates confirmed from
-   rejected at **AUC 0.6548** (confirmed mean 0.0443 · rejected 0.0333), reproducing the step-4 read — so
-   the field set stands and no re-extraction is required. The **threshold** half of #34 did **not** close by
-   that read: the 2026-10-15 reliability pass failed its decidability gate under the label `instrument`
-   (`W9_CALIBRATION.md` §2), so no τ\* came out of *it*. **The owner has since ruled (2026-10-15, #106):
-   τ\* = `0.02` is seeded** — a deliberate **C3 amendment**, seeded for coverage, precision **uncertified**
-   (§3.4), on the widened sweep's floor. The metric half that ruling rested on is recorded below.
-   **Metric ceiling — M1 negative, 0 calls (2026-10-15, #106).** The aggregate the gate compares on,
-   `alignment` (§3.3 · `worker/src/engine/alignment.ts`), is the *uniform mean* of four per-field Jaccard
-   scores; on this vault that **equal-weight** mean cannot reach the ratified floor — its attainable
-   maximum is **0.125** — and its head is a **two-way tie** —
-   `w9-enterprise-ops|w9-media-entertainment` (**confirmed**)
-   and `w9-devtools|w9-legal-compliance` (**rejected**), each a **0.50** field-sum. The metric therefore
-   fails to *separate* at the very top, not at some tuning boundary. The ceiling is a property of the
-   **signal**, joint over (aggregation) × (per-field construction); two of the findings hold over **all 378**
-   candidate pairs, not only the gated 67 (a maximum and an identity, so selection-immune): the 0.125 ceiling,
-   and `object_class` **dead** — 0.0 on every pair, all 28 descriptors — because it holds idiosyncratic noun
-   phrases that are categorical, not lexical. `transferable_structure` (mean **16.0 unique** tokens · 17.4
-   total) carries structure in domain-specific words that Jaccard's length bias penalises. The ceiling itself
-   is **rescalable** — non-uniform weightings lift it above the floor (a strictly-positive `w = (0.70, 0.05,
-   0.05, 0.20)` scores **0.350** on `w9-enterprise-ops|w9-media-entertainment`, and 84 of the 1,771 step-0.05
-   grid weightings reach ≥ 0.35) — **but reweighting does not buy the bar's precision**. On the labelled
-   population the best composite **tested** is containment at **0.667**; among **weightings**, the best mean
-   reaching precision **0.800** does so at only **4/5** good (fails C4's **≥ 5**), and the best with **≥ 5**
-   good is **0.714** (5/7) — so no composite tested and no grid weighting clears **C3 ∧ C4**. Monotone
-   rescaling (`√mean`, rank-preserving) likewise lifts the ceiling into range but cannot move rank quality.
-   The **signal** was therefore an open owner call — **F** (rebuild the lexical fields; in-lane, 28 calls,
-   predicted-fail), **E** (a semantic signal on `transferable_structure`; architecture + spend + scope),
-   **B** (move the floor to the metric) — recorded in #106's thread. **The owner answered `B alone`
-   (2026-10-15):** the floor is re-based to **τ\* = `0.02`** (§3.4 — a C3 amendment, seeded for coverage,
-   precision uncertified); **E is held**; **F is not executed**; **M2 never fired**. No schema change; the
-   field set stays **CONFIRMED**.
-3. ~~**Cold-start ordering.**~~ **Resolved — closed by O5 (`#25`), 2026-10-14.** The run fires on the exit
-   the user chose: *See your sparks* presses `POST /v1/sparks/run` (`docs/API.md` §4.16), *Skip* carries no
-   side effect, and the S0→S1 exit never auto-runs. `FLOW.md` T04 carries the rule; the client holds only a
-   press-scoped single-flight guard (`client/src/domain/run-trigger.ts`) — no persisted fired-flag.
+Items **1–6** are v1's, carried forward: their content is unchanged in substance by the rebuild, and three other
+documents (`FLOW.md`, `W9_CALIBRATION.md`, `docs/adr/0003-ai-provider-boundary.md`) cite them **by position** — so
+the numbering is preserved deliberately, and this section stays a top-level numbered list. Items **7–14** are the
+rebuild's.
+
+1. ~~Hosted vs local model.~~ **Resolved — hosted, now on the user's own key (2026-10-17).** v1 pinned OpenRouter
+   from a server process (Max's verdict 2026-10-13; numbers re-verified by David). The rebuild keeps **OpenRouter**
+   but the **device** calls it on the **user's own key** (§5). `AI_PROVIDER`/`AI_MODEL` remain config values, and a
+   local/on-device model stays a drop-in adapter — it would strengthen NFR-PRIV1 at higher operational cost;
+   **not** MVP.
+2. **Mechanism descriptor schema.** The exact fields of the descriptor (§3.3) are a tuning artifact; the contract
+   (structured, cached, locally comparable) is the decision. **Field set CONFIRMED — 2026-10-15 (#34)** on the
+   stored P2 outcomes (AUC 0.6548). The **threshold** half did not close by that read: the reliability pass failed
+   its decidability gate under the label `instrument` (`W9_CALIBRATION.md` §2). **The owner ruled (2026-10-15,
+   #106): τ\* = `0.02` is seeded** — a deliberate **C3 amendment**, seeded for coverage, precision **uncertified**
+   (§3.4) — the widened sweep's floor. **E is held; F is not executed; M2 never fired; no schema change.**
+3. ~~**Cold-start ordering.**~~ **Resolved — closed by O5 (`#25`), 2026-10-14.** The run fires on the exit the user
+   chose: *See your sparks* presses the run, *Skip* carries no side effect, and the S0→S1 exit never auto-runs.
+   Unchanged by the rebuild (§4.1).
 4. ~~FLOW §2.2 wording.~~ **Landed in `FLOW.md` r3.2.** The committed seeded save carries the same client-generated
-   `decision_id` as a deck decision (§6) — FLOW §5.4/N3 already required the capability and the one-line FLOW
-   §2.2 clarification is in the spec (r3.2).
-5. ~~FLOW §4.3 / T27 — "Good" polish prompt.~~ **Landed in `FLOW.md` r3.2.** Q1 resolved (David, 2026-10-12): an
-   un-prefillable Good is saved **needs-completion**, held out of candidate selection, **and** the system
-   actively **prompts the user to polish** at the right moments — stated in the spec, not only the exclusion
-   (§4.3 step 4, T27, §6 Q1). Owner override still open.
+   `decision_id` as a deck decision.
+5. ~~FLOW §4.3 / T27 — "Good" polish prompt.~~ **Landed in `FLOW.md` r3.2.** An un-prefillable Good is saved
+   **needs-completion**, held out of candidate selection, **and** the system prompts the user to polish at the right
+   moments.
 6. ~~FLOW §7 — S0 domain input contract (R1).~~ **Landed in `FLOW.md` r3.2 (picker) and r3.3 (escape).** The S0
-   domain input is a **pick from the shipped taxonomy** — so the `≥ 2` gate counts resolved clusters
-   deterministically — **plus an `Other → free text` escape**, owner-approved 2026-10-13, whose typed lane is
-   **provisional** and never opens the gate; free-text domain input stays from **S3 onward**. Stated in `FLOW.md`
-   T02 / §5.2 / §7; `FLOW.md` §6 Q6 is closed.
+   domain input is a **pick from the shipped taxonomy** plus an `Other → free text` escape; a typed lane is
+   **provisional** and never opens the gate.
+7. **Package layout — decided.** Two workspaces, **`app/`** (Expo) and **`core/`** (portable). The v1 `client/`,
+   `api/`, `worker/`, `store/` packages retire (§13).
+8. **Encryption at rest is OUT for the MVP — decided.** Matching `PRD.md` §6's existing deferral; the OS sandbox is
+   the at-rest defence and SQLCipher is the named post-MVP upgrade behind the `SqliteConnection` port. **Backup
+   exclusion is IN** (§8) — a decision on record (David, 2026-10-17), with *device loss = vault loss* stated.
+9. **Native-first; web is a constrained second target — decided.** Three named gaps: no secure store → key
+   session-only; `expo-sqlite` web = OPFS + Metro wasm + `COEP`/`COOP`, `withExclusiveTransactionAsync`
+   unsupported → L1 feature-detects; per-provider CORS map → a provider may be native-only (§5, §9).
+10. **One provider for the MVP — decided.** OpenRouter, the adapter swappable. Multi-provider BYO-key
+    (OpenAI/Anthropic keys directly) is **post-MVP** — smaller once the header map exists, but not the increment.
+11. **The engine runs foreground-only — decided.** P1's bound is restated in active-foreground time (§4.1, §11).
+12. ~~NFR-Q1 without a server.~~ **Resolved — ruled (David, 2026-10-17).** **No fleet aggregation and no
+    telemetry** — a cross-user NSM needs egress, which contradicts requirement 2 (*"nothing leaves the device"*).
+    The **instrument stays and is computed locally** (`decision` kind + `idea.new_domain`, §11). A **user-visible**
+    quality readout is user-facing behaviour, so it is the owner's call and sits on the owner queue (*"a local
+    spark-quality readout in S1/S3?"*); the instrument itself is not blocked by that. Fold: **no telemetry ·
+    instrument local · user-visible surface → owner queue.**
+13. ~~The web key.~~ **Resolved — ruled (David, 2026-10-17).** **Session-only in memory, no browser persistence** —
+    a `localStorage`/IndexedDB store is XSS-readable and would weaken the one boundary the rebuild is built on;
+    re-entering the key each web session is the **stated cost**, and native is the primary target. The owner holds
+    a veto (§5).
+14. **Open — a product date.** Still open with the owner (David's *"B · a date?"*). It changes *shipping*, not
+    *building*; L0–L4 proceed either way.
+15. **Open — what the required CI `build` job builds for an Expo app.** `main-gate` requires a `build` check, so it
+    must keep reporting something **real**. Recommendation: build **both** workspaces — `core` via `tsc` (as v1
+    built `@astrolab/store`, including the built-seed-resolution step) and `app` via `expo export` (or a typecheck
+    plus a web bundle) — offline and deterministic. L1/L2 own the config; the binding constraint is that the check
+    does not become a no-op (`AGENTS.md` §4: a `paths:`-filtered or no-op'd required job is a permanent freeze).
+16. **Open — device-only behaviour has no CI home.** The mid-run kill (L3), the capture-kill (L2) and P1's
+    active-foreground bound are **device/emulator** behaviours. CI covers their **deterministic cores** — the
+    currency check, the resume unit, the export round-trip — and the rest is **manual emulator sign-off**, stated
+    as such in each lane's PR rather than asserted. Recommendation: keep that split for the MVP.
 
 ---
 
-## 13. Revision history
+## 13. Carry-over table
 
-- **2026-10-12 — r1.** Initial draft (11 sections + ADRs).
-- **2026-10-12 — r2.** Adversarial review by Max (round 1) + David's confirmation. All 14 findings accepted:
-  **A** (domain clustering moved to the worker; capture stores raw tags; `x/3` summary is deterministic —
-  §3.2, §6), **B** (INSPIRE is not a decision; separate `POST /v1/sparks/{id}/inspire` — §6), **C/D** (the
-  committed seeded save carries its own `decision_id`, writes its `decision` row transactionally, is
-  idempotent and undoable — §2.3, §6), **E** (SQLite writer model: WAL + `busy_timeout` + retry, two writers
-  — §1, §9, ADR-0001/0004), **F** (NFR-P1 bound quantified: p95 ≤ 60 s at ≤ 500 ideas — §4, §11), **G**
-  (provenance invariant widened to `provenance-bearing ⇒ no lineage parent` — §2.2), **H** (status vocabulary
-  = FLOW's `OFFERED` / `RESOLVED-*` — §2.3), **I** (`vault_meta.revision` + `spark_run.vault_revision` —
-  §2.3, §4), **J** (O(N + gated) — §3.1), **K** (redundant unique dropped; PK is the key — §2.3), **L**
-  (dangling §4.1 refs fixed), **M** (shadcn citation softened — §9, ADR-0005), **N** (SSE + polling fallback
-  — §4, §6).
-- **2026-10-12 — r2.1.** Residual **K** prose fix: dropped the stale `UNIQUE(spark_id, id)` phrase in §2.3 so
-  the prose matches the schema (PK on `id` is the idempotency key). Logged the Q1 FLOW §4.3/T27 polish-prompt
-  follow-up (§12 item 5).
-- **2026-10-12 — r3.** Review round 2 residual **R1** closed (option a): **§3.2** now returns **resolved** and
-  **provisional** cluster counts and the spread gate / `x/3` read **`resolved` only** — a provisional tag never
-  opens the gate, so the gate and the post-run `E0` count are the same quantity and a false pass is
-  impossible. **S0 domain input is a pick from the shipped taxonomy** (deterministic, AI-free; free-text from
-  S3 on). Aligned **§6** (S0 row, S0→S1 exit), **§7** (spread gate) and **§11** (U1 verification: ≥ 2 distinct
-  *resolved* domains, and E0 not Cold on first run). Added the `FLOW.md` §7 spec touch (§12 item 6).
+**What survives from v1, what is ported, and what is deleted** — verified against `origin/main` @ `26811cb`
+(the branch point), file by file. Dispositions: **kept** (used as-is), **ported** (moved into the new layout,
+possibly with a stated edit), **re-authored** (the artifact's *intent* survives but its code does not),
+**retired** (deleted; history only).
 
-- **2026-10-13 — r3.1.** Follow-up PR (docs-only, `docs/arch-escape`) recording owner decisions:
+### 13.1 Docs & specs
 
-  - **§12 item 1 — resolved: hosted.** Provider **OpenRouter**, initial model **`deepseek/deepseek-v4-flash`**
-    (env-overridable). **NFR-PRIV1 closed by routing, not a vendor term** (Max's verdict, re-verified by David):
-    every call pins `provider: { zdr: true }` so routing is limited to ZDR-classified endpoints; the control is
-    **provider-attested, not independently audited**, and no paid tier is needed (§5, §11).
-  - **§5 / §11 / ADR-0003 — PRIV1 stated as one rule:** ZDR routing control (`provider: { zdr: true }`),
-    verified by asserting `provider.zdr=true` on every call and capturing `GET /api/v1/endpoints/zdr` at build
-    time; residuals stated (metadata stored; OpenRouter transiently sees the prompt).
-  - **§3.2 / §6 / §7 — S0 `Other → free text` escape** (owner-approved 2026-10-13): a typed lane is
-    **provisional** and never opens the spread gate; free-text from S3 on is unchanged.
-  - **§12 reconcile** — §12 item 4 and §12 item 5 marked **landed in `FLOW.md` r3.2**; §12 item 6 marked **r3.2 (picker) +
-    r3.3 (escape)**.
-  - **ADR-0003** — provider pinned (OpenRouter + `deepseek/deepseek-v4-flash`); the zero-retention claim is
-    stated as a **requirement under verification**, not as satisfied.
-  - No schema, API, or state-machine change.
+| v1 artifact | disposition | evidence / note |
+| :--- | :--- | :--- |
+| `docs/PRD.md` | **kept** | product requirements unchanged; §4's NFRs re-mapped in §11 |
+| `docs/VISION.md` | **kept** | |
+| `docs/FLOW.md` | **kept, amended** | S0–S6 + the state machine survive; the delivery transport changes (§4.2); one new first-run arm — **"no key set"** (§4.3, §12) |
+| `DESIGN.md` | **kept, re-scoped** | the **tokens bind** — Nightfall palette, Geist/JetBrains Mono, 8px geometry, 44px targets, motion, and the *judge-the-idea-not-the-pairing* governance; the **shadcn implementation and citation do not** (RN, not the DOM) — implemented in RN (§9) |
+| `docs/stitch.md`, `docs/stitch-prompts.md` | **kept as design history** | the S0–S6 screen prompts; the surfaces they describe survive |
+| `docs/W9_CALIBRATION.md` | **kept** | the engine's calibration; §3.4 unchanged |
+| `docs/SCHEMA.md` | **kept, amended** | same **12** tables + migrations; the F2 (connection) note restated to the `SqliteConnection` port; no second writer |
+| `docs/ARCHITECTURE.md` (v1) | **superseded by this file** | the server shape retires; its §2, §3, §5 carry forward almost verbatim |
+| `docs/API.md` | **retired as HTTP** | the *semantics* (idempotency, undo arms, error classes, invariants) survive in §6 + code; the transport, the bearer auth, the status codes and the SSE stream do not |
+| `docs/DEPLOY.md`, `docs/DEPLOY_SERVING.md`, `docs/RUNBOOK.md` | **retired (history)** | host ops — nothing to operate; kept as history per the re-triage |
+| `docs/CI_GATE.md` | **kept, amended** | the `main-gate` ruleset still governs `main`; the deploy job goes, the **three required checks stay** |
 
-- **2026-10-13 — r3.2.** §2.3 gains the **`idea_mechanism`** table (per-idea descriptor cache: PK
-  `idea_id`, JSON `descriptor`, `source_hash`, `extracted_at`). It was referenced by §3.3 step 1,
-  ADR-0002 and W3 but missing from §2's table set; ruled an **omission** (not a later-stage migration),
-  so it ships in the `0001_init` migration with **F3**. §2 now reads as the complete table set. No other
-  schema, API, or state-machine change.
+### 13.2 ADRs
 
-- **2026-10-14 — r3.3.** **V5 (`#16`) — the delete semantics T26 needs, written into §2.** §2.1, §2.2 and
-  §2.3 previously showed all eight `REFERENCES idea(id)` as bare references, which is what made a delete
-  impossible: with `foreign_keys = ON` a bare reference is *immediate*, so deleting any idea that was ever
-  captured failed on its own `idea_version` row. They now read as the rule the delete path implements —
-  **the row's owner cascades** (`idea_version`, `idea_mechanism`, and `provenance_edge`'s derived side),
-  **historical refs dangle** (`lineage_parent_id`, the provenance source side, a spark's pair,
-  `decision.result_idea_id`) — plus the one case that is neither: a **live `OFFERED` spark** named by a
-  deleted idea is retracted (`docs/API.md` §4.8). Shipped as `0003_reference_actions`, a table rebuild
-  (SQLite cannot `ALTER` a constraint). No API or state-machine change beyond §4.8's implementation; the
-  sketches are the schema of record, so they move with it rather than the change landing only in
-  `docs/SCHEMA.md`.
+| v1 ADR | disposition |
+| :--- | :--- |
+| 0001 store-sqlite | **amended** (single writer) |
+| 0002 spark-engine | **stands** |
+| 0003 ai-provider-boundary | **amended** (in-app, user's key) |
+| 0004 async-spark-pipeline | **amended** (in-process in the app) |
+| 0005 client-stack | **superseded** by 0006 |
+| **0006** (new) | the local-only rebuild |
 
-- **2026-10-14 — r3.4.** **V4 (`#15`) — `idea.mutation_delta`, and §6's fork row.** §2.1's `idea(` sketch
-  gains the nullable `mutation_delta` — the fork's delta (`PRD.md` §3.2 item 2), set only for a FORK
-  (`0005`, `docs/SCHEMA.md` §1d) — closing the gap where §6 named the field but §2 did not. §6's S5 row
-  corrected `{mutation_delta, domain}` → `{mutation_delta, domain_tags}`: `domain_tags` is the field every
-  route already uses, and this document is the source of record, so the row was the defect. No
-  state-machine change.
+### 13.3 Code & packages
 
-- **2026-10-16 — r3.6.** **EV1 (`#43`) — `idea.new_domain`, the NFR-Q1 instrument.** §2.1's `idea(` sketch
-  gains the nullable `new_domain` (`0006`, `docs/SCHEMA.md` §1e): `1` where a write that can widen the
-  vault reached a domain the vault did not already carry, `0` where it did not, `NULL` where the value
-  was never recorded — §4.13's ACCEPT (its root's tags are the source pair's union, so the reading there
-  is constant-false) and every row predating the column. A recorded `1` is **durable**: §4.6's iterate is
-  the one producer whose row already exists, and it assigns the value monotonically (`CASE WHEN
-  new_domain = 1 THEN 1 ELSE ? END`), so an edit never clears a widening. The three producers are §4.2's
-  capture, §4.7's fork and §4.6's iterate; the reporting reads live in `api/src/metrics.ts` and are not a
-  route. The column is additive and nullable, so no existing constraint or state-machine behaviour moves.
+| v1 artifact | disposition | evidence / note |
+| :--- | :--- | :--- |
+| `store/src/**` (store, migrate, migrations, vault, domain-map, sparks, runs, suppression, config, mechanism) | **ported → `core/src/store/`** | the 12-table store **already exists here** — L1 seeds `core/` from it rather than rewriting it; retargeted onto the `SqliteConnection` port |
+| `store/src/store.ts` (`DatabaseSync` + WAL + retry) | **ported, amended** | `openStore`/`writeTransaction` retargeted to the port; `foreign_keys=ON` and short transactions kept; the two-writer retry kept as a harmless guard |
+| `store/seed/**` (`domain-taxonomy.yaml`, `README.md`) | **ported → `core/`** | the **artifact of record** for the 28 clusters |
+| `store/test/**` | **ported → `core/`** | invariants/concurrency/mechanism/taxonomy suites run against the `node:sqlite` adapter; the **two-process** child-spawn tests (`harness.ts`, `writer.ts`, `writers.test.ts`) are **retired or re-scoped to single-writer** — a second process is no longer the model |
+| `store/test/o1_check.py` + the `o1-taxonomy` CI job | **kept, retargeted** | the canonical harness on the shipped seed file; the job's paths follow `store/` → `core/` |
+| `client/src/api/types.ts` | **ported → `core/`** | **it is the domain model, not transport** — its own docstring says the field names are `docs/API.md` §3.1/§4.2/§4.5's contract verbatim, and **16** files in `client/src/domain/` import it. Its `§` citations re-point at v2's §2/§6 |
+| `client/src/domain/**` (**12** modules + **12** tests) | **ported → `core/domain/`** | React-free and DOM-free (verified: no `react`, `window`, `document`, `localStorage`, `import.meta.env`). **4** are pure and move verbatim — `deck-interaction` · `delete-warning` · `run-trigger` · `taxonomy`; **8** need the `types.ts` re-home; **2** carry a **runtime** import to re-point — `onboarding.ts:2` (`createIdea` from `../api/ideas.ts`) and `decision.test.ts:3` (`ApiError` from `../api/client.ts`) |
+| `client/src/domain/deck-interaction.test.ts` | **retired** | a **node-only source-text guard** (`node:fs`) reading `../screens/*.tsx` — files outside `core/` that are re-authored. It cannot move; its **intent** re-homes as an `app/`-side guard in L2 (this closes **#148**) |
+| `client/src/domain/taxonomy.test.ts` | **retired** | its reason is gone. It exists to stop `taxonomy.ts`'s **mirror** drifting from the shipped YAML — a mirror that existed only because *the client could not reach `store`*. In `core/` the mirror and the loader are one package, so the picker reads the **seeded tables** and there is nothing to drift. The YAML stays the artifact of record, guarded by its own `o1_check.py` harness and `store/test/schema.test.ts` (both ported) |
+| `client/src/api/*` (transport: `client.ts`, `ideas.ts`, `sparks.ts`, `decisions.ts`, `vault.ts`, `inspire.ts`) | **retired** | Vite `fetch` transport; its call shapes become `core/vault` calls (§6) |
+| `client/src/screens/**`, `components/**`, `styles/*.css` | **re-authored → `app/`** | React-DOM + CSS → RN (`View`/`Text`/`Pressable`, `StyleSheet`/tokens); the deck, gestures, and E0–E4 compositions survive as *design*, not code |
+| `api/src/**` (route handlers: capture, decision, delete, fork, ideas, inspire, iterate, sparks, undo, vault-summary, engine-state, export, metrics) | **ported → `core/src/vault/`**, minus transport | the use-cases and their tests move; the HTTP wrapping does not |
+| `api/src/server.ts`, `spark-events.ts`, `index.ts` | **retired** | HTTP router, bearer auth, error envelope, SSE, and the process boot — there is no server |
+| `worker/src/engine/**` (run, gate, alignment, adjudicate, domain, suppression, mechanism) | **ported → `core/src/engine/`** | the composer and its stages; the run's body/commit split carries verbatim (§4.1) |
+| `worker/src/queue.ts` | **ported, amended → `core/src/engine/`** | the in-process runner and supersession stay; the loop is driven by app lifecycle, not a `setInterval` in a daemon |
+| `worker/src/provider/**` (openrouter, prompts, schema, types, boundary test) | **ported → `core/src/provider/`** | the adapter and the boundary guard; the boundary test's **path set changes** (`api`/`store` → `core/vault`), its rule is the same |
+| `worker/src/nfr-*.test.ts`, `api/src/nfr-*.test.ts` | **ported, amended** | the NFR suites re-home; the A1 fault-injection and P1 timing keep their shape, P1 restated per §11 |
+| `scripts/audit-zdr.ts`, `capture-zdr.mjs` | **kept, retargeted** | PRIV1 evidence; the `DEFAULT_MODEL` import follows `core/provider` |
+| `scripts/w9-*.ts` | **kept** | calibration; `store/`-relative paths follow `core/` |
+| `deploy/**`, `.github/workflows/deploy.yml` | **retired** (L1) | the host layer and the CI deploy job |
+| `.github/workflows/ci.yml` | **kept, amended** | the deploy-free required checks; workspace globs and `store/`→`core/` paths follow |
+| `api/package.json`, `worker/package.json`, `store/package.json`, `client/package.json` | **replaced** | by `app/package.json` + `core/package.json` |
+| `.env.example` | **retired / replaced** | `API_TOKEN`, `VITE_API_TOKEN`, `DB_PATH`, `API_PORT`, `CLIENT_PORT` have no successor; the key is device-held (§5) |
+| root `package.json` workspaces | **amended** | `["api","worker","client","store"]` → `["app","core"]` |
 
-- **2026-10-14 — r3.5.** **O5 (`#25`) — §12 item 3 (cold-start ordering) closed.** The onboarding run is
-  triggered by the exit the user chose: *See your sparks* presses `POST /v1/sparks/run` (`docs/API.md`
-  §4.16), *Skip* carries no side effect, and the S0→S1 exit never auto-runs. Client-only: a press-scoped
-  single-flight guard (`client/src/domain/run-trigger.ts`), no server invariant and no state-machine change.
+**The five rows an independent read caught that this table first missed** (Ari, 2026-10-17, at `26811cb`): the
+`api/types.ts` domain model (row 1), the two runtime imports (row 2), the `deck-interaction.test.ts` node-only
+guard (row 3), the taxonomy drift gate (row 4), and the fact that `store/` is **not one thing** but `store/src`
+(→ `core/`) + `store/seed` (→ `core/`) + package scaffolding (row 5).
 
-*Merged on `main` — Ari (AstroLab agent), 2026-10-12; latest revision r3.6, 2026-10-16. Review: adversarial passes by Max. Branch `docs/architecture`.*
+### 13.4 The one guard the carry-over table *creates* (not carries)
+
+NFR-A1's requirement — *the vault works with the AI unavailable* — survives its v1 code. In v2 it is a **fresh
+`app/`- and `core/`-side boundary guard**: `core/vault/**` may not import `core/provider/**`, asserted by a
+structural test **seen failing in the state it forbids** (repo guard discipline, `AGENTS.md`). Named here so it is
+not lost between the v1 tree retiring and L2 landing.
+
+---
+
+## 14. Revision history
+
+- **2026-10-12 — r1…r3.6 (v1).** The server architecture: one host, an API service, a worker process,
+  SQLite-on-host. Retired by this revision; the full history lives in `git log -- docs/ARCHITECTURE.md` and its
+  §13 before this rewrite. Its §2 (data model), §3 (engine) and §5 (provider boundary) carry forward, and are the
+  substance of this document.
+- **2026-10-17 — v2.** **The local-only rebuild.** Owner call (`d178c664`): store app · all data on device · AI on
+  the user's own key · server tier + AWS deploy cancelled · rebuild. This revision: the app-only system context
+  (§1), the store as a ported `core/` package (§1, §13), the engine in-app with a resumable, foreground-bound run
+  and in-process delivery (§4), the BYO-key provider boundary with the key-hygiene guard and the web gaps stated
+  (§5), the HTTP contract re-expressed as in-process calls (§6), durability restated to export-only with backup
+  exclusion (§8), encryption-at-rest deferred (§9), and the **carry-over table** (§13). ADR-0006 is new; ADR-0001,
+  -0003 and -0004 are amended; ADR-0005 is superseded; ADR-0002 stands (§10). *Review: the carry-over table
+  verified against `origin/main` @ `26811cb`; Ari's independent read folded in (§13.3); builder check per the
+  `brainstorming` skill.*

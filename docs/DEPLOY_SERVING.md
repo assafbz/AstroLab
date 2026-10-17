@@ -1,5 +1,8 @@
 # DEPLOY — client serving & the access boundary
 
+> **⚠ RETIRED (2026-10-17).** A position paper for the cancelled deploy consult; the server tier is gone
+> (`docs/ARCHITECTURE.md` v2; ADR-0006). **Kept as history.**
+
 > **Deliverable:** consult item 2 — *"client serving and the token exposure"* — opened by David on the
 > `astrolab` deploy thread, 2026-10-16 22:17Z. **Author:** Eli. **Reviewer:** Max (with the host-layer
 > artifact). **Status:** position paper for the deploy consult. Companion: the host layer (proxy config,
