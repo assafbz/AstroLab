@@ -1,5 +1,12 @@
 # Schema: Astrolab store (SQLite) — issue F3 design
 
+> **2026-10-17 — retargeted by the local-only rebuild.** The **twelve tables and every migration are unchanged**;
+> the file moves into the app sandbox and is opened through the `SqliteConnection` port (`docs/ARCHITECTURE.md` v2
+> §2; `docs/adr/0006-local-only-expo-app.md`). **F2's connection posture is amended:** there is now **one
+> in-process writer**, so the WAL + `busy_timeout` + retry-for-`SQLITE_BUSY` machinery (below, and in v1's F2) is no
+> longer load-bearing. Paths in this file (`store/src/migrations.ts`, `@astrolab/store`) become
+> `core/src/store/migrations.ts`, `@astrolab/core`.
+
 > **Status:** The schema of record, in DDL form — and **shipped**: `0001_init` (the twelve tables),
 > `0002_seed_vault_meta`, `0003_reference_actions`, `0004_retire_iteration_lineage_kind` and
 > `0005_idea_mutation_delta` and `0006_idea_new_domain` live in `store/src/migrations.ts`, and this

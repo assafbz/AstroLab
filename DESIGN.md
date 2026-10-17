@@ -1,5 +1,11 @@
 # Design System: Astrolab (Mobile)
 
+> **2026-10-17 — re-scoped by the local-only rebuild, not rewritten.** The **tokens bind**: the Nightfall
+> palette, Geist / JetBrains Mono, 8px geometry, 44px targets, the motion rules, and the *judge-the-idea-not-the-
+> pairing* governance all carry forward unchanged. The **"shadcn-based" implementation does not** — the client is
+> rebuild as **Expo (React Native)**, which is not the DOM (`docs/ARCHITECTURE.md` v2 §9, §12; ADR-0006). Read
+> every *"shadcn"* below as *"the tokenized component shapes, implemented in RN."*
+
 > **Nightfall — dark, mobile-first, shadcn-based. One accent: aged brass.**
 >
 > **Vocabulary:** the engine is **the Spark**; its outputs are **sparks**. *(Never "collision.")*

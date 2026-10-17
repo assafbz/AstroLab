@@ -1,5 +1,10 @@
 # CI GATE — enforcing `main`
 
+> **2026-10-17 — the local-only rebuild changes nothing here.** `main-gate` and its **three required checks**
+> (`lint · format · typecheck · test · build`, `citation ref-lint`, `o1-taxonomy`) still govern `main`. Only the
+> **deploy job is retired** (no server; `docs/ARCHITECTURE.md` v2, ADR-0006); it was never a required check. The
+> `o1-taxonomy` job's paths follow `store/` → `core/` (L1).
+
 What CI *checks* and what CI *blocks* are two different things. Before `main-gate` was applied,
 `main` was unprotected: a red `citations` or `o1-taxonomy` job did not stop a merge, and a direct
 push to `main` was allowed — the "required" gate was honour-system. This document is the definition
