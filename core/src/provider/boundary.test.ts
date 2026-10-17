@@ -370,10 +370,10 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
   // interface type* in the same file: the anchor is the declaration, not the method name, because
   // `run.ts` calls `adjudicator.adjudicate(eligible)` on the engine's own stage. "Declared with that
   // interface" is read off the annotation **as written**, normalised — an `import("…").X` qualifier, a
-  // renamed import (`X as Y`) and a local `type Y = X` alias all name the same declaration, and the
-  // interface module's own aggregate alias (`Provider`) counts for all three operations (#171). What
-  // the normalisation does *not* reach is stated at the anchored arm's own test and in the residual
-  // below the exact-set arm.
+  // renamed import (`X as Y`), a local `type Y = X` alias and a namespace import's member (`P.X`) all
+  // name the same declaration, and the interface module's own aggregate alias (`Provider`) counts for
+  // all three operations (#171; the `P.X` spelling is #174). What the normalisation does *not* reach is
+  // stated at the anchored arm's own test and in the residual below the exact-set arm.
   const IFACES: Record<string, string> = {
     extract: "MechanismExtractor",
     adjudicate: "SparkAdjudicator",
@@ -389,16 +389,35 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
   const IFACE_MODULE = FILES.find((file) => file.rel === "core/src/provider/types.ts")?.text ?? "";
   /**
    * Every name a text binds to `interfaceName`: the name itself, a renamed import (`X as Y`), a local
-   * type alias (`type Y = X`, itself possibly `import(…).X`), chained to a fixpoint. The anchor reads an
-   * **annotation**, and an annotation's spelling is not the declaration: a qualified, aliased or renamed
-   * annotation declares the same interface, and all three walked past the literal-adjacency anchor
-   * (#171, found by mutation in review of #170).
+   * type alias (`type Y = X`, itself possibly `import(…).X`), chained to a fixpoint — plus, for every
+   * namespace import the text holds (`import * as P from "…"`), that namespace's member spelling
+   * (`P.X`). The anchor reads an **annotation**, and an annotation's spelling is not the declaration:
+   * a qualified, aliased or renamed annotation declares the same interface, and all of them walked past
+   * the literal-adjacency anchor (#171, found by mutation in review of #170; the namespace-qualified
+   * spelling was the one #171's list still missed, #174 — it is bound only where the file actually
+   * imports the namespace, so a qualified annotation is not counted on the prefix alone).
+   * Qualification applies to bare names only — `P.X` is not itself re-qualified — so the fixpoint
+   * terminates.
    */
   const boundNames = (texts: readonly string[], interfaceName: string): string[] => {
     const names = new Set([interfaceName]);
+    const namespaces = new Set<string>();
+    for (const text of texts) {
+      for (const match of text.matchAll(/\bimport\s+(?:type\s+)?\*\s+as\s+([A-Za-z_$][\w$]*)/g)) {
+        if (match[1] !== undefined) namespaces.add(match[1]);
+      }
+    }
     for (let added = true; added;) {
       added = false;
       for (const name of [...names]) {
+        if (!name.includes(".")) {
+          for (const namespace of namespaces) {
+            const qualified = `${namespace}.${name}`;
+            if (names.has(qualified)) continue;
+            names.add(qualified);
+            added = true;
+          }
+        }
         for (const text of texts) {
           for (const pattern of [
             `\\b${literal(name)}\\s+as\\s+([A-Za-z_$][\\w$]*)`,
@@ -499,6 +518,10 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
         label: "$-named receiver",
         text: "declare const $ex: MechanismExtractor;\nawait $ex.extract(t);",
       },
+      {
+        label: "namespace-qualified import",
+        text: 'import type * as P from "../provider/types.js";\ndeclare const ex: P.MechanismExtractor;\nawait ex.extract(t);',
+      },
     ];
     for (const { label, text } of SPELLINGS) {
       const file = { text };
@@ -508,9 +531,24 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
       ).toHaveLength(1);
     }
 
+    // Near-miss controls for the namespace leg — the two ways the widening could have been bought by
+    // over-matching instead of by binding. A longer name qualified by the same namespace is not the
+    // interface (`P.MechanismExtractorLike`), and a qualified annotation with no `import * as` in the
+    // file is not a bound name: the leg keys on the import, not on the dot.
+    const qualifiedPrefix = {
+      text: 'import type * as P from "../provider/types.js";\ndeclare const ex: P.MechanismExtractorLike;\nawait ex.extract(t);',
+    };
+    const unimportedNamespace = {
+      text: "declare const ex: P.MechanismExtractor;\nawait ex.extract(t);",
+    };
+    for (const control of [qualifiedPrefix, unimportedNamespace]) {
+      expect(opCalls(control.text).filter((call) => isProviderSite(control, call))).toHaveLength(0);
+    }
+
     // The residual, pinned rather than left to prose: resolution is same-file plus one hop into the
-    // module that *declares* the interfaces, so an annotation that names the interface nowhere — here
-    // an alias imported from a third module — is not counted. A utility/mapped type is the same shape.
+    // module that *declares* the interfaces, so an annotation that does not spell the interface as a
+    // bound name — here an alias imported from a third module — is not counted. A utility/mapped type
+    // is the same shape.
     const thirdModule = {
       text: 'import type { ME } from "./helpers.js";\ndeclare const ex: ME;\nawait ex.extract(t);',
     };
@@ -568,9 +606,10 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
     // The residual, stated rather than hidden — and now in the two parts #171 separated. This arm moves
     // only on a new **file** in the vocabulary, so a second naming *inside* a file already listed does
     // not move the set. What covers that is the anchored arm above, whose anchor is the receiver's
-    // *annotation*: it resolves the qualifier, the rename and the alias, but **not** an annotation that
-    // names the interface nowhere in the file or in the interface module — a utility/mapped type, or an
-    // alias imported from a third module (pinned in that test). Neither residual is a privacy
+    // *annotation*: it resolves the qualifier, the rename, the alias and a namespace import's member
+    // (`P.X`), but **not** an annotation that does not spell the interface as a bound name — a
+    // utility/mapped type, or an alias imported from a third module (pinned in that test). Neither
+    // residual is a privacy
     // regression on its own: a second call site still has to sit under `provider/` or `engine/`, and it
     // still goes through the one ZDR-pinned `buildRequest` (`pins == [PROVIDER_MODULE]` above).
   });
