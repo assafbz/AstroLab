@@ -69,7 +69,7 @@ deliverable: the app boots and the entry surface exists. Nothing is reviewable b
 - Create: `app/src/store/expoConnection.ts` (the `expo-sqlite` adapter — the only `expo-sqlite` importer)
 - Create: `app/src/theme/tokens.ts` (`DESIGN.md` §2–§3 as exported values, one name per token)
 - Create: `app/src/screens/Sparks.tsx` (a placeholder the shell can boot to; replaced in Task 4)
-- Modify: `core/package.json` (the import surface — see the decision below) · `core/src/index.ts` (same)
+- Modify: `core/src/index.ts` (the entry's surface — Step 2) · `package.json` (root: the `workspaces` order — Step 3)
 - Test: `app/src/theme/tokens.test.ts`
 
 **Interfaces:**
@@ -94,20 +94,48 @@ Run: `npm install` from the repo root, then `npm ls expo-sqlite --workspace app`
 Expected: one `expo-sqlite@58.0.13` (the root `overrides` entry is the pin from invariant 1a — it must not be
 re-declared loosely in `app/`).
 
-- [ ] **Step 2: Decide and land the core import surface.**
+- [ ] **Step 2: The core import surface — one entry, and two built doors.**
 
 The app needs `core/vault/*`, `core/domain/*` and `core/types.ts`; today `core/src/index.ts` re-exports
-**`./store/index.js` only** (L1 left the shape to L2, flagged on PR #168). Widen the entry to re-export store ∪
-vault ∪ domain ∪ types — **not** `engine/`, **not** `provider/`, **not** `connection.node.js`. Rationale: a
-single entry is what Metro resolves without an `exports` map (Metro's subpath support is the risky half), and
-excluding `engine/`/`provider/` from it is what makes Task 7's guard non-vacuous rather than aspirational.
+**`./store/index.js` only** (L1 left the shape to L2, flagged on PR #168). Widen the entry to the store ∪ vault ∪
+domain ∪ types surface — **not** `engine/`, **not** `provider/`, **not** `connection.node.js` — with **explicit
+named re-exports, not `export *`**: two vault modules both export a `MonthlyCount`
+(`core/src/vault/metrics.ts`, `core/src/vault/metrics-report.ts`), and a wildcard re-export silently drops the
+ambiguous name instead of failing loudly.
 
-Run: `npm run build -w core && node --input-type=module -e "import('@astrolab/core').then(m => console.log(Object.keys(m).length))"`.
-Expected: a count > 40 and no `node:sqlite` resolution error. Then run `npm test -w core` — the node-adapter guard
-must still pass (it walks `core/src`, so widening the entry is safe only if no `core/src` module gains an adapter
-import).
+**The doors — ruled by David 2026-10-17 (option A).** The engine and the provider are reached by their **built**
+paths: `@astrolab/core/dist/engine/…` and `@astrolab/core/dist/provider/…`. One runtime mode (Metro already bundles
+`core`'s `dist/` for the entry, `main: dist/index.js`), no `exports` map, and Task 7's guard stays a **specifier**
+walk.
 
-- [ ] **Step 3: The connection adapter, and the parity test that keeps it honest.**
+That choice costs one thing, and it is **not** build order: `core`'s build emits **no declarations at all** —
+`find core/dist -name '*.d.ts' | wc -l` → `0` (verified, at `df6eea12`) — so a `dist/` specifier has **no types**
+under `tsc` *whether or not* `dist/` exists. A probe fails
+`TS7016: Could not find a declaration file for module '@astrolab/core/dist/store/index.js'`. So the type plane needs
+`app/tsconfig.json` to map the deep specifiers to `core`'s **source**:
+`"paths": { "@astrolab/core/dist/*": ["../core/src/*"] }` — the same `types: src` / `main: dist` duality the entry
+already lives with, and a `tsc`-only mapping.
+
+- [ ] **Step 3: Prove the two planes, then order the workspaces.**
+
+`tsc` must resolve the deep specifier's **types** from source while the **runtime** resolves the built file — check
+both, because only one of them is what CI runs:
+
+```bash
+# types: an app-side file importing a dist/ specifier must typecheck
+npx tsc --noEmit -p app/tsconfig.json
+# runtime: the same specifier resolves the built module (43 exports at df6eea12)
+node --input-type=module -e "const m = await import('@astrolab/core/dist/store/index.js'); console.log('runtime exports:', Object.keys(m).length)"
+```
+
+**And then verify — do not assume — that Metro still bundles `dist/`.** Expo enables tsconfig `paths` in Metro, so
+a bundle that followed the mapping into `core/src/**` (NodeNext `.js` specifiers and all) is the failure this step
+exists to catch: after `npm run build -w app`, assert the bundle contains `core`'s built output and not its source.
+Finally, `npm run build` is `--workspaces` in **array order** and `app` bundles `core`'s `dist/`, so
+`workspaces` becomes `["core","app"]`: `rm -rf core/dist && npm run build && ls core/dist/index.js app/dist/index.html`,
+then `npm run typecheck` — which must pass **without** `core/dist` present, because the types come from source.
+
+- [ ] **Step 4: The connection adapter, and the parity test that keeps it honest.**
 
 `app/src/store/expoConnection.ts` implements `SqliteConnection` over `openDatabaseSync`. Required mapping
 (invariant 1c): `getFirstSync()` returns `T | null`; the port's miss sentinel is `undefined` — map it. Each
@@ -117,7 +145,7 @@ Test: the same round-trip assertions `core/src/store/connection.test.ts` makes (
 insert, read back, read a missing row) — plus the one assertion the parity test exists for:
 `expect(conn.prepare("SELECT 1 AS n WHERE 0").get()).toBeUndefined()`.
 
-- [ ] **Step 4: Boot.**
+- [ ] **Step 5: Boot.**
 
 `app/src/App.tsx`: `boot()` → `expoConnection` → `openStore` → `migrate` → `seedDomainTaxonomy` →
 `vaultSummary(db).resolved >= 2 ? S1 : S0`. The boot is not a splash screen and does not block on the engine
@@ -128,7 +156,7 @@ Test (`tokens.test.ts` is the cheap first red; the boot assertion is a pure one)
 — a token list that drifts from the table is the failure this test exists for. **Deviation is a task, not a typo**:
 if a value must differ in RN (e.g. no `letterSpacing` on one platform), say so in the test's name.
 
-- [ ] **Step 5: Run the full suite and commit.**
+- [ ] **Step 6: Run the full suite and commit.**
 
 Run: `npm run lint && npm run format && npm run typecheck && npm test` (root — every workspace).
 Expected: green, and `core`'s 499 tests unchanged.
@@ -329,10 +357,15 @@ walk and closes **#148**.
 Three claims, each with the check that stops it scanning nothing:
 
 1. **A vault screen reaches no engine module.** Walk `app/src/**/*.{ts,tsx}`, strip comments, extract specifiers
-   (all three forms: `from "…"`, bare `import "…"`, `import("…")`) — reuse the extractor shape proven in
-   `core/test/boundary-node-adapter.test.ts`, including **its own self-test** ("the scanner sees all three forms,
-   and only real ones"). Assert `>= 1` screen file was walked (non-vacuity) and that **no** specifier matches
-   `@astrolab/core/(engine|provider)|core/src/(engine|provider)|\.\./.*(engine|provider)`.
+   (all three forms — reuse the extractor shape proven in `core/test/boundary-node-adapter.test.ts`, **including
+   its own self-test**). The rule is the ruled one (David, 2026-10-17): a `@astrolab/core/dist/**` specifier under
+   `app/src/screens/**` or `app/src/components/**` is a violation, while the composition root and
+   `app/src/{engine,provider}/**` are the allowed reach. A screen reaches engine *state* through `core/vault` reads
+   (`engineState`), never by importing the engine. Non-vacuity pair: assert the walk read `>= 6` screen/component
+   files, **and** drive the matcher with a literal fixture specifier
+   (`import { engineFromProvider } from "@astrolab/core/dist/engine/compose.js"`) so "no offenders" is a verdict
+   and not a regex that quietly stopped matching (the boundary test's own discipline — a silent matcher is the
+   classic false-green).
 2. **A single `onResolve` call site.** Assert `resolve(` is called from exactly one module (`app/src/deck.ts`),
    counted across the tree — a card that also called it directly is the failure.
 3. **Gesture axis and thresholds come from `core`.** Assert `app/` declares no literal `48` or `10` for
@@ -395,9 +428,12 @@ NFR-U1 to L2 (§11: `U1 → L2`).
   **emulator / web-OPFS** row needs a device run (`node:sqlite` and `expo-sqlite` diverge in a way that is
   CI-green and device-broken). Add the suite entry point (`npm test -w app -- device`) and record the procedure
   in `app/README.md`.
-- [ ] **Step 3: Record the sign-off.** Run it if a device/emulator exists; if it does not, say so **on #165 in the
-  PR** as a named, unrun sign-off with the reason — the same shape L1 used for its two device-only rows. Do not
-  assert it.
+- [ ] **Step 3: Record the sign-off — this row does not hold the lane (ruled, David 2026-10-17).** Two rows, not
+  one: **web-OPFS is runnable here headless** (Playwright browsers are in the shared cache) and is recorded on
+  #165 with its evidence; the **native/emulator** row is **named unrun** with the cause — no `/dev/kvm`, no
+  `vmx`/`svm`, no `adb`/Android SDK on this box, so an emulator cannot run at all. It is a named, deferred
+  acceptance criterion (invariant 9's pre-release device pass, now owner item **D**), not part of Done: #165 closes
+  on merge, as #164 did. Do not assert a row that was not run.
 - [ ] **Step 4: Commit** (`chore(app): build script, device parity row and the sign-off procedure`).
 
 ---
@@ -414,11 +450,38 @@ NFR-U1 to L2 (§11: `U1 → L2`).
   consumed here only through the composition root's `keyPresent` seam — the app does not re-declare it.
 - **Proportion:** this plan decides files, signatures, thresholds and the tests; it does not write the screens.
 
+## Corrections
+
+Amendments after the plan's first commit (`d7921bf`), each from evidence rather than preference — the L1 plan's
+convention.
+
+- **The core doors (Task 1 Step 2) — ruled A by David, 2026-10-17.** The entry stays engine-free and the reach is
+  `@astrolab/core/dist/engine/…` / `@astrolab/core/dist/provider/…`. Two alternatives were priced on evidence and
+  dropped: a committed shim pair at the package root (`core/engine.js` + `core/engine.d.ts`) — verified working
+  end to end, but it adds two hand-kept files for no gain once the ruling landed — and a **source** subpath, which
+  would make Metro compile `core`'s TS with NodeNext `.js` specifiers and put two instances of `core`'s modules in
+  one bundle.
+- **Why the type plane needs `paths` — and it is not build order (Task 1 Step 2/3).** `core`'s build emits **no**
+  declarations (`find core/dist -name '*.d.ts' | wc -l` → `0`), so a `dist/` specifier has no types **even with**
+  `core/dist` present; a probe fails `TS7016`. `app/tsconfig.json` therefore maps `@astrolab/core/dist/*` →
+  `../core/src/*`. Recorded because the shorthand *"build `core` before typechecking `app`"* reads like a fix and
+  is not one.
+- **`workspaces` order (Task 1 Step 3).** `["app","core"]` → `["core","app"]`: the app bundles `core`'s `dist/`,
+  and root `build` runs the workspaces in **array** order (David, reproduced on a throwaway monorepo). L2 lands
+  first, so the edit is L2's.
+- **Explicit re-exports, not `export *` (Task 1 Step 2).** Two vault modules export `MonthlyCount`; a wildcard
+  re-export would silently drop the ambiguous name instead of failing loudly.
+- **Task 7's rule restated** from a pattern list to a directory-scoped specifier rule, so it bites on the door
+  names that actually exist rather than on a guess about which specifier the engine arrives on.
+- **E4's cause vocabulary** (`RunFailureCause`: `no-key` · `invalid-key` · `offline` · `timeout` · `rate-limited` ·
+  `cors-blocked` · `invalid-output`) lands in `core/src/types.ts` with L3's T4, because `vault → provider` is
+  forbidden while `vault/engine-state.ts` is what reports E4. Task 5's arm consumes `keyPresent` until then.
+
 ## What this lane does not decide (and who does)
 
 | Item | Owner | Why it is not in this plan |
 | :--- | :--- | :--- |
-| `KeyStore` adapters (`expo-secure-store` / web session memory) and the foreground run driver | **L3** (`app/src/provider/*`, `app/src/engine/runScheduler.ts`) | L2 lands the seam (`keyPresent`, a no-op driver) so E4's no-key arm is exercisable before L3's app half; L3 replaces the stubs on the same branch ordering already agreed (`#166`) |
+| `KeyStore` adapters (`expo-secure-store` / web session memory) and the foreground run driver | **L3** (`app/src/provider/*`, `app/src/engine/runScheduler.ts`) | L2 lands the seam (`keyPresent`, a no-op driver) so E4's no-key arm is exercisable before L3's app half; L3 replaces the stubs on the same branch ordering already agreed (`#166`). L3's app half imports the engine/provider through the ruled built door (`@astrolab/core/dist/{engine,provider}/…`, Task 1 Step 2); the E4 **cause** vocabulary (`RunFailureCause` in `core/src/types.ts`) is L3's, so Task 5's no-key arm keys off `keyPresent` until then |
 | `app/app.json` backup exclusion (`allowBackup=false`, `NSURLIsExcludedFromBackupKey`) | **L4** (`#167`) | L4 modifies this file; L2 must land it so the L4 edit is **additive** — flag in the PR |
 | Export / Import screens | **L4** (`#167`) | `core/export.exportVault` is L4's codec; the app UI lands with it |
 | A local spark-quality readout in S1/S3 | **owner queue** (ARCHITECTURE §12 item 12) | user-facing behaviour; routed, not invented |
