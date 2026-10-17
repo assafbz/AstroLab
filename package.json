@@ -7,7 +7,6 @@
     "api",
     "worker",
     "client",
-    "store",
     "core"
   ],
   "engines": {

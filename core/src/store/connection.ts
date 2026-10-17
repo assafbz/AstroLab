@@ -20,7 +20,7 @@
  *
  * - **A miss is `undefined`, never `null` (invariant 1c).** `node:sqlite`'s `get()` returns `undefined`
  *   for no row; `expo-sqlite`'s `getFirstSync()` is typed `T | null`. The v1 storage code branches on
- *   `=== undefined` (`store/src/runs.ts`), so an adapter that passed `null` through would be
+ *   `=== undefined` (`core/src/store/runs.ts`), so an adapter that passed `null` through would be
  *   **green in CI and wrong on the device**. An adapter whose engine answers `null` must map it with
  *   {@link normalizeMiss}; `connection.test.ts` pins both halves.
  * - **A statement lives for one call.** The port has no `finalize`/`close` on a statement: each method

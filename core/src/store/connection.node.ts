@@ -7,6 +7,7 @@ import type {
   SqliteConnection,
   SqlValue,
 } from "./connection.js";
+import { openStore } from "./store.js";
 
 /**
  * The `node:sqlite` adapter — the port's implementation for **tests and CI only** (invariant 5).
@@ -52,4 +53,18 @@ export function openNodeConnection(
     }),
     close: (): void => db.close(),
   };
+}
+
+/**
+ * The node-side composition, for tests and CI: the adapter **plus** the store's pragmas — exactly what
+ * `app/` does with `openDatabaseSync` + `openStore`. It is one function so no suite has to remember the
+ * pair, and it is not exported from the package entry (invariant 5).
+ */
+export function openNodeStore(
+  path = ":memory:",
+  options: NodeConnectionOptions = {},
+): SqliteConnection {
+  const conn = openNodeConnection(path, options);
+  openStore(conn);
+  return conn;
 }

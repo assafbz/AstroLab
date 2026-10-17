@@ -41,7 +41,7 @@ test("a miss is undefined, not null — the sentinel the port pins", () => {
  * The device divergence, reproduced and then closed (invariant 1c).
  *
  * `node:sqlite`'s `get()` answers `undefined`; `expo-sqlite`'s `getFirstSync()` answers `null`. The
- * v1 storage code branches on `=== undefined` (`store/src/runs.ts` — a missing singleton must fail
+ * v1 storage code branches on `=== undefined` (`core/src/store/runs.ts` — a missing singleton must fail
  * loudly), so the `null` an unmapped device adapter returns is *silently* the wrong path: CI green,
  * device broken. This test holds both ends: the reproduction, and the mapping that closes it.
  */
@@ -49,7 +49,7 @@ test("an engine that answers null on a miss is mapped, or the sentinel reaches t
   // `expo-sqlite`'s `getFirstSync()`, in one line: no row is `null`, not `undefined`.
   const engineMiss = (): SqlRow | null => null;
 
-  // A v1-shaped reader (`store/src/runs.ts`): only `undefined` means a miss, and a miss is loud.
+  // A v1-shaped reader (`core/src/store/runs.ts`): only `undefined` means a miss, and a miss is loud.
   const readLoudly = (get: () => SqlRow | null | undefined): string => {
     const row = get();
     if (row === undefined) throw new Error("row is missing");
