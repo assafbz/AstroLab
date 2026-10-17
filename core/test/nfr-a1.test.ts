@@ -111,7 +111,7 @@ test("claim 1 — a provider-disabled vault is the state the deck renders as E4"
   settleProviderDown(db);
 
   // `run: null` matters as much as the name: E4 is *no run in flight* **and** the last one FAILED.
-  expect(engineState(db)).toEqual({ state: "E4", unreviewed: 0, run: null });
+  expect(engineState(db)).toEqual({ state: "E4", unreviewed: 0, run: null, cause: null });
 
   // The failed run wrote nothing, so the vault it failed over is intact — which is what makes claim 2's
   // pass below a pass *over a real vault* rather than over an empty one (claim 3).

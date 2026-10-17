@@ -1,3 +1,5 @@
+import type { RunFailureCause } from "./failure.js";
+
 /**
  * The response and request shapes the client consumes, as `docs/API.md` §3.1 / §4.2 / §4.5 spell
  * them. Field names are the contract's, verbatim — the client never renames or re-shapes a payload,
@@ -218,6 +220,12 @@ export interface EngineState {
   state: EngineStateName;
   unreviewed: number;
   run: EngineRun | null;
+  /**
+   * `FLOW.md` §4.1 / §4.3 — **why** the engine is Exhausted, when it is: E4's arms are the copy the
+   * deck shows (`core/src/failure.ts` owns the vocabulary, `core/src/vault/engine-state.ts` reads it off
+   * the failed row). `null` in every other state, and for an E4 whose row carries no tag.
+   */
+  cause: RunFailureCause | null;
 }
 
 /**

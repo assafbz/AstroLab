@@ -33,6 +33,15 @@ const ROOT = fileURLToPath(new URL("../../../", import.meta.url));
 
 /** The boundary: the AI provider, and the engine that is its only caller. */
 const SELECTOR_DIRS = ["core/src/provider", "core/src/engine"];
+/**
+ * The **app's** two reach directories, plus its composition root — door A of the 2026-10-17 ruling:
+ * the app bundle reaches the engine and the provider at `@astrolab/core/dist/…`, so these files may
+ * name them, and every other `app/src/**` file (the screens and the components) may not. Named here
+ * so the landing of L2 does not turn a correct import into a red walk (found by Eli, 2026-10-17).
+ */
+const APP_REACH = ["app/src/engine", "app/src/provider", "app/src/bootstrap.ts"];
+/** Every directory whose files may name the boundary, in one list: the selectors and the app door. */
+const MAY_REACH = [...SELECTOR_DIRS, ...APP_REACH];
 /** The one non-selector that legitimately names the internal vocabulary: the schema and cache owner. */
 const SCHEMA_OWNER = "core/src/store";
 
@@ -153,10 +162,9 @@ describe("the walk is real — it sees the tree it is guarding (non-vacuity)", (
 });
 
 describe("the AI boundary is reachable only from inside the selector (ARCH §5, §13.4)", () => {
-  test("nothing outside the provider or the engine reaches the provider", () => {
-    const offenders = FILES.filter(
-      (file) => !SELECTOR_DIRS.some((dir) => inDir(file, dir)),
-    ).flatMap((file) =>
+  test("nothing outside the provider, the engine or the app's reach reaches the provider", () => {
+    const mayReach = (file: { rel: string }): boolean => MAY_REACH.some((dir) => inDir(file, dir));
+    const offenders = FILES.filter((file) => !mayReach(file)).flatMap((file) =>
       specifiers(file.text)
         .filter(reachesProvider)
         .map((specifier) => `${file.rel} → ${specifier}`),
@@ -189,6 +197,17 @@ describe("the AI boundary is reachable only from inside the selector (ARCH §5, 
     );
 
     expect(offenders).toEqual([]);
+  });
+
+  test("the app's own reach directories are allowed by name, and only those", () => {
+    // The allow-list is the one place a new reach directory is added, so its rule is pinned: the
+    // engine/provider adapters, the composition root — and neither a screen nor a component.
+    expect(MAY_REACH.map((dir) => inDir({ rel: `${dir}/x.ts` }, dir))).toEqual(
+      MAY_REACH.map(() => true),
+    );
+    expect(inDir({ rel: "app/src/engine/runScheduler.ts" }, "app/src/engine")).toBe(true);
+    expect(inDir({ rel: "app/src/screens/Sparks.tsx" }, "app/src/engine")).toBe(false);
+    expect(inDir({ rel: "app/src/bootstrap.ts" }, "app/src/bootstrap.ts")).toBe(true);
   });
 
   test("when `app/` exists, no screen or component reaches the engine", () => {
@@ -238,10 +257,16 @@ describe("the boundary reaches nothing but its own siblings (ARCH §5, §11 PRIV
   test("the allowed-specifier rule accepts the boundary's own shape and refuses a DB handle", () => {
     // A positive control, per the guard-scope rule: the rule must accept one input and refuse one, or
     // a widened (or broken) rule reads exactly like a passing scan.
-    for (const allowed of ["./schema.js", "./key.js", "node:crypto"]) {
+    for (const allowed of ["./schema.js", "./key.js", "node:crypto", "../failure.js"]) {
       expect(boundarySpecifierAllowed(allowed), allowed).toBe(true);
     }
-    for (const refused of ["node:sqlite", "@astrolab/core", "../store/index.js", "./schema"]) {
+    for (const refused of [
+      "node:sqlite",
+      "@astrolab/core",
+      "../store/index.js",
+      "../failure",
+      "./schema",
+    ]) {
       expect(boundarySpecifierAllowed(refused), refused).toBe(false);
     }
   });
@@ -255,6 +280,10 @@ describe("the boundary reaches nothing but its own siblings (ARCH §5, §11 PRIV
  */
 function boundarySpecifierAllowed(specifier: string): boolean {
   if (specifier === "node:sqlite") return false;
+  // One named exception, with its reason (L3 · #166): `RunFailureCause` has to be shared by the engine
+  // (which writes the row) and the vault (which reports E4) without a `vault → provider` edge, so the
+  // vocabulary lives in the portable, provider-free `core/src/failure.ts`. It reaches no state.
+  if (specifier === "../failure.js") return true;
   return /^\.\/[A-Za-z0-9_.-]+\.js$/.test(specifier) || specifier.startsWith("node:");
 }
 

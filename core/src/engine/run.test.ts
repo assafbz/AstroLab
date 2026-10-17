@@ -282,8 +282,13 @@ describe("createEngineRun — the commit's placement (S2/D7)", () => {
 
     const result = await runOnce(db, engine.body, engine.commit);
 
-    expect(result).toMatchObject({ outcome: null, error: "adjudication timed out" });
-    expect(runRows(db)).toEqual([{ status: "FAILED", error: "adjudication timed out" }]);
+    expect(result).toMatchObject({
+      outcome: null,
+      error: "failure:unavailable: adjudication timed out",
+    });
+    expect(runRows(db)).toEqual([
+      { status: "FAILED", error: "failure:unavailable: adjudication timed out" },
+    ]);
     expect(sparkRows(db)).toEqual([]);
     expect(suppressedRows(db)).toEqual([]);
   });

@@ -1,5 +1,7 @@
 import type { SqliteConnection } from "../store/connection.js";
 
+import { parseRunFailure, type RunFailureCause } from "../failure.js";
+
 import { LIVE_STATUS, type RunStatus } from "../store/index.js";
 
 import { vaultSummary } from "./vault-summary.js";
@@ -58,6 +60,14 @@ export interface EngineState {
   state: EnginePhase;
   unreviewed: number;
   run: EngineRunRef | null;
+  /**
+   * **Why** the last run failed, in E4 and only in E4 (L3 · #166, §4.3). Read back off the failed
+   * row's `error` tag (`core/src/failure.ts`) — never classified here, because that would mean this
+   * module reaching a provider (NFR-A1). `null` in every other state, and `null` in E4 for a row that
+   * carries no tag (a v1 row): *we do not know why* is a different answer than *the provider said 429*,
+   * and the surface's copy needs to tell them apart.
+   */
+  cause: RunFailureCause | null;
 }
 
 /**
@@ -74,11 +84,15 @@ function count(db: SqliteConnection, sql: string): number {
   return (db.prepare(sql).get() as { n: number }).n;
 }
 
-/** The newest run, in flight or not, by insertion order — C4's only monotonic sequence. */
-function lastRunStatus(db: SqliteConnection): RunStatus | null {
-  const row = db.prepare("SELECT status FROM spark_run ORDER BY rowid DESC LIMIT 1").get() as
-    { status: RunStatus } | undefined;
-  return row?.status ?? null;
+/**
+ * The newest run, in flight or not, by insertion order — C4's only monotonic sequence. Its `error` text
+ * travels with the status because E4's cause rides it (`core/src/failure.ts`).
+ */
+function lastRun(db: SqliteConnection): { status: RunStatus; error: string | null } | null {
+  const row = db
+    .prepare("SELECT status, error FROM spark_run ORDER BY rowid DESC LIMIT 1")
+    .get() as { status: RunStatus; error: string | null } | undefined;
+  return row ?? null;
 }
 
 /**
@@ -102,24 +116,25 @@ export function engineState(db: SqliteConnection): EngineState {
   // E0 dominates all: either arm is "no pair is possible", so neither the queue nor the deck has
   // anything to do. `run`/`unreviewed` still report truthfully — the state field is what dominates.
   if (!summary.eligible || ideas < MIN_IDEAS) {
-    return { state: "E0", unreviewed, run: run ?? null };
+    return { state: "E0", unreviewed, run: run ?? null, cause: null };
   }
 
   // E4 > E3, and E4 requires *no* run in flight (C4): the last run failed and nothing has replaced it.
-  if (run === undefined && lastRunStatus(db) === "FAILED") {
-    return { state: "E4", unreviewed, run: null };
+  const last = lastRun(db);
+  if (run === undefined && last?.status === "FAILED") {
+    return { state: "E4", unreviewed, run: null, cause: parseRunFailure(last.error) };
   }
 
   // E1 above E2 (C3) — a run in flight is the state a polling or shimmering client keys on.
   if (run !== undefined) {
-    return { state: "E1", unreviewed, run };
+    return { state: "E1", unreviewed, run, cause: null };
   }
 
   // E2 Ready(n): offers to review, nothing computing.
   if (unreviewed >= 1) {
-    return { state: "E2", unreviewed, run: null };
+    return { state: "E2", unreviewed, run: null, cause: null };
   }
 
   // E3 Exhausted: at/above the floor (E0 did not fire), nothing left to review, nothing computing.
-  return { state: "E3", unreviewed, run: null };
+  return { state: "E3", unreviewed, run: null, cause: null };
 }

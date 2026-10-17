@@ -95,9 +95,12 @@ import {
 import {
   ADJUDICATION_SYSTEM,
   adjudicationUser,
-  createAdapterFromEnv,
+  createFetchTransport,
+  createOpenRouterAdapter,
+  DEFAULT_MODEL,
   InvalidOutputError,
   type IdeaText,
+  type KeyStore,
   type MechanismDescriptor,
   type MechanismPair,
   type Provider,
@@ -189,6 +192,28 @@ function readFloor(argv: readonly string[]): number {
 }
 
 /** Firing takes a second, deliberate key: `W9_LIVE=1`. A matching `--confirm` alone is not "post then fire". */
+/**
+ * The live adapter, built through the key port (L3 · #166). The app supplies a secure-store `KeyStore`;
+ * an operator running the calibration has the key in their environment, and this is the whole of the
+ * difference. **Refuses before spending**: a missing key is an error here, not a failed first call —
+ * the harness's rule is that nothing spends without the ratified number *and* a usable key.
+ */
+function liveAdapter(): Provider {
+  const key = process.env.OPENROUTER_API_KEY?.trim();
+  if (key === undefined || key === "") {
+    throw new Error("OPENROUTER_API_KEY is not set — refusing to build the live adapter");
+  }
+  const keyStore: KeyStore = {
+    get: async () => key,
+    set: async () => {},
+    clear: async () => {},
+  };
+  return createOpenRouterAdapter({
+    model: process.env.AI_MODEL?.trim() || DEFAULT_MODEL,
+    transport: createFetchTransport({ keyStore }),
+  });
+}
+
 function requireLive(what: string): void {
   if (process.env.W9_LIVE !== "1") {
     throw new Error(
@@ -725,7 +750,7 @@ async function main(): Promise<void> {
     const posting = p1Posting(ideas);
     requireConfirm("p1", readConfirm(argv), posting.promptChars);
     requireLive("p1");
-    const run = runFor(db, createAdapterFromEnv());
+    const run = runFor(db, liveAdapter());
     await run.extract();
     const artifact = { posting, extractCalls: run.extractCalls };
     writeArtifact("p1-actuals.json", artifact);
@@ -759,7 +784,7 @@ async function main(): Promise<void> {
     // proved every descriptor is cached, so this pass fires adjudication calls — and no extraction.
     // The retry decorator wraps the live adapter *here*, after both key checks (David's ruling A; #34).
     const idOfText = ideaIdByText(ideas);
-    const retry = withAdjudicationRetry(createAdapterFromEnv(), (ideaA, ideaB) =>
+    const retry = withAdjudicationRetry(liveAdapter(), (ideaA, ideaB) =>
       pairKeyOf(idOfText(ideaA), idOfText(ideaB)),
     );
     const run = runFor(db, retry.provider, floor);

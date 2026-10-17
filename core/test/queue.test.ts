@@ -1,5 +1,7 @@
 import type { SqliteConnection } from "../src/store/connection.js";
 
+import { parseRunFailure } from "../src/failure.js";
+import { NoKeyError } from "../src/provider/index.js";
 import { MIGRATIONS, enqueueRun, migrate, stampAndEnqueue } from "../src/store/index.js";
 import { openNodeStore } from "../src/store/connection.node.js";
 import { describe, expect, test } from "vitest";
@@ -79,11 +81,36 @@ describe("runOnce", () => {
       throw new Error("provider timed out");
     });
 
-    expect(result).toMatchObject({ outcome: null, discarded: false, error: "provider timed out" });
+    // The row carries the cause's tag (L3 · #166): E4 has one bit and §4.3 needs the reason, so the
+    // classification is written where it is known and read back by the vault without touching a provider.
+    expect(result).toMatchObject({
+      outcome: null,
+      discarded: false,
+      error: "failure:unavailable: provider timed out",
+    });
     expect(runRows(db)).toEqual([
-      { id: queued.id, vault_revision: 1, status: "FAILED", error: "provider timed out" },
+      {
+        id: queued.id,
+        vault_revision: 1,
+        status: "FAILED",
+        error: "failure:unavailable: provider timed out",
+      },
     ]);
     expect(db.prepare("SELECT COUNT(*) AS n FROM idea").get()).toEqual({ n: 1 });
+  });
+
+  test("a NoKeyError's cause rides the row — E4 renders *Add your AI key* (§4.3)", async () => {
+    const db = newDb();
+    seedIdea(db, "a");
+    stampAndEnqueue(db);
+
+    const result = await runOnce(db, () => {
+      throw new NoKeyError("no API key is set");
+    });
+
+    expect(result?.error).toBe("failure:no-key: no API key is set");
+    expect(runRows(db)[0]?.error).toBe("failure:no-key: no API key is set");
+    expect(parseRunFailure(runRows(db)[0]?.error ?? null)).toBe("no-key");
   });
 
   test("the default stub body produces no candidates and reaches no provider", () => {

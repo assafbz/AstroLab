@@ -21,7 +21,7 @@ function state(
   unreviewed = 1,
   run: EngineState["run"] = null,
 ): EngineState {
-  return { state: name, unreviewed, run };
+  return { state: name, unreviewed, run, cause: null };
 }
 
 const RUNNING: EngineState["run"] = { id: "r-42", status: "RUNNING", vault_revision: 42 };

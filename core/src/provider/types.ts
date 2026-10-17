@@ -100,9 +100,37 @@ export type Provider = MechanismExtractor & SparkAdjudicator & TagNormalizer;
  * a **failed call**: W1's `runOnce` marks the run `FAILED`, and the vault is untouched (NFR-A1).
  */
 export class ProviderError extends Error {
-  constructor(message: string, options?: { cause?: unknown }) {
+  /** The status a response arrived with, when one did — the `openrouter.ts` transport's fact. */
+  readonly status?: number;
+  /**
+   * Set when the request died **before any response**, and only then: what that means on the surface
+   * it was sent from. From `fetch` a CORS block and a disconnected device are one rejection, so the
+   * transport — which knows its surface — names which of the two the user is told
+   * (`provider/failure.ts` maps it; `RunFailureCause` in `core/src/failure.ts` defines both).
+   */
+  readonly network?: "offline" | "cors-blocked";
+  constructor(
+    message: string,
+    options?: { cause?: unknown; status?: number; network?: "offline" | "cors-blocked" },
+  ) {
     super(message, options);
     this.name = "ProviderError";
+    this.status = options?.status;
+    this.network = options?.network;
+  }
+}
+
+/**
+ * **No key is set** — the call was never made (L3 · #166, §4.3's *"Add your AI key…"* arm). A
+ * `ProviderError` because §4 treats it as a failed call and the run lifecycle must catch one family;
+ * its own class because the cause is the *user's* state, not the boundary's, and E4 renders it
+ * differently from a network failure. Thrown by `key.ts`'s `readKey` **before** any request — never an
+ * unauthenticated call, never a request with an empty `Authorization`.
+ */
+export class NoKeyError extends ProviderError {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = "NoKeyError";
   }
 }
 

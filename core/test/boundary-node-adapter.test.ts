@@ -87,3 +87,43 @@ test("no shipped core/src module imports the node:sqlite adapter", () => {
   expect(specifiersOf(readFileSync(testFile, "utf8"))).toContain("./connection.node.js");
   expect(dirname(testFile)).toBe(join(SRC, "store"));
 });
+
+/**
+ * The device half of the same posture (L3 · #166). The app supplies the `expo-sqlite` adapter and the
+ * secure-store key adapter; `core/` supplies neither, so the two claims below are the mirror of the
+ * `node:sqlite` one above — and the second is plan invariant 10's: `expo-sqlite` implements sync on web
+ * through a Worker + `Atomics.wait`, and the async transaction API it offers there is **unsupported**
+ * (`withExclusiveTransactionAsync`), which is one reason the port is synchronous-only (`connection.ts`).
+ */
+test("no shipped core/src module imports an expo package, or the async transaction API", () => {
+  const modules = walk(SRC).filter((file) => !file.endsWith(".test.ts"));
+  const rel = modules.map((file) => relative(CORE, file));
+
+  // Non-vacuity: the walk found the package, and the matchers are live on text that exists somewhere.
+  expect(rel.length).toBeGreaterThanOrEqual(3);
+  expect(rel).toContain(ADAPTER);
+
+  const EXPO = /^expo(-|$)/;
+  const expoOffenders = modules.flatMap((file) =>
+    specifiersOf(readFileSync(file, "utf8"))
+      .filter((specifier) => EXPO.test(specifier))
+      .map((specifier) => `${relative(CORE, file)} → ${specifier}`),
+  );
+  expect(expoOffenders).toEqual([]);
+  // …and the matcher is live: the package name the app installs matches it, a near miss does not.
+  expect(EXPO.test("expo-sqlite")).toBe(true);
+  expect(EXPO.test("expo-secure-store")).toBe(true);
+  expect(EXPO.test("express")).toBe(false);
+
+  // Plan invariant 10: the async transaction API is unsupported on web, and the port is sync-only —
+  // so nothing in `core/` may name it. The claim is structural; `connection.ts` states the reason.
+  const ASYNC_API = /withExclusiveTransactionAsync|withTransactionAsync/;
+  expect(
+    modules
+      .filter((file) => ASYNC_API.test(readFileSync(file, "utf8")))
+      .map((file) => relative(CORE, file)),
+  ).toEqual([]);
+  // A unit control: the matcher bites on the call and not on a shorter name that contains it.
+  expect(ASYNC_API.test("await db.withExclusiveTransactionAsync(async (tx) => tx);")).toBe(true);
+  expect(ASYNC_API.test("db.withTransactionSync(() => {})")).toBe(false);
+});

@@ -1,10 +1,10 @@
 import { describe, expect, test } from "vitest";
 
+import { type KeyStore } from "./key.js";
 import { DESCRIPTOR_SCHEMA } from "./schema.js";
 import {
   DEFAULT_MODEL,
   buildRequest,
-  createAdapterFromEnv,
   createFetchTransport,
   createOpenRouterAdapter,
   type ChatRequest,
@@ -12,7 +12,22 @@ import {
   type Transport,
   type ZdrPinnedRequest,
 } from "./openrouter.js";
-import { InvalidOutputError, ProviderError, type ClusterOption, type IdeaText } from "./types.js";
+import {
+  InvalidOutputError,
+  NoKeyError,
+  ProviderError,
+  type ClusterOption,
+  type IdeaText,
+} from "./types.js";
+
+/** A `KeyStore` with one value — the app supplies the real adapters; this is the port's test double. */
+function keyStoreWith(key: string | null | (() => string | null)): KeyStore {
+  return {
+    get: async () => (typeof key === "function" ? key() : key),
+    set: async () => {},
+    clear: async () => {},
+  };
+}
 
 const idea: IdeaText = {
   hypothesis: "Batch cooking for one",
@@ -112,7 +127,7 @@ describe("createFetchTransport", () => {
   test("POSTs the pinned body to chat/completions with the bearer token and an abort signal", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
     const transport = createFetchTransport({
-      apiKey: "sk-test",
+      keyStore: keyStoreWith("sk-test"),
       fetchImpl: async (url, init) => {
         calls.push({ url: String(url), init: init ?? {} });
         return new Response(JSON.stringify(chatReply("{}")), { status: 200 });
@@ -136,7 +151,7 @@ describe("createFetchTransport", () => {
 
   test("a non-2xx response is a ProviderError, with no body returned", async () => {
     const transport = createFetchTransport({
-      apiKey: "k",
+      keyStore: keyStoreWith("k"),
       fetchImpl: async () => new Response("rate limited", { status: 429 }),
     });
 
@@ -145,7 +160,7 @@ describe("createFetchTransport", () => {
 
   test("a transport rejection — timeout, abort, network — is a ProviderError", async () => {
     const transport = createFetchTransport({
-      apiKey: "k",
+      keyStore: keyStoreWith("k"),
       fetchImpl: async () => {
         throw new DOMException("the operation timed out", "TimeoutError");
       },
@@ -156,7 +171,7 @@ describe("createFetchTransport", () => {
 
   test("a body that is not JSON is a ProviderError", async () => {
     const transport = createFetchTransport({
-      apiKey: "k",
+      keyStore: keyStoreWith("k"),
       fetchImpl: async () => new Response("<html>nope</html>", { status: 200 }),
     });
 
@@ -168,7 +183,7 @@ describe("createFetchTransport", () => {
     controller.abort(); // deterministic — nothing waits for a clock
     const seen: RequestInit[] = [];
     const transport = createFetchTransport({
-      apiKey: "k",
+      keyStore: keyStoreWith("k"),
       signal: () => controller.signal,
       fetchImpl: async (_url, init) => {
         seen.push(init ?? {});
@@ -179,6 +194,64 @@ describe("createFetchTransport", () => {
 
     await expect(transport.send(request)).rejects.toBeInstanceOf(ProviderError);
     expect(seen[0]?.signal).toBe(controller.signal);
+  });
+
+  test("no key ⇒ NoKeyError, and nothing is sent (invariant 13)", async () => {
+    let fetched = 0;
+    const transport = createFetchTransport({
+      keyStore: keyStoreWith(null),
+      fetchImpl: async () => {
+        fetched += 1;
+        return new Response("{}", { status: 200 });
+      },
+    });
+
+    await expect(transport.send(request)).rejects.toBeInstanceOf(NoKeyError);
+    // The claim is not "it failed" but "it never left the device": no request, no empty bearer header,
+    // no unauthenticated call.
+    expect(fetched).toBe(0);
+  });
+
+  test("the key is read per request, not captured at construction", async () => {
+    let current: string | null = "first";
+    const sent: string[] = [];
+    const transport = createFetchTransport({
+      keyStore: keyStoreWith(() => current),
+      fetchImpl: async (_url, init) => {
+        sent.push((init?.headers as Record<string, string>)["authorization"] ?? "");
+        return new Response(JSON.stringify(chatReply("{}")), { status: 200 });
+      },
+    });
+
+    await transport.send(request);
+    current = "second"; // the user replaced their key under a live process
+    await transport.send(request);
+
+    expect(sent).toEqual(["Bearer first", "Bearer second"]);
+  });
+
+  test("a browser-blocked response and an offline device are told apart by the surface", async () => {
+    const failing = async (surface: "native" | "web"): Promise<ProviderError> => {
+      const transport = createFetchTransport({
+        keyStore: keyStoreWith("k"),
+        surface,
+        fetchImpl: async () => {
+          throw new TypeError("Failed to fetch");
+        },
+      });
+      try {
+        await transport.send(request);
+        throw new Error("expected the transport to reject");
+      } catch (err) {
+        return err as ProviderError;
+      }
+    };
+
+    // The same rejection, two facts: from `fetch` a CORS block and a dead connection are one
+    // `TypeError`, so the transport — which knows its surface, and which the classifier cannot
+    // reconstruct later — names which of the two the user is told.
+    expect((await failing("native")).network).toBe("offline");
+    expect((await failing("web")).network).toBe("cors-blocked");
   });
 });
 
@@ -308,44 +381,37 @@ describe("createOpenRouterAdapter — adjudicate (ARCH §3.3 step 3)", () => {
   });
 });
 
-describe("createAdapterFromEnv — the env-selection contract (ADR-0003; W3's carry from #78)", () => {
-  test("an injected transport needs no key and reads nothing from the network", async () => {
+describe("createOpenRouterAdapter — the model is an argument, the key is the port", () => {
+  test("the adapter's model is the model on the request (the cache's producer identity)", async () => {
     const { transport, requests } = fakeTransport(async () => chatReply(descriptorJson));
-    const provider = createAdapterFromEnv({}, { transport });
-
-    await expect(provider.extract(idea)).resolves.toEqual(JSON.parse(descriptorJson));
-    expect(requests[0]?.model).toBe(DEFAULT_MODEL);
-  });
-
-  test("AI_MODEL overrides the pinned default", async () => {
-    const { transport, requests } = fakeTransport(async () => chatReply(descriptorJson));
-    const provider = createAdapterFromEnv({ AI_MODEL: "vendor/model-x" }, { transport });
+    const provider = createOpenRouterAdapter({ model: "vendor/model-x", transport });
 
     await provider.extract(idea);
 
     expect(requests[0]?.model).toBe("vendor/model-x");
   });
 
-  test("an unsupported AI_PROVIDER throws, without needing a key", () => {
-    expect(() => createAdapterFromEnv({ AI_PROVIDER: "anthropic" })).toThrow(ProviderError);
+  test("the pinned default is a value the caller passes, not an env read", async () => {
+    const { transport, requests } = fakeTransport(async () => chatReply(descriptorJson));
+    const provider = createOpenRouterAdapter({ model: DEFAULT_MODEL, transport });
+
+    await provider.extract(idea);
+
+    expect(requests[0]?.model).toBe(DEFAULT_MODEL);
   });
 
-  test("no transport and no OPENROUTER_API_KEY throws — it never sends an unauthenticated call", () => {
-    expect(() => createAdapterFromEnv({})).toThrow(ProviderError);
-    expect(() => createAdapterFromEnv({ OPENROUTER_API_KEY: "   " })).toThrow(ProviderError);
-  });
-
-  test("a key builds the fetch transport: the pinned bearer header, and a parsed descriptor", async () => {
+  test("a key store and the real transport: the pinned bearer header, and a parsed descriptor", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = [];
-    const provider = createAdapterFromEnv(
-      { OPENROUTER_API_KEY: "sk-test" },
-      {
+    const provider = createOpenRouterAdapter({
+      model: DEFAULT_MODEL,
+      transport: createFetchTransport({
+        keyStore: keyStoreWith("sk-test"),
         fetchImpl: async (url, init) => {
           calls.push({ url: String(url), init: init ?? {} });
           return new Response(JSON.stringify(chatReply(descriptorJson)), { status: 200 });
         },
-      },
-    );
+      }),
+    });
 
     await expect(provider.extract(idea)).resolves.toEqual(JSON.parse(descriptorJson));
     expect(calls[0]?.url).toBe("https://openrouter.ai/api/v1/chat/completions");

@@ -15,6 +15,7 @@ import {
   extractionUser,
   tagNormalisationUser,
 } from "./prompts.js";
+import { readKey, type KeyStore } from "./key.js";
 import {
   InvalidOutputError,
   ProviderError,
@@ -25,11 +26,18 @@ import {
 } from "./types.js";
 
 /**
- * The OpenRouter adapter (`ARCHITECTURE.md` §5; `ADR-0003`) — one adapter, three operations.
+ * The OpenRouter adapter (`ARCHITECTURE.md` §5; `ADR-0003` as amended by `ADR-0006`) — one adapter,
+ * three operations.
  *
  * The division of labour: the **adapter** owns the request shape, the privacy pin and output
  * validation; the **transport** owns URL, auth and timeout. That split is what lets the whole required
  * gate run offline with a fake transport — no key, no network (W2's pin 3).
+ *
+ * **The key is read per request, through the port** (L3 · #166, invariant 13). v1 read
+ * `OPENROUTER_API_KEY` once, in a boot-time factory, because the key was the deployment's; now it is
+ * the user's, it can be added or rotated mid-session, and the one place that must never happen is a
+ * request sent with an empty or stale `Authorization`. So `readKey(store)` runs inside `send`, before
+ * the fetch: no key ⇒ `NoKeyError` ⇒ §4's failed call, and nothing leaves the device.
  */
 
 /** ADR-0003's pinned model; a config value, re-pointable without a code change. */
@@ -96,8 +104,16 @@ export function buildRequest(input: BuildRequestInput): ZdrPinnedRequest {
 }
 
 export interface FetchTransportOptions {
-  apiKey: string;
+  /** The user's key, read **per request** — never captured at construction (invariant 13). */
+  keyStore: KeyStore;
   baseUrl?: string;
+  /**
+   * Which surface is sending, because the same `fetch` rejection means two different things on two
+   * surfaces: a browser that the provider's CORS policy blocks and a device with no connectivity both
+   * arrive as one `TypeError`. `native` (the default) tells the user to check their connection; `web`
+   * tells them the provider's direct-browser path is the likely cause. Both are one failed call.
+   */
+  surface?: "native" | "web";
   timeoutMs?: number;
   /** Injected so the transport's own error/timeout mapping is testable with no network and no wait. */
   fetchImpl?: typeof fetch;
@@ -113,27 +129,41 @@ export function createFetchTransport(options: FetchTransportOptions): Transport 
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const doFetch = options.fetchImpl ?? fetch;
   const makeSignal = options.signal ?? (() => AbortSignal.timeout(timeoutMs));
+  const surface = options.surface ?? "native";
 
   return {
     async send(request) {
+      // Read first, fetch second: a missing key fails the call here, with no request in flight.
+      const key = await readKey(options.keyStore);
+
       let response: Response;
       try {
         response = await doFetch(`${baseUrl}/chat/completions`, {
           method: "POST",
           headers: {
             "content-type": "application/json",
-            authorization: `Bearer ${options.apiKey}`,
+            authorization: `Bearer ${key}`,
           },
           body: JSON.stringify(request),
           signal: makeSignal(),
         });
       } catch (cause) {
-        // A timeout, an abort or a network failure is §4's failed call — never a partial result.
-        throw new ProviderError(`transport failed: ${describe(cause)}`, { cause });
+        // A timeout, an abort or a network failure is §4's failed call — never a partial result. The
+        // two facts the classifier cannot recover later are attached here: *our* signal aborted it
+        // (a `TimeoutError`), or the request died before any response on this surface.
+        const aborted = cause instanceof Error && cause.name === "TimeoutError";
+        throw new ProviderError(
+          aborted
+            ? `transport timed out after ${timeoutMs}ms`
+            : `transport failed: ${describe(cause)}`,
+          aborted ? { cause } : { cause, network: surface === "web" ? "cors-blocked" : "offline" },
+        );
       }
 
       if (!response.ok) {
-        throw new ProviderError(`provider returned HTTP ${response.status}`);
+        throw new ProviderError(`provider returned HTTP ${response.status}`, {
+          status: response.status,
+        });
       }
 
       try {
@@ -207,42 +237,6 @@ export function createOpenRouterAdapter({ model, transport }: OpenRouterAdapterO
       });
     },
   };
-}
-
-export interface AdapterFromEnvOptions {
-  /** Injected in tests (and by a stage that wants its own transport); otherwise built from the env. */
-  transport?: Transport;
-  fetchImpl?: typeof fetch;
-}
-
-/**
- * Selects the adapter from the environment (`ADR-0003`: `AI_PROVIDER`, `AI_MODEL`). Reads nothing and
- * opens nothing when a transport is injected, so tests never need a key; with no transport it requires
- * `OPENROUTER_API_KEY` rather than sending an unauthenticated call.
- */
-export function createAdapterFromEnv(
-  env: Record<string, string | undefined> = process.env,
-  options: AdapterFromEnvOptions = {},
-): Provider {
-  const provider = env.AI_PROVIDER?.trim() || "openrouter";
-  if (provider !== "openrouter") {
-    throw new ProviderError(`unsupported AI_PROVIDER: ${provider}`);
-  }
-
-  const model = env.AI_MODEL?.trim() || DEFAULT_MODEL;
-  if (options.transport !== undefined) {
-    return createOpenRouterAdapter({ model, transport: options.transport });
-  }
-
-  const apiKey = env.OPENROUTER_API_KEY?.trim();
-  if (!apiKey) {
-    throw new ProviderError("OPENROUTER_API_KEY is not set");
-  }
-
-  return createOpenRouterAdapter({
-    model,
-    transport: createFetchTransport({ apiKey, fetchImpl: options.fetchImpl }),
-  });
 }
 
 /** The model's message text, as JSON. Anything else is invalid output — never a partial object. */

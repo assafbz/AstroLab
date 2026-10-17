@@ -1,5 +1,7 @@
 import type { SqliteConnection } from "../store/connection.js";
 
+import { failureTag } from "../failure.js";
+import { failureCause } from "../provider/failure.js";
 import {
   claimNextRun,
   currentVaultRevision,
@@ -132,8 +134,12 @@ export async function runOnce(
     outcome = await body(cut);
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err);
-    finishRun(db, run.id, "FAILED", error);
-    return { run, outcome: null, discarded: false, error };
+    // The **cause** rides the row (`core/src/failure.ts`): E4 has one bit — *the last run failed* — and
+    // §4.3 needs the reason to render its arms (no key, bad key, offline, throttled). Tagged here,
+    // where the classification is known, so the vault can read it back without reaching a provider.
+    const tagged = `${failureTag(failureCause(err))}: ${error}`;
+    finishRun(db, run.id, "FAILED", tagged);
+    return { run, outcome: null, discarded: false, error: tagged };
   }
 
   const revision = currentVaultRevision(db);

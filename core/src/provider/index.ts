@@ -1,7 +1,7 @@
 /**
- * The provider boundary's surface (`ARCHITECTURE.md` §5). Nothing in `api/` or `store/` may import this
- * module: NFR-A1 holds because the vault has no reachable path to a provider, and `boundary.test.ts`
- * fails the suite if one appears.
+ * The provider boundary's surface (`ARCHITECTURE.md` §5; L3 · #166). Nothing outside `core/src/engine/`
+ * (its only caller) or the app's own reach directories may import this module: NFR-A1 holds because the
+ * vault has no reachable path to a provider, and `boundary.test.ts` fails the suite if one appears.
  */
 export {
   ADJUDICATION_SYSTEM,
@@ -23,10 +23,8 @@ export {
 export {
   DEFAULT_MODEL,
   buildRequest,
-  createAdapterFromEnv,
   createFetchTransport,
   createOpenRouterAdapter,
-  type AdapterFromEnvOptions,
   type BuildRequestInput,
   type ChatRequest,
   type ChatResponse,
@@ -35,8 +33,12 @@ export {
   type Transport,
   type ZdrPinnedRequest,
 } from "./openrouter.js";
+export { failureCause } from "./failure.js";
+export { normalizeKey, readKey, type KeyStore } from "./key.js";
+export { NATIVE_ONLY_CAUSE, webReachFor, type NativeOnly, type WebReach } from "./web.js";
 export {
   InvalidOutputError,
+  NoKeyError,
   ProviderError,
   type ClusterOption,
   type IdeaText,
