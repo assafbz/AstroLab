@@ -368,11 +368,53 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
   // payload is sent" — is checkable *at a call site*, and it is unenumerable the moment a second one
   // appears. A **provider call site** is a `.op(` whose receiver is *declared with that operation's
   // interface type* in the same file: the anchor is the declaration, not the method name, because
-  // `run.ts` calls `adjudicator.adjudicate(eligible)` on the engine's own stage.
+  // `run.ts` calls `adjudicator.adjudicate(eligible)` on the engine's own stage. "Declared with that
+  // interface" is read off the annotation **as written**, normalised — an `import("…").X` qualifier, a
+  // renamed import (`X as Y`) and a local `type Y = X` alias all name the same declaration, and the
+  // interface module's own aggregate alias (`Provider`) counts for all three operations (#171). What
+  // the normalisation does *not* reach is stated at the anchored arm's own test and in the residual
+  // below the exact-set arm.
   const IFACES: Record<string, string> = {
     extract: "MechanismExtractor",
     adjudicate: "SparkAdjudicator",
     normalizeTag: "TagNormalizer",
+  };
+  /** A literal regex from a name read out of source — `$` is not special *and* not a word character. */
+  const literal = (name: string): string => name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  /**
+   * The module that **declares** the three interfaces, and its own alias for them: `Provider` is
+   * `MechanismExtractor & SparkAdjudicator & TagNormalizer`, so a receiver annotated `Provider` is the
+   * same declaration one hop out — the spelling `compose.ts` and the app's composition root both use.
+   */
+  const IFACE_MODULE = FILES.find((file) => file.rel === "core/src/provider/types.ts")?.text ?? "";
+  /**
+   * Every name a text binds to `interfaceName`: the name itself, a renamed import (`X as Y`), a local
+   * type alias (`type Y = X`, itself possibly `import(…).X`), chained to a fixpoint. The anchor reads an
+   * **annotation**, and an annotation's spelling is not the declaration: a qualified, aliased or renamed
+   * annotation declares the same interface, and all three walked past the literal-adjacency anchor
+   * (#171, found by mutation in review of #170).
+   */
+  const boundNames = (texts: readonly string[], interfaceName: string): string[] => {
+    const names = new Set([interfaceName]);
+    for (let added = true; added;) {
+      added = false;
+      for (const name of [...names]) {
+        for (const text of texts) {
+          for (const pattern of [
+            `\\b${literal(name)}\\s+as\\s+([A-Za-z_$][\\w$]*)`,
+            `\\btype\\s+([A-Za-z_$][\\w$]*)\\s*=\\s*(?:import\\([^)]*\\)\\.)?${literal(name)}(?![\\w$])`,
+          ]) {
+            for (const match of text.matchAll(new RegExp(pattern, "g"))) {
+              const found = match[1];
+              if (found === undefined || names.has(found)) continue;
+              names.add(found);
+              added = true;
+            }
+          }
+        }
+      }
+    }
+    return [...names];
   };
   const opCalls = (text: string): Array<{ receiver: string; op: string }> =>
     [...text.matchAll(/([A-Za-z_$][\w$]*)\.(extract|adjudicate|normalizeTag)\s*\(/g)].map(
@@ -381,7 +423,16 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
   const isProviderSite = (
     file: { text: string },
     call: { receiver: string; op: string },
-  ): boolean => new RegExp(`\\b${call.receiver}\\s*:\\s*${IFACES[call.op]}\\b`).test(file.text);
+  ): boolean => {
+    const interfaceName = IFACES[call.op];
+    if (interfaceName === undefined) return false;
+    const names = boundNames([IFACE_MODULE, file.text], interfaceName).map(literal).join("|");
+    // `(?<![\w$])`/`(?![\w$])` rather than `\b`: `$` is neither a word character nor a regex literal, so
+    // the `\b` form matched no `$`-named receiver at all (measured — that spelling walked past it too).
+    return new RegExp(
+      `(?<![\\w$])${literal(call.receiver)}\\s*:\\s*(?:import\\([^)]*\\)\\.)?(?:${names})(?![\\w$])`,
+    ).test(file.text);
+  };
 
   /** The three operations, and the one product module each is called from (`ARCHITECTURE.md` §3.3). */
   const OPERATIONS = [
@@ -415,6 +466,63 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
       text: "function g(adjudicator: Adjudicator) { return adjudicator.adjudicate(ps); }",
     };
     expect(opCalls(holder.text).filter((call) => isProviderSite(holder, call))).toHaveLength(1);
+    expect(opCalls(stage.text).filter((call) => isProviderSite(stage, call))).toHaveLength(0);
+  });
+
+  test("the anchor normalises the annotation's spelling, not just its adjacency (#171)", () => {
+    // The anchor used to be the literal adjacency `<receiver>: <InterfaceName>`. A receiver declared
+    // with the interface through a qualifier, a rename or an alias is the same declaration, and all
+    // three walked past it — measured by mutation in review of #170 (#171).
+    const SPELLINGS: Array<{ label: string; text: string }> = [
+      { label: "plain", text: "declare const ex: MechanismExtractor;\nawait ex.extract(t);" },
+      {
+        label: "import(...) qualifier",
+        text: 'declare const ex: import("../provider/index.js").MechanismExtractor;\nawait ex.extract(t);',
+      },
+      {
+        label: "local type alias",
+        text: "type ME = MechanismExtractor;\ndeclare const ex: ME;\nawait ex.extract(t);",
+      },
+      {
+        label: "renamed import",
+        text: 'import type { MechanismExtractor as MEx } from "../provider/types.js";\ndeclare const ex: MEx;\nawait ex.extract(t);',
+      },
+      {
+        label: "renamed import, aliased again",
+        text: 'import type { MechanismExtractor as MEx } from "../provider/types.js";\ntype ME2 = MEx;\ndeclare const ex: ME2;\nawait ex.extract(t);',
+      },
+      {
+        label: "the interface module's aggregate alias",
+        text: "declare const ex: Provider;\nawait ex.extract(t);",
+      },
+      {
+        label: "$-named receiver",
+        text: "declare const $ex: MechanismExtractor;\nawait $ex.extract(t);",
+      },
+    ];
+    for (const { label, text } of SPELLINGS) {
+      const file = { text };
+      expect(
+        opCalls(text).filter((call) => isProviderSite(file, call)),
+        label,
+      ).toHaveLength(1);
+    }
+
+    // The residual, pinned rather than left to prose: resolution is same-file plus one hop into the
+    // module that *declares* the interfaces, so an annotation that names the interface nowhere — here
+    // an alias imported from a third module — is not counted. A utility/mapped type is the same shape.
+    const thirdModule = {
+      text: 'import type { ME } from "./helpers.js";\ndeclare const ex: ME;\nawait ex.extract(t);',
+    };
+    expect(
+      opCalls(thirdModule.text).filter((call) => isProviderSite(thirdModule, call)),
+    ).toHaveLength(0);
+
+    // A near-miss the resolution must keep swallowing: `Adjudicator` is the engine's own stage, and its
+    // method deliberately shares the operation's name (`run.ts`).
+    const stage = {
+      text: "declare const stage: Adjudicator;\nawait stage.adjudicate(a, b);",
+    };
     expect(opCalls(stage.text).filter((call) => isProviderSite(stage, call))).toHaveLength(0);
   });
 
@@ -457,9 +565,14 @@ describe("one call site per operation (ARCH §11 PRIV1, data-flow audit) — EV6
     expect(
       FILES.filter((file) => inDir(file, CALIBRATION) && namesOperation(file)).map(relOf),
     ).toEqual(["core/src/engine/calibration/w9-run.ts"]);
-    // The residual, stated rather than hidden: the event this arm names is a new **file** in the
-    // vocabulary, so a second naming *inside* a file already listed does not move the set. What covers
-    // that is the anchored arm above, and only for a second *anchored* call.
+    // The residual, stated rather than hidden — and now in the two parts #171 separated. This arm moves
+    // only on a new **file** in the vocabulary, so a second naming *inside* a file already listed does
+    // not move the set. What covers that is the anchored arm above, whose anchor is the receiver's
+    // *annotation*: it resolves the qualifier, the rename and the alias, but **not** an annotation that
+    // names the interface nowhere in the file or in the interface module — a utility/mapped type, or an
+    // alias imported from a third module (pinned in that test). Neither residual is a privacy
+    // regression on its own: a second call site still has to sit under `provider/` or `engine/`, and it
+    // still goes through the one ZDR-pinned `buildRequest` (`pins == [PROVIDER_MODULE]` above).
   });
 
   test("the calibration exception is script-only — no src module outside it imports the harness", () => {
