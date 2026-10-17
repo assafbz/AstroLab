@@ -78,9 +78,11 @@ skills."* Applied to this repo's harness, that means:
    the field did not return it (`n=1`, unmerged, so it separates nothing about post-merge
    behaviour; what it does establish is that the read-back **does not clear the commit
    vector**). The other keyword-bearing commit is **not** a second firing shape: its
-   subject separates the keyword from its reference with a paren, and that split measures
-   **inert** (PR #179, control and test in one body — adjacent fired, paren-split did not;
-   body arm E1's parens *wrap* the pair, they do not split it). And read history as history:
+   subject separates the keyword from its reference, and that separation measures **inert** —
+   the keyword must sit **immediately** before its reference (PR #179 split the pair with a
+   paren; PR #180 split it with a word and no paren, still inert, so the paren is one *way*
+   to split a pair, not the cause). Body arm E1's `(Closes #94)` *wraps* an adjacent pair,
+   which is why it fires. And read history as history:
    these fields are **current state**. `gh issue view 42 --json closedAt` returns
    `16:35:39Z`, the *last* close, which reads as *"5.5 h after #138 merged, so #138 did
    not do it"*; the record is the `closed → reopened` pair — closed `11:04:45Z`, reopened
@@ -94,10 +96,10 @@ skills."* Applied to this repo's harness, that means:
    parked in a commit message executes precisely the close the body was written to avoid,
    and the read-back above cannot see it (*documented, not measured here* — #175 carried
    them and, unmerged, closed nothing). An unreplaced `#<n>` closes nothing, but that is
-   **necessary, not sufficient**: any other literal closing keyword in the body still
-   fires. Only the **closing** PR writes `Closes #<n>`, with `<n>` replaced by its own issue
-   number. A missing keyword has left a finished lane's issue OPEN twice (#94 / PR #96, #37
-   / PR #128).
+   **necessary, not sufficient**: any other literal closing keyword in the body or in a
+   commit message still fires. Only the **closing** PR writes `Closes #<n>`, with `<n>`
+   replaced by its own issue number. A missing keyword has left a finished lane's issue OPEN
+   twice (#94 / PR #96, #37 / PR #128).
 
 4. **`main` carries a repository ruleset, and the committed definition is the source of truth.**
    The `main-gate` ruleset (`bypass_actors: []` — no actor, the owner included, can bypass it) is
