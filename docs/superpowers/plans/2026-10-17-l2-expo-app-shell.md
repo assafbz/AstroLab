@@ -70,6 +70,7 @@ deliverable: the app boots and the entry surface exists. Nothing is reviewable b
 - Create: `app/src/theme/tokens.ts` (`DESIGN.md` §2–§3 as exported values, one name per token)
 - Create: `app/src/screens/Sparks.tsx` (a placeholder the shell can boot to; replaced in Task 4)
 - Modify: `core/src/index.ts` (the entry's surface — Step 2) · `package.json` (root: the `workspaces` order — Step 3)
+- Create: `core/test/entry-surface.test.ts` (the entry's guard — Step 2)
 - Test: `app/src/theme/tokens.test.ts`
 
 **Interfaces:**
@@ -96,12 +97,31 @@ re-declared loosely in `app/`).
 
 - [ ] **Step 2: The core import surface — one entry, and two built doors.**
 
-The app needs `core/vault/*`, `core/domain/*` and `core/types.ts`; today `core/src/index.ts` re-exports
-**`./store/index.js` only** (L1 left the shape to L2, flagged on PR #168). Widen the entry to the store ∪ vault ∪
-domain ∪ types surface — **not** `engine/`, **not** `provider/`, **not** `connection.node.js` — with **explicit
-named re-exports, not `export *`**: two vault modules both export a `MonthlyCount`
-(`core/src/vault/metrics.ts`, `core/src/vault/metrics-report.ts`), and a wildcard re-export silently drops the
-ambiguous name instead of failing loudly.
+The app needs what `core/vault/*` and `core/domain/*` export, and nothing else; today `core/src/index.ts`
+re-exports **`./store/index.js` only** (L1 left the shape to L2, flagged on PR #168). **Landed on this branch
+2026-10-17** — the entry is now store ∪ vault ∪ domain, with four modules deliberately off it. The reason is
+measured, not stylistic: **`export *` is not a union.** A scan of every shipped module's export names finds **15
+cross-module collisions** — 13 of them `./types.ts` against `./vault/**` (`Idea` · `IdeaVersion` · `IdeaFields` ·
+`IdeaDetail` · `VaultFilters` · `VaultSummary` · `Spark` · `SparkDetail` · `InspireSeed` · `Decision` ·
+`CaptureInput` · `EngineState` · `ProvenanceRef`), plus `MonthlyCount` across the two metrics modules, plus
+`isoTimestamp` (the store's own, legitimately re-exported by `vault/capture.ts`). The thirteen are **distinct
+declarations with identical fields** — a v1 inheritance (the client's `api/types.ts` rode alongside the handlers),
+not a rebuild defect — so a wildcard union re-exports **none** of them, silently; a union with a preference puts two
+meanings of `Idea` in one namespace. The vault modules are the ones the app calls, so they are the ones on the
+entry and `./types.ts` stays the package's internal contract.
+
+Off the entry, each for its own reason (all four stated in `src/index.ts`): **`./types.ts`** (above) ·
+**`./vault/metrics.ts` · `./vault/metrics-report.ts`** (the NFR-Q1 instrument and its reports — they collide with
+each other on `MonthlyCount`, and a user-visible readout is the owner's call, §12 item 12) ·
+**`./domain/deck-stream.ts`** (the retired v1 SSE/poll transport, §4.2 — nothing in `core/` imports it, and leaving
+it off the entry is what keeps the app from picking a timer back up).
+
+Prove it rather than assert it: `core/test/entry-surface.test.ts` (**new, this step**) derives the module list from
+the tree, requires the entry's re-export set to equal it exactly, and checks at runtime that every **value** name of
+every re-exported module is reachable from the entry. At the landing step: **24 modules · 62 type names · 118 value
+names**, `npm test -w core` **501/501**. The plant was run: appending `export * from "./types.js";` fails the
+module-set assertion while the runtime half *passes*, because the dropped names are all types — recorded in the
+test's docstring so the load-bearing half is obvious.
 
 **The doors — ruled by David 2026-10-17 (option A).** The engine and the provider are reached by their **built**
 paths: `@astrolab/core/dist/engine/…` and `@astrolab/core/dist/provider/…`. One runtime mode (Metro already bundles
@@ -469,8 +489,11 @@ convention.
 - **`workspaces` order (Task 1 Step 3).** `["app","core"]` → `["core","app"]`: the app bundles `core`'s `dist/`,
   and root `build` runs the workspaces in **array** order (David, reproduced on a throwaway monorepo). L2 lands
   first, so the edit is L2's.
-- **Explicit re-exports, not `export *` (Task 1 Step 2).** Two vault modules export `MonthlyCount`; a wildcard
-  re-export would silently drop the ambiguous name instead of failing loudly.
+- **The entry is not a union, and its shape is now measured (Task 1 Step 2).** 15 cross-module export-name
+  collisions — 13 of them `./types.ts` against `./vault/**` (identical fields, distinct declarations) — mean a
+  wildcard re-export would drop every one of them silently. The entry is therefore store ∪ vault ∪ domain, with
+  `./types.ts`, `./vault/metrics.ts`, `./vault/metrics-report.ts` and `./domain/deck-stream.ts` deliberately off it,
+  and `core/test/entry-surface.test.ts` guards the set.
 - **Task 7's rule restated** from a pattern list to a directory-scoped specifier rule, so it bites on the door
   names that actually exist rather than on a guess about which specifier the engine arrives on.
 - **E4's cause vocabulary** (`RunFailureCause`: `no-key` · `invalid-key` · `offline` · `timeout` · `rate-limited` ·
