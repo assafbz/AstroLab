@@ -6,11 +6,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["scripts"],
-  // Parked, not deleted (L1 §164). Both are the W9 calibration harness, and both reach into `worker/`
-  // (`../worker/src/engine/*`, `../worker/src/queue.js`) — every one of those files imports the retired
-  // `@astrolab/store`. L3 relocates the engine and provider into `core/` and re-homes these two; until
-  // then they cannot typecheck, and excluding them keeps the required `build` job honest rather than
-  // red. The W9 artifacts they read and write are untouched.
-  "exclude": ["scripts/w9-calibrate.ts", "scripts/w9-c5-fixture.ts"]
+  "include": ["scripts"]
 }

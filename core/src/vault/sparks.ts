@@ -15,7 +15,7 @@ import { ValidationError } from "./capture.js";
  *   = no restriction*, and the reason is recorded there rather than left to the implementation.
  * - **Server order is deck order**, and the store read owns it: oldest offer first.
  *
- * The row itself is the store's (`liveOffers`, `store/src/sparks.ts`) because the live-offer predicate
+ * The row itself is the store's (`liveOffers`, `core/src/store/sparks.ts`) because the live-offer predicate
  * is one definition there. This module adds only the query's vocabulary and §3.3's projection name —
  * the internals are never selected, so nothing here can surface them.
  */

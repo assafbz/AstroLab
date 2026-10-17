@@ -32,20 +32,20 @@ import {
  * | 2 | §4.7's fork records it **vault**-relative, not parent-relative | the fork row's `new_domain` | fork into a domain covered by a *third* idea → `0`, though the parent does not carry it (T25's `409` only compares the fork to its parent) |
  * | 3 | §4.6's iterate records it, against the vault *as it stood*, and a recorded `1` is **durable** | the row's `new_domain` after the call | iterate onto a fresh domain → `1`; a text-only re-save of the same domain → `0` (the case a "no other row" rule gets wrong); a recorded `1` survives a later text-only re-save (the case an overwrite gets wrong) |
  * | 4 | §4.13's ACCEPT records **nothing** — the reading there is constant-false | the ACCEPT-born root's `new_domain` | the roots are `NULL`, never `0`: a naive compute-inside-`insertRootIdea` would store `0` and this reddens |
- * | 5 | the producers are **exactly** the three write sites, and each assigns the column | a scan of the three `src` trees (`api`, `worker`, `store`) | a fourth `INSERT`/`UPDATE` of `idea` that never mentions `new_domain` |
+ * | 5 | the producers are **exactly** the three write sites, and each assigns the column | a scan of `core`'s `src` tree | a fourth `INSERT`/`UPDATE` of `idea` that never mentions `new_domain` |
  * | 6 | `acceptedByMonth` — §4.13's accepted sparks, by accept month | `decision`, `kind = 'ACCEPT'`, bucket `[from, to)` on `decided_at` | the `DISMISS`/`INSPIRED` rows in the same month are not counted (`kind = 'ACCEPT'`, not "all decisions") |
  * | 7 | `newDomainByMonth` — ideas that widened, by birth month | `idea.new_domain = 1`, bucket on `created_at` | the `0` **and** the `NULL` rows in the same month are absent — the "not recorded" state is not a zero |
  * | 8 | `acceptedLandingNewDomainByMonth` — NFR-Q1's literal sentence | `decision` (ACCEPT) ⋈ `idea` on `result_idea_id` | a root written in a later month than its accept still counts in the **accept's** bucket; a root deleted since its accept is absent (inner join) |
  * | 9 | the reported set is the instrument's, end to end | a real `resolveDecision` ACCEPT | the ACCEPT-born root (flag `NULL`) is counted by 6 and by neither 7 nor 8 |
  *
- * **0 provider calls** — every path here is `api`-local; nothing reaches a provider (`worker/src/
+ * **0 provider calls** — every path here is `api`-local; nothing reaches a provider (`core/src/
  * provider/boundary.test.ts`).
  *
  * ## Claim 4 is an absence, so it needs its reason stated
  *
  * At §4.13 an ACCEPT mints a ROOT whose `domain_tags` are `spark.domain_tags` — the **derived union** of
  * the two source ideas' stored tags (`store/src/sparks.ts`), both of which are pre-existing `idea` rows
- * the gate admitted (`worker/src/engine/gate.ts`). So the root's domains are a subset of the vault's
+ * the gate admitted (`core/src/engine/gate.ts`). So the root's domains are a subset of the vault's
  * *already*, by construction: the flag can only ever read `0`, and a stored `0` would be a measurement
  * where there is none to make (`NULL` = "not recorded" is the honest value). The plan's original
  * "ACCEPT on an empty vault (new)" fixture is unreachable for the same reason — a live offer needs a
@@ -250,7 +250,7 @@ describe("§4.13 ACCEPT records nothing (claim 4)", () => {
  * nothing in them fails if a fourth writer appears tomorrow and silently drops the instrument.
  *
  * Method is EV7 #49's walk (the same extension union), applied to a different claim: **every module
- * the walk scans — the `core` and `worker` `src` trees — that writes `idea` must assign
+ * the walk scans — `core`'s `src` tree — that writes `idea` must assign
  * `new_domain`.** Both halves are asserted — the writer *set* (an addition
  * and a removal both fail) and the assignment — and the matcher's own boundary and the walk's
  * non-vacuity are pinned, so the guard cannot quietly scan nothing or the wrong table.
@@ -283,7 +283,7 @@ describe("the producers are exactly the three write sites (claim 5)", () => {
   });
 
   test("every writer of `idea` assigns `new_domain`, and there are exactly three", () => {
-    // The shipped-source extension union, mirroring `worker/src/provider/boundary.test.ts`.
+    // The shipped-source extension union, mirroring `core/src/provider/boundary.test.ts`.
     const extensions = [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"];
     const isShipped = (name: string): boolean =>
       extensions.some((ext) => name.endsWith(ext)) && !/\.test\.[cm]?[jt]sx?$/.test(name);
@@ -298,7 +298,7 @@ describe("the producers are exactly the three write sites (claim 5)", () => {
     };
 
     const root = fileURLToPath(new URL("../../", import.meta.url));
-    const packages = ["core/src", "worker/src"];
+    const packages = ["core/src"];
     const visited: string[] = [];
     const writers: string[] = [];
     const missing: string[] = [];

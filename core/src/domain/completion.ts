@@ -5,7 +5,7 @@ import { emptyMandatoryFields, type CaptureDraft } from "./capture.js";
  * K8 `#42` — the **completion** rule (`FLOW.md` T27, §4.3 step 4).
  *
  * A spark-derived idea cannot always be prefilled: a spark carries no `monetization`, so §4.13's ACCEPT
- * lands it `NEEDS_COMPLETION` (`derivedStatus`, `api/src/decision.ts:205`), held out of candidate
+ * lands it `NEEDS_COMPLETION` (`derivedStatus`, `core/src/vault/decision.ts:205`), held out of candidate
  * selection by the W7 gate until the user supplies what is missing. §4.6's iterate now clears the flag
  * by **re-deriving** the status from the four fields, so this module's one job is to say, client-side,
  * *what is still owed* — the prompt's wording, and nothing the server has not already decided.

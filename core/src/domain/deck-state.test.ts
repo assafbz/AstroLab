@@ -29,7 +29,7 @@ function state(
   unreviewed: number,
   run: EngineState["run"] = null,
 ): EngineState {
-  return { state: name, unreviewed, run };
+  return { state: name, unreviewed, run, cause: null };
 }
 
 test("the overlapping states — the three rows that only pass if the order is right", () => {

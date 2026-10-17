@@ -77,7 +77,7 @@ function spread(db: SqliteConnection): void {
 
 describe("E0 Cold — FLOW.md §4.1's two arms", () => {
   test("an empty vault is E0 with nothing to review and nothing in flight", () => {
-    expect(engineState(newDb())).toEqual({ state: "E0", unreviewed: 0, run: null });
+    expect(engineState(newDb())).toEqual({ state: "E0", unreviewed: 0, run: null, cause: null });
   });
 
   test("the domain arm: one resolved cluster is E0 even with two ideas", () => {
@@ -100,14 +100,14 @@ describe("E0 Cold — FLOW.md §4.1's two arms", () => {
     // and the regression guard for it is the reason `engineState` reads `COUNT(*) FROM idea` itself.
     const db = newDb();
     idea(db, "a", ["fintech", "health"]);
-    expect(engineState(db)).toMatchObject({ state: "E0", unreviewed: 0, run: null });
+    expect(engineState(db)).toMatchObject({ state: "E0", unreviewed: 0, run: null, cause: null });
   });
 
   test("E0 dominates E4 — below the floor with a failed run still reads E0", () => {
     const db = newDb();
     idea(db, "a", ["fintech"]);
     run(db, "r1", "FAILED", "provider timeout");
-    expect(engineState(db)).toMatchObject({ state: "E0", run: null });
+    expect(engineState(db)).toMatchObject({ state: "E0", run: null, cause: null });
   });
 
   test("E0 reports the run truthfully — the state field dominates, the fields do not lie", () => {
@@ -118,6 +118,7 @@ describe("E0 Cold — FLOW.md §4.1's two arms", () => {
     expect(engineState(db)).toMatchObject({
       state: "E0",
       run: { id: "r1", status: "PENDING", vault_revision: 1 },
+      cause: null,
     });
   });
 
@@ -135,6 +136,7 @@ describe("E1 Computing — a run in flight (C2/C3)", () => {
       state: "E1",
       unreviewed: 0,
       run: { id: "r1", status: "PENDING", vault_revision: 1 },
+      cause: null,
     });
   });
 
@@ -157,6 +159,7 @@ describe("E1 Computing — a run in flight (C2/C3)", () => {
       state: "E1",
       unreviewed: 1,
       run: { id: "r1", status: "RUNNING", vault_revision: 1 },
+      cause: null,
     });
   });
 
@@ -184,7 +187,20 @@ describe("E4 Unavailable and E3 Exhausted — FLOW.md §5.6, §5.3", () => {
     const db = newDb();
     spread(db);
     run(db, "r1", "FAILED", "provider timeout");
-    expect(engineState(db)).toEqual({ state: "E4", unreviewed: 0, run: null });
+    expect(engineState(db)).toEqual({ state: "E4", unreviewed: 0, run: null, cause: null });
+  });
+
+  test("E4 carries the cause the row names, and `null` when the row names none (L3 · #166)", () => {
+    const db = newDb();
+    spread(db);
+    run(db, "r1", "FAILED", "failure:no-key: no API key is set");
+    expect(engineState(db)).toEqual({ state: "E4", unreviewed: 0, run: null, cause: "no-key" });
+
+    // A v1 row, or one written before the tag existed: the state is the same, the *reason* is not
+    // known — and the surface must be able to tell those apart (§4.3's copy differs).
+    db.prepare("DELETE FROM spark_run").run();
+    run(db, "r2", "FAILED", "provider timeout");
+    expect(engineState(db)).toEqual({ state: "E4", unreviewed: 0, run: null, cause: null });
   });
 
   test("E4 > E3 — a failed run does not read as Exhausted", () => {
@@ -203,14 +219,14 @@ describe("E4 Unavailable and E3 Exhausted — FLOW.md §5.6, §5.3", () => {
     const db = newDb();
     spread(db);
     run(db, "r1", "DONE", "discarded: superseded by revision 3");
-    expect(engineState(db)).toEqual({ state: "E3", unreviewed: 0, run: null });
+    expect(engineState(db)).toEqual({ state: "E3", unreviewed: 0, run: null, cause: null });
   });
 
   test("a clean DONE run with nothing to review is E3", () => {
     const db = newDb();
     spread(db);
     run(db, "r1", "DONE");
-    expect(engineState(db)).toEqual({ state: "E3", unreviewed: 0, run: null });
+    expect(engineState(db)).toEqual({ state: "E3", unreviewed: 0, run: null, cause: null });
   });
 });
 
@@ -219,7 +235,7 @@ describe("E2 Ready(n) — the deck's count (API.md §3.6)", () => {
     const db = newDb();
     spread(db);
     spark(db, "a", "b");
-    expect(engineState(db)).toEqual({ state: "E2", unreviewed: 1, run: null });
+    expect(engineState(db)).toEqual({ state: "E2", unreviewed: 1, run: null, cause: null });
   });
 
   test("a third idea adds a second offer — `unreviewed` counts every live offer", () => {
@@ -235,7 +251,7 @@ describe("E2 Ready(n) — the deck's count (API.md §3.6)", () => {
     const db = newDb();
     spread(db);
     spark(db, "a", "b", "RESOLVED-DISMISSED");
-    expect(engineState(db)).toEqual({ state: "E3", unreviewed: 0, run: null });
+    expect(engineState(db)).toEqual({ state: "E3", unreviewed: 0, run: null, cause: null });
   });
 });
 
@@ -279,14 +295,17 @@ describe("the state read cannot reach a provider (ARCH §5, NFR-A1)", () => {
     expect(specifiers(MODULE_TEXT)).toContain("../store/connection.js");
   });
 
-  test("its only specifiers are the SQLite type, the store's `LIVE_STATUS`, and the summary", () => {
+  test("its only specifiers are the SQLite type, the store's `LIVE_STATUS`, the summary and the tag", () => {
     // The port type is a **type-only** import (erased at runtime). `../store/index.js` supplies one value
     // — `LIVE_STATUS`, the live-offer predicate this module's `unreviewed` count shares with the deck
     // read and the delete path (K1 `#35`) — plus types. The sibling summary is guarded to
-    // `node:sqlite` alone. An equality, not a denylist: the next specifier must be a deliberate edit
-    // with its reason.
+    // `node:sqlite` alone. `../failure.js` is the E4 cause's vocabulary (L3 · #166): a **portable,
+    // provider-free** module, which is why this read can report *why* the engine is down without
+    // reaching a provider (NFR-A1) — the value it supplies is the tag parser, nothing else.
+    // An equality, not a denylist: the next specifier must be a deliberate edit with its reason.
     expect(specifiers(MODULE_TEXT)).toEqual([
       "../store/connection.js",
+      "../failure.js",
       "../store/index.js",
       "./vault-summary.js",
     ]);
