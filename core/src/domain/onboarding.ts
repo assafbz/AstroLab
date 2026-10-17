@@ -1,7 +1,8 @@
-import type { CaptureInput, Idea, VaultSummary } from "../api/types.ts";
-import { createIdea } from "../api/ideas.ts";
-import { normalizeDomainTag, validateCapture, type CaptureErrors } from "./capture.ts";
-import type { DomainCluster } from "./taxonomy.ts";
+import type { Idea, VaultSummary } from "../types.js";
+import { captureIdea, type CaptureInput } from "../vault/capture.js";
+import type { SqliteConnection } from "../store/connection.js";
+import { normalizeDomainTag, validateCapture, type CaptureErrors } from "./capture.js";
+import type { DomainCluster } from "./taxonomy.js";
 
 /**
  * S0's own rules (`FLOW.md` §2.1/S0, §4.2 T02/T04; `PRD.md` §3.4 item 1) — pure, so the screen is a
@@ -104,9 +105,14 @@ export function toCaptureInput(idea: OnboardingIdea): CaptureInput {
   };
 }
 
-/** The save. T02 is `S0 → S0`: the idea is created and the user stays on onboarding. */
-export function saveOnboardingIdea(idea: OnboardingIdea): Promise<Idea> {
-  return createIdea(toCaptureInput(idea));
+/**
+ * The save. T02 is `S0 → S0`: the idea is created and the user stays on onboarding.
+ *
+ * v1 called the transport (`client/src/api/ideas.ts`); the rebuild's call is in-process, so the
+ * connection is an argument — the composition root is the app, not this module (§6).
+ */
+export function saveOnboardingIdea(db: SqliteConnection, idea: OnboardingIdea): Idea {
+  return captureIdea(db, toCaptureInput(idea));
 }
 
 /** The `domains covered x / 3` readout's two numbers. */

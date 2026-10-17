@@ -1,4 +1,4 @@
-import type { EngineState, Spark } from "../api/types.ts";
+import type { EngineState, Spark } from "../types.js";
 
 /**
  * S1's **band composition** — `DESIGN.md` §9, `FLOW.md` §4.1. The state itself is not decided here:

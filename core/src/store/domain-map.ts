@@ -47,6 +47,26 @@ export function readClusters(db: SqliteConnection): ClusterOption[] {
 }
 
 /**
+ * The seeded clusters **in the seed's own order** — the curated order the artifact declares
+ * (`core/seed/README.md`: the file's order is a presentation grouping and is *not* derivable from a
+ * sort). `readClusters` above is deliberately the sorted one: the normaliser wants a deterministic
+ * set, S0's picker wants the artifact's order, and one function cannot mean both.
+ *
+ * The seed writes clusters in file order inside one transaction, and the curation rule is
+ * **additive-only** (the harness enforces it across versions), so insertion order *is* file order.
+ * Residual, stated: a `VACUUM` may renumber rowids on a table with no `INTEGER PRIMARY KEY`. Nothing
+ * in the app runs one, and the named fix is a stored `position` column (post-MVP) — this read's
+ * contract is what such a column would implement.
+ */
+export function readClustersInSeedOrder(db: SqliteConnection): ClusterOption[] {
+  const rows = db.prepare("SELECT id, name FROM domain_cluster ORDER BY rowid ASC").all() as Array<{
+    id: string;
+    name: string;
+  }>;
+  return rows.map((row) => ({ id: row.id, name: row.name }));
+}
+
+/**
  * The symmetrised hop map: `cluster id → {other cluster id: hops}`. The seed file lists each pair
  * once and `domain-seed.ts` writes both directions into `adjacency`; this reads that JSON back, one
  * parse per row.

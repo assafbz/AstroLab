@@ -1,6 +1,18 @@
-import type { ApiError } from "../api/client.ts";
-import type { Decision } from "../api/types.ts";
-import type { ResolutionKind } from "./deck-interaction.ts";
+import type { Decision } from "../types.js";
+import type { ResolutionKind } from "./deck-interaction.js";
+
+/**
+ * The failure the seam reports. v1 named the transport's `ApiError` here; the class retired with the
+ * HTTP layer and **the distinction is what callers act on** (`ARCHITECTURE.md` §6 — error classes
+ * replace status codes), so the domain keeps the code and not the class. The app's own error type
+ * (L3's provider boundary, the vault's typed results) satisfies this by shape.
+ */
+export type ResolutionErrorCode =
+  "network" | "unauthorized" | "not_found" | "validation_failed" | "conflict" | "internal_error";
+
+export interface ResolutionError {
+  readonly code: ResolutionErrorCode;
+}
 
 /**
  * The deck's **decision identity** (`FLOW.md` §2.2 / N4, §4.3 / H4; `docs/API.md` §4.13).
@@ -62,7 +74,7 @@ export interface DecisionResolverDeps {
    */
   onResolved(sparkId: string, decision: Decision): void;
   /** A resolution that did not commit — the caller draws the non-destructive Retry (T29). */
-  onFailed(sparkId: string, error: ApiError): void;
+  onFailed(sparkId: string, error: ResolutionError): void;
   /**
    * Mint a decision id (§2.2). Defaults to `crypto.randomUUID`; injected so a test's keys are
    * deterministic and the module's *reuse* is observable rather than merely plausible.
@@ -100,7 +112,7 @@ export function createDecisionResolver(deps: DecisionResolverDeps): DecisionReso
         live.delete(sparkId);
         if (decision !== null) deps.onResolved(sparkId, decision);
       },
-      (error: ApiError) => {
+      (error: ResolutionError) => {
         // The record stays, so Retry re-issues the same key (§2.2). Reported here and only here: this
         // is the only request that could carry this key's outcome (any second was coalesced away), and
         // a settled success has already removed the record.
@@ -147,7 +159,7 @@ export function createDecisionResolver(deps: DecisionResolverDeps): DecisionReso
  *
  * One definition, so the deck and S1b cannot disagree about which failures carry Retry.
  */
-export function isRetryable(error: ApiError): boolean {
+export function isRetryable(error: ResolutionError): boolean {
   return error.code === "network" || error.code === "internal_error";
 }
 
@@ -160,7 +172,7 @@ export function isRetryable(error: ApiError): boolean {
  * recorded*. One definition, so the deck and S1b cannot say different things about the same event (the
  * same reason `isRetryable` lives here).
  */
-export function resolutionNotice(error: ApiError): string {
+export function resolutionNotice(error: ResolutionError): string {
   return error.code === "network"
     ? "Could not reach the engine. Nothing was recorded — try again."
     : "That didn't go through. Nothing was recorded — try again.";

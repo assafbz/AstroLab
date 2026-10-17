@@ -20,6 +20,7 @@ export {
   newDomainFlag,
   readClusterAdjacency,
   readClusters,
+  readClustersInSeedOrder,
   readDomainMap,
   upsertDomainTag,
   type ClusterOption,

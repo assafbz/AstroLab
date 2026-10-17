@@ -1,14 +1,48 @@
-import type { EngineEventHandlers, EngineStream } from "../api/sparks.ts";
-import type { EngineState, Spark } from "../api/types.ts";
+import type { EngineState, Spark } from "../types.js";
+
+/**
+ * §4.11's seam, as the driver consumes it. v1 declared these beside its `fetch`-stream transport
+ * (`client/src/api/sparks.ts`), which retired with the HTTP layer: what the driver needs is the
+ * *shape* of the subscription, and the implementation is the app's (§4.2 — delivery is an in-process
+ * event; L3 owns the driver).
+ */
+export type EngineStreamEnd =
+  /** The subscription ended: the driver stopped, or the event source failed. */
+  | "ended"
+  /** The subscription was never established. */
+  | "rejected"
+  /** A frame's `data` could not be read. The frame's meaning is unknown. */
+  | "malformed";
+
+/** §4.11's two events. Both are **diffs** from the driver's own baseline, never a full replay. */
+export interface EngineEventHandlers {
+  /** A new engine state — the whole ladder value, as §3.6 shapes it. */
+  onState(state: EngineState): void;
+  /** A spark that just entered the deck. New offers surface on the event, not a timer. */
+  onOffer(spark: Spark): void;
+  /**
+   * The stream stopped **for a reason the caller did not cause**. A `close()` is the caller's own
+   * decision and is not reported here.
+   */
+  onClose?(reason: EngineStreamEnd): void;
+}
+
+/** The handle a subscriber holds; `close()` is idempotent. */
+export interface EngineStream {
+  close(): void;
+}
 
 /**
  * S4 — the deck's **connection policy** (`docs/API.md` §4.11; `FLOW.md` §4.1 E1, §5.6).
  *
- * §4.11 splits in two, and S1 `#35` took the first half: `api/sparks.ts` owns the *transport* — the
- * route, the `fetch`-stream that can carry §1's bearer, the frame decoder. What it deliberately does
- * **not** do is recover; its own docstring hands *"bounded backoff, only while `state = E1`"* to this
- * module. So this is the other half: **when to re-read, and what to do when the stream is gone.** It
- * frames nothing and renders nothing.
+ * §4.11 split in two, and S1 `#35` took the first half: the transport (the route, the `fetch`-stream
+ * that carried §1's bearer, the frame decoder) lived in the retiring `client/src/api/sparks.ts`, and
+ * handed *"bounded backoff, only while `state = E1`"* to this module. So this is the other half:
+ * **when to re-read, and what to do when the stream is gone.** It frames nothing and renders nothing.
+ *
+ * v1's transport is gone (delivery is the app's in-process event, §4.2). The policy below — including
+ * the fallback schedule — is carried as-is: whether a fallback is still needed once the driver is
+ * in-process is L3's call, and this file is where that decision will be made.
  *
  * Three rules, each a reading of §4.11:
  *

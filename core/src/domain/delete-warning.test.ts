@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import { deleteWarning } from "./delete-warning.ts";
+import { deleteWarning } from "./delete-warning.js";
 
 test("with no references the confirm is plain and has no details", () => {
   expect(deleteWarning({ forks: [], derived: [] })).toEqual({

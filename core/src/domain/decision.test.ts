@@ -1,9 +1,16 @@
 import { expect, test, vi } from "vitest";
 
-import { ApiError } from "../api/client.ts";
-import type { Decision } from "../api/types.ts";
-import type { ResolutionKind } from "./deck-interaction.ts";
-import { createDecisionResolver, isRetryable } from "./decision.ts";
+import type { Decision } from "../types.js";
+import type { ResolutionKind } from "./deck-interaction.js";
+import {
+  createDecisionResolver,
+  isRetryable,
+  type ResolutionError,
+  type ResolutionErrorCode,
+} from "./decision.js";
+
+/** The failure shape the resolver reports — §2's codes; the resolver reads only `code`. */
+const failure = (code: ResolutionErrorCode): ResolutionError => ({ code });
 
 const DECISION: Decision = {
   decision_id: "id-1",
@@ -66,7 +73,7 @@ test("a press while a request is out is coalesced — one send, and the first ki
 });
 
 test("the coalesced pair reports one failure, never two — one decision, one outcome (§4.3)", async () => {
-  const error = new ApiError("network", 0, "dropped");
+  const error = failure("network");
   const { post, onResolved, onFailed, resolver } = harness(() => Promise.reject(error));
 
   resolver.resolve("s1", "ACCEPT");
@@ -120,9 +127,7 @@ test("a success ends the decision — nothing re-issues the key, so no failure c
   let call = 0;
   const { post, onFailed, resolver } = harness(() => {
     call += 1;
-    return call === 1
-      ? Promise.resolve(DECISION)
-      : Promise.reject(new ApiError("internal_error", 500, "boom"));
+    return call === 1 ? Promise.resolve(DECISION) : Promise.reject(failure("internal_error"));
   });
 
   resolver.resolve("s1", "ACCEPT");
@@ -135,7 +140,7 @@ test("a success ends the decision — nothing re-issues the key, so no failure c
 });
 
 test("a failure keeps the key and reports it — T29's notice needs the error, the Retry needs the id", async () => {
-  const error = new ApiError("network", 0, "Could not reach the API");
+  const error = failure("network");
   const { post, onResolved, onFailed, resolver } = harness(() => Promise.reject(error));
 
   resolver.resolve("s1", "ACCEPT");
@@ -152,7 +157,7 @@ test("a failure keeps the key and reports it — T29's notice needs the error, t
 });
 
 test("a press after a failure is the same decision too — the same key, with the user's latest kind", async () => {
-  const error = new ApiError("internal_error", 500, "boom");
+  const error = failure("internal_error");
   const { post, resolver } = harness(() => Promise.reject(error));
 
   resolver.resolve("s1", "ACCEPT");
@@ -169,7 +174,7 @@ test("a press after a failure is the same decision too — the same key, with th
 });
 
 test("a retry that succeeds reports the Decision, once each — a retry is the same decision", async () => {
-  const error = new ApiError("internal_error", 500, "boom");
+  const error = failure("internal_error");
   let attempt = 0;
   const { onResolved, onFailed, resolver } = harness(() => {
     attempt += 1;
@@ -203,7 +208,7 @@ test("a retry with nothing pending is a no-op — a decision that committed is n
 });
 
 test("a retry while a request is out is coalesced too — the in-flight request carries the outcome", async () => {
-  const error = new ApiError("network", 0, "dropped");
+  const error = failure("network");
   const { post, resolver } = harness(() => Promise.reject(error));
 
   resolver.resolve("s1", "ACCEPT");
@@ -234,20 +239,20 @@ test("only a failure that can differ on a second try is retryable — a `409` is
   // T29's surface is Retry, and Retry re-issues the *same* request. A `409` says the spark is not
   // `OFFERED`; a `not_found` says the id is unknown; `validation_failed`/`unauthorized` say the request
   // or the token is wrong. Re-issuing any of them draws the same answer, so none may offer Retry.
-  expect(isRetryable(new ApiError("network", 0, "dropped"))).toBe(true);
-  expect(isRetryable(new ApiError("internal_error", 500, "boom"))).toBe(true);
+  expect(isRetryable(failure("network"))).toBe(true);
+  expect(isRetryable(failure("internal_error"))).toBe(true);
 
-  expect(isRetryable(new ApiError("conflict", 409, "not OFFERED"))).toBe(false);
-  expect(isRetryable(new ApiError("not_found", 404, "no such spark"))).toBe(false);
-  expect(isRetryable(new ApiError("validation_failed", 422, "kind"))).toBe(false);
-  expect(isRetryable(new ApiError("unauthorized", 401, "no token"))).toBe(false);
+  expect(isRetryable(failure("conflict"))).toBe(false);
+  expect(isRetryable(failure("not_found"))).toBe(false);
+  expect(isRetryable(failure("validation_failed"))).toBe(false);
+  expect(isRetryable(failure("unauthorized"))).toBe(false);
 });
 
 test("the resolver mints one key per decision and invents none — the ids on the wire are the ids it minted", async () => {
   // Non-vacuity for `newId`: over a flow with two decisions the module mints exactly two keys, and every
   // key it sends is one it minted. A test pinning reuse therefore cannot pass by the module never
   // minting at all.
-  const error = new ApiError("network", 0, "dropped");
+  const error = failure("network");
   const minted: string[] = [];
   const post = vi.fn((spark: string, id: string, kind: ResolutionKind) => {
     void spark;

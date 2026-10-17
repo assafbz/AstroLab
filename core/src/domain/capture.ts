@@ -7,7 +7,7 @@
  * `api/src/capture.ts` exactly — trimming for emptiness, measuring the hypothesis as typed.
  */
 
-import type { Idea, InspireSeed } from "../api/types.ts";
+import type { Idea, InspireSeed } from "../types.js";
 
 /** `docs/API.md` §4.2 — the hypothesis limit, mirroring the server's `MAX_HYPOTHESIS_LENGTH`. */
 export const HYPOTHESIS_MAX = 280;

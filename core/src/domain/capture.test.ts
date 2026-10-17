@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import type { InspireSeed } from "../api/types.ts";
+import type { InspireSeed } from "../types.js";
 import {
   HYPOTHESIS_MAX,
   addDomainTag,
@@ -10,7 +10,7 @@ import {
   sameDraft,
   seedToDraft,
   validateCapture,
-} from "./capture.ts";
+} from "./capture.js";
 
 const VALID = {
   hypothesis: "A single sentence",

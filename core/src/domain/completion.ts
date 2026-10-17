@@ -1,5 +1,5 @@
-import type { Idea } from "../api/types.ts";
-import { emptyMandatoryFields, type CaptureDraft } from "./capture.ts";
+import type { Idea } from "../types.js";
+import { emptyMandatoryFields, type CaptureDraft } from "./capture.js";
 
 /**
  * K8 `#42` — the **completion** rule (`FLOW.md` T27, §4.3 step 4).

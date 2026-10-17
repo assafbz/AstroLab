@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 
-import { createRunTrigger } from "./run-trigger.ts";
+import { createRunTrigger } from "./run-trigger.js";
 
 /** A promise whose settlement the test drives — the only way to observe "still in flight". */
 function deferred<T>() {

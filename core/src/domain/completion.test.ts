@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
-import type { Idea } from "../api/types.ts";
-import { completionPrompt, draftFromIdea, missingFields, needsCompletion } from "./completion.ts";
+import type { Idea } from "../types.js";
+import { completionPrompt, draftFromIdea, missingFields, needsCompletion } from "./completion.js";
 
 /**
  * The completion rule (K8 `#42`) — the client mirror of the server's `derivedStatus`

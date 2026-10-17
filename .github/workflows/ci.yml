@@ -43,12 +43,12 @@ jobs:
       # The verdict is a function of the shipped bytes, so the harness runs on the file the loader
       # reads — not on a reconstruction. The header prints (curr, prev, harness, fixture) hashes.
       - name: canonical harness — the shipped file must PASS
-        run: python3 store/test/o1_check.py store/seed/domain-taxonomy.yaml store/test/o1-fixture.txt
+        run: python3 core/test/o1_check.py core/seed/domain-taxonomy.yaml core/test/o1-fixture.txt
       # `--strict` drops normalisation and the key fallback, so it must FAIL: those rules cannot
       # silently disappear without this step going red.
       - name: --strict is the negative test — it must FAIL
         run: |
-          if python3 store/test/o1_check.py store/seed/domain-taxonomy.yaml store/test/o1-fixture.txt --strict; then
+          if python3 core/test/o1_check.py core/seed/domain-taxonomy.yaml core/test/o1-fixture.txt --strict; then
             echo "::error::--strict was expected to fail — the normalisation rules are not doing their job"
             exit 1
           fi

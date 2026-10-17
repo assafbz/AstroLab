@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
-import type { Idea } from "../api/types.ts";
-import { danglingParentId } from "./lineage.ts";
+import type { Idea } from "../types.js";
+import { danglingParentId } from "./lineage.js";
 
 /** §3.1, with the fields a test overrides. */
 function idea(patch: Record<string, unknown> = {}): Idea {

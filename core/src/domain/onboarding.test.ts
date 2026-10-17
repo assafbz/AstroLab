@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 
-import type { VaultSummary } from "../api/types.ts";
+import type { VaultSummary } from "../types.js";
 import {
   ONBOARDING_PROMPTS,
   chooseCluster,
@@ -11,7 +11,7 @@ import {
   toCaptureInput,
   validateOnboardingIdea,
   type OnboardingIdea,
-} from "./onboarding.ts";
+} from "./onboarding.js";
 
 const COMPLETE: OnboardingIdea = {
   hypothesis: "A single sentence",

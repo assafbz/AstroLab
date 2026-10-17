@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
-import { deckBand, type VaultCoverage } from "./deck-state.ts";
-import type { EngineState, Spark } from "../api/types.ts";
+import { deckBand, type VaultCoverage } from "./deck-state.js";
+import type { EngineState, Spark } from "../types.js";
 
 /**
  * `DESIGN.md` §9's precedence, at the one place the client can invert it: the band. Each test names

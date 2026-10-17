@@ -1,4 +1,4 @@
-import type { VaultSummary } from "../api/types.ts";
+import type { VaultSummary } from "../types.js";
 
 /**
  * S0's exit gate (`FLOW.md` §4.2 T04; `DESIGN.md` §9 E0) — whether S1 opens the deck or lands cold.

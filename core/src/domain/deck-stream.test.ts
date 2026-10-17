@@ -1,8 +1,13 @@
 import { expect, test, vi, type Mock } from "vitest";
 
-import type { EngineEventHandlers, EngineStream } from "../api/sparks.ts";
-import type { EngineState, Spark } from "../api/types.ts";
-import { POLL_BACKOFF_MS, createDeckStream, type DeckStreamDeps } from "./deck-stream.ts";
+import type { EngineState, Spark } from "../types.js";
+import {
+  POLL_BACKOFF_MS,
+  createDeckStream,
+  type DeckStreamDeps,
+  type EngineEventHandlers,
+  type EngineStream,
+} from "./deck-stream.js";
 
 /**
  * S4's **connection policy** (`docs/API.md` §4.11). Each test names the rule it would redden:

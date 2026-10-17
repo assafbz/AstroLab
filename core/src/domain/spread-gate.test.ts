@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 
-import type { VaultSummary } from "../api/types.ts";
-import { spreadGate } from "./spread-gate.ts";
+import type { VaultSummary } from "../types.js";
+import { spreadGate } from "./spread-gate.js";
 
 const SUMMARY: VaultSummary = {
   resolved_domains: 2,

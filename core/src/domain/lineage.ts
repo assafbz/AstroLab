@@ -1,4 +1,4 @@
-import type { Idea } from "../api/types.ts";
+import type { Idea } from "../types.js";
 
 /**
  * The lineage chain's **tombstone** rule (V8 `#19`'s follow-up, on S4).
