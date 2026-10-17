@@ -484,14 +484,16 @@ rebuild's.
 10. **One provider for the MVP — decided.** OpenRouter, the adapter swappable. Multi-provider BYO-key
     (OpenAI/Anthropic keys directly) is **post-MVP** — smaller once the header map exists, but not the increment.
 11. **The engine runs foreground-only — decided.** P1's bound is restated in active-foreground time (§4.1, §11).
-12. **Open — NFR-Q1 without a server.** The NSM *"sparks accepted per active user per month"* is a **fleet**
-    metric; with no telemetry it is unmeasurable across users. The *instrument* (`decision` + `idea.new_domain`) is
-    kept and computed locally (§11). Options: (a) a per-device metric visible to the user; (b) **opt-in,
-    user-initiated** export-based analysis; (c) drop the fleet NSM from MVP tracking. **Recommendation: (a)** —
-    telemetry would contradict *"nothing leaves to the cloud."* David owns the ruling.
-13. **Open — the web key.** Session-only in memory (recommended, §5) means re-entering the key each web session;
-    the alternative — a browser store — is XSS-readable and would need a stated warning. **Recommendation:
-    session-only**, for the reason in §5.
+12. ~~NFR-Q1 without a server.~~ **Resolved — ruled (David, 2026-10-17).** **No fleet aggregation and no
+    telemetry** — a cross-user NSM needs egress, which contradicts requirement 2 (*"nothing leaves the device"*).
+    The **instrument stays and is computed locally** (`decision` kind + `idea.new_domain`, §11). A **user-visible**
+    quality readout is user-facing behaviour, so it is the owner's call and sits on the owner queue (*"a local
+    spark-quality readout in S1/S3?"*); the instrument itself is not blocked by that. Fold: **no telemetry ·
+    instrument local · user-visible surface → owner queue.**
+13. ~~The web key.~~ **Resolved — ruled (David, 2026-10-17).** **Session-only in memory, no browser persistence** —
+    a `localStorage`/IndexedDB store is XSS-readable and would weaken the one boundary the rebuild is built on;
+    re-entering the key each web session is the **stated cost**, and native is the primary target. The owner holds
+    a veto (§5).
 14. **Open — a product date.** Still open with the owner (David's *"B · a date?"*). It changes *shipping*, not
     *building*; L0–L4 proceed either way.
 15. **Open — what the required CI `build` job builds for an Expo app.** `main-gate` requires a `build` check, so it

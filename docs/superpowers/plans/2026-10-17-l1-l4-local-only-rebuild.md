@@ -40,10 +40,25 @@ costs a lane.
 1. **The `SqliteConnection` port is SYNCHRONOUS — and so is every transaction callback.** `exec` · `prepare` ·
    `Statement.run/get/all` · `close`, plus `writeTransaction<T>(conn, fn: () => T): T` with a **synchronous** `fn`.
    This is what makes *"one process ⇒ writes serialized by construction"* literally true (a sync callback cannot
-   interleave) and what lets the v1 store/vault/engine suites carry. **L1's first task: confirm the pinned
-   `expo-sqlite` SDK exposes the full sync surface, including a sync transaction wrapper.** If it does not, the port
-   gains an async variant **and the concurrency argument must be re-made** — a mutex, and the run-currency check
-   plus its writes in one transaction. Verify it; do not assume it.
+   interleave) and what lets the v1 store/vault/engine suites carry.
+   **VERIFIED — Ari, 2026-10-17**, read off the shipped typings of `expo-sqlite@58.0.13` (SDK-58, `latest`) *and*
+   `57.0.4` (SDK-57): the full sync surface is present, including a sync transaction wrapper
+   (`withTransactionSync`). **No async variant is needed and the concurrency argument stands.** Three consequences,
+   binding on L1:
+   - **1a — nothing was actually pinned.** Root `package.json` @`26811cb` has no expo dependency and `app/` does not
+     exist, so *"the pinned `expo-sqlite`"* has **no referent**. **L1 creates the pin: `expo-sqlite@58.0.13`**
+     (npm `latest`, SDK-58).
+   - **1b — `writeTransaction` is implemented *over the port*, not via Expo's wrapper.** Expo's
+     `withTransactionSync` is literally `BEGIN` → `task()` → `COMMIT` (deferred, no `IMMEDIATE`, no retry, no typed
+     result) — it is **not** v1's `writeTransaction` (`store/src/store.ts:41`: `BEGIN IMMEDIATE` + retry + `T`).
+     Keep **v1's body verbatim** (`exec("BEGIN IMMEDIATE")` / `fn()` / `COMMIT` / `ROLLBACK`) so both adapters share
+     one code path and the v1 store/concurrency suites do not move; Expo's wrapper stays unused.
+   - **1c — the miss sentinel is pinned to `undefined`.** `node:sqlite`'s `.get()` returns **`undefined`** on no row
+     and v1 branches on it (`store/src/runs.ts:32-36, 66`); Expo's `getFirstSync()` is typed **`T | null`**. CI runs
+     the node adapter, so a naive Expo adapter is **CI-green and device-broken** (invariant 8's class). **The port
+     pins `undefined`; the Expo adapter maps `null → undefined`**; add a **device-adapter parity test** (Expo also
+     needs `finalizeSync()`; `node:sqlite` has `close()` — each adapter closes per call, no statement cache, which
+     matches v1's inline `prepare`).
 2. **Enqueueing a run is a table write, not a call.** A candidate-affecting vault mutation (and Recompute) writes a
    `PENDING` `spark_run` row **inside its own transaction**; the app's engine driver observes the table. No
    `core/vault` → `core/engine` import exists, so the A1 guard is satisfiable.
@@ -69,6 +84,16 @@ costs a lane.
 9. **Device-only behaviour is manual sign-off.** Each Review Focus item that is a device/emulator behaviour gets a
    **deterministic core test in CI** (the currency check, the resume unit, the export round-trip) plus a **manual
    emulator sign-off** for the rest, named in the lane's PR (spec §12 item 16).
+10. **Web sync has two hard platform limits (verified — Ari, 2026-10-17).** `expo-sqlite` implements sync on web via
+    a Worker + `Atomics.wait` on a `SharedArrayBuffer`, so it needs a **cross-origin-isolated** context
+    (`crossOriginIsolated`: `COEP` + `COOP`) — and the sync result buffer is a fixed **1 MiB**, over which a sync
+    call **throws**. ⇒ **L1's web row: sync reads must be row-bounded; a full-vault read pages or goes async.**
+    **L4 owns the consequence:** `exportVault` on web cannot be one sync `SELECT *`. (`withExclusiveTransactionAsync`
+    unsupported on web — confirmed verbatim; `interruptSync` throws `UnavailabilityError`.)
+11. **SQLCipher is a seam, not a free swap (verified — Ari, 2026-10-17).** The `SqliteConnection` port holds, but
+    the plugin is **native-only** (no web, no Expo Go), needs a **custom native build** (not an OTA update), and
+    *does not encrypt an existing plaintext database* — so the post-MVP upgrade carries a **data migration**.
+    Stated so no later reader takes *"behind the same port"* for *"free"* (spec §9).
 
 ## Review Focus
 
@@ -94,9 +119,12 @@ Failure modes the spec implies that no single task's tests own; each is pinned t
 - Create: `core/src/store/connection.ts` (the `SqliteConnection` port)
 - Create: `core/src/store/connection.node.ts` (`node:sqlite` adapter — tests & CI)
 - Move: `store/src/*` → `core/src/store/*`; `store/seed/*` → `core/src/seed/*`; `store/test/*` → `core/test/*`
-- Move: `api/src/*.ts` (handlers) → `core/src/vault/*.ts` (use-cases, transport stripped)
+- Move: `api/src/*.ts` (handlers) → `core/src/vault/*.ts` (use-cases, transport stripped) — **except `api/src/export.ts`**
+- Move: `api/src/export.ts` → `core/src/export/export.ts` (**verbatim relocation**, so the codec survives `api/`'s
+  retirement; **L4 owns its contents** — §6 places export at `core/export`, not `core/vault`)
 - Move: `client/src/api/types.ts` → `core/src/types.ts`; `client/src/domain/*` → `core/src/domain/*`
-- Delete: `api/`, `worker/` (moved to L3), `store/`, `client/`, `deploy/`, `.github/workflows/deploy.yml`
+- Delete: `api/`, `store/`, `client/`, `deploy/`, `.github/workflows/deploy.yml`
+  (**not** `worker/` — L1 lands before L3 relocates its `engine`/`provider` and `queue.ts`; **L3** empties and retires it)
 - Modify: root `package.json` (`workspaces: ["app","core"]`); `.github/workflows/ci.yml` paths
 
 **Interfaces:**
@@ -121,8 +149,9 @@ Failure modes the spec implies that no single task's tests own; each is pinned t
   tests** (`test/harness.ts` spawns a child; `test/writers.test.ts`): a second process is not the model — re-write
   them as single-writer assertions, or delete them with a note.
 - [ ] **Step 3: Move the vault use-cases off HTTP.**
-  `git mv api/src/*.ts core/src/vault/` (minus `server.ts`, `index.ts`, `spark-events.ts`); delete the HTTP wrapping
-  and the error envelope; return typed results. Move `metrics.ts`/`metrics-report.ts` as local queries (not routes).
+  `git mv api/src/*.ts core/src/vault/` (minus `server.ts`, `index.ts`, `spark-events.ts`, and **`export.ts`** —
+  reserved for L4 and relocated verbatim to `core/src/export/export.ts`); delete the HTTP wrapping and the error
+  envelope; return typed results. Move `metrics.ts`/`metrics-report.ts` as local queries (not routes).
   Tests: the moved `*.test.ts` re-home and pass.
 - [ ] **Step 4: Move the domain and re-home the types.**
   `git mv client/src/api/types.ts core/src/types.ts`; `git mv client/src/domain core/src/domain`.
@@ -193,7 +222,9 @@ boundary guard bites.
 ### L3: BYO-key provider client  (@Ari)
 
 **Files:**
-- Move: `worker/src/provider/*` → `core/src/provider/*`; `worker/src/engine/*` → `core/src/engine/*`
+- Move: `worker/src/provider/*` → `core/src/provider/*`; `worker/src/engine/*` → `core/src/engine/*` (plus
+  `worker/src/queue.ts` and the `worker/src/nfr-*.test.ts` suites, §13.3)
+- Delete: `worker/` — emptied by the move above; **L1 leaves it in place for this lane** (§13.3)
 - Create: `core/src/provider/key.ts` (secure-store accessor — the one module the adapter may import)
 - Create: `core/src/provider/key.test.ts` (key-hygiene guard)
 - Create: `app/src/engine/runScheduler.ts` (foreground run driver; in-process events)
@@ -231,7 +262,8 @@ boundary guard bites.
 ### L4: Export / import  (@Eli)
 
 **Files:**
-- Move: `api/src/export.ts` → `core/src/export/export.ts`; **create** `core/src/export/import.ts`
+- Own: `core/src/export/export.ts` (relocated **verbatim** by L1, so it survives `api/`'s retirement — **do not
+  re-move it from `api/`**, which is gone by L4); **create** `core/src/export/import.ts`
 - Create: `core/src/export/roundtrip.test.ts`
 - Create: `app/src/screens/Export.tsx`, `app/src/screens/Import.tsx`
 - Modify: `app/app.json` — `allowBackup=false` (Android) and `NSURLIsExcludedFromBackupKey` (iOS)
