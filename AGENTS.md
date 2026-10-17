@@ -72,15 +72,32 @@ skills."* Applied to this repo's harness, that means:
    **re-attributed**: #138's body held *two* matches, and the one that fired was the plain
    prose `deliberately does **not** close #42`; the backticked `Closes #42` beside it was
    inert. That is the shape to watch — a sentence *denying* the close still performs it.
-   **Read `closingIssuesReferences` back after opening a PR** — it is what caught this. **Documented, not tested here** is the full keyword set
-   GitHub recognises, case-insensitive: `close`/`closes`/`closed`, `fix`/`fixes`/`fixed`,
-   `resolve`/`resolves`/`resolved`. A **held-lane** PR — the one that deliberately must
-   *not* close its issue yet — therefore leaves the placeholder untouched **and contains
-   no literal closing-keyword + reference at all** (write `Part of #<n>` throughout).
-   An unreplaced `#<n>` closes nothing, but that is **necessary, not sufficient**: any
-   other literal closing keyword in the body still fires. Only the **closing** PR writes
-   `Closes #<n>`, with `<n>` replaced by its own issue number. A missing keyword has left
-   a finished lane's issue OPEN twice (#94 / PR #96, #37 / PR #128).
+   **Read `closingIssuesReferences` back after opening a PR** — it is what caught this. It
+   reads the **body**, not the commits: all **three** of #175's commits were read back —
+   one carries a plain-prose keyword + reference, the same shape that fires in a body, and
+   the field did not return it (`n=1`, unmerged, so it separates nothing about post-merge
+   behaviour; what it does establish is that the read-back **does not clear the commit
+   vector**). The other keyword-bearing commit is **not** a second firing shape: its
+   subject separates the keyword from its reference with a paren, and that split measures
+   **inert** (PR #179, control and test in one body — adjacent fired, paren-split did not;
+   body arm E1's parens *wrap* the pair, they do not split it). And read history as history:
+   these fields are **current state**. `gh issue view 42 --json closedAt` returns
+   `16:35:39Z`, the *last* close, which reads as *"5.5 h after #138 merged, so #138 did
+   not do it"*; the record is the `closed → reopened` pair — closed `11:04:45Z`, reopened
+   by hand `11:05:20Z`, closed `16:35:39Z` by #139. **Documented, not tested here** is the
+   full keyword set GitHub recognises, case-insensitive: `close`/`closes`/`closed`,
+   `fix`/`fixes`/`fixed`, `resolve`/`resolves`/`resolved`. A **held-lane** PR — the one that
+   deliberately must *not* close its issue yet — therefore leaves the placeholder untouched
+   **and carries no literal closing-keyword + reference anywhere in its body or in its
+   commit messages** (write `Part of #<n>` throughout). Commits count because the parser
+   reads them **where they land on the default branch**, and a lane's do at merge: a keyword
+   parked in a commit message executes precisely the close the body was written to avoid,
+   and the read-back above cannot see it (*documented, not measured here* — #175 carried
+   them and, unmerged, closed nothing). An unreplaced `#<n>` closes nothing, but that is
+   **necessary, not sufficient**: any other literal closing keyword in the body still
+   fires. Only the **closing** PR writes `Closes #<n>`, with `<n>` replaced by its own issue
+   number. A missing keyword has left a finished lane's issue OPEN twice (#94 / PR #96, #37
+   / PR #128).
 
 4. **`main` carries a repository ruleset, and the committed definition is the source of truth.**
    The `main-gate` ruleset (`bypass_actors: []` — no actor, the owner included, can bypass it) is
