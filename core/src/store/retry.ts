@@ -15,17 +15,30 @@ export interface RetryOptions {
   baseDelayMs?: number;
   /** Backoff ceiling in ms. */
   maxDelayMs?: number;
-  /** Injected by tests; defaults to a synchronous sleep. */
+  /** Injected by tests; defaults to {@link spinSleep}. */
   sleep?: (ms: number) => void;
 }
 
 const DEFAULTS = { attempts: 5, baseDelayMs: 20, maxDelayMs: 250 } as const;
 
-const sleepBuffer = new Int32Array(new SharedArrayBuffer(4));
-
-/** Synchronous sleep: the store's API is synchronous (`SqliteConnection`), so a promise would not do. */
-function blockingSleep(ms: number): void {
-  Atomics.wait(sleepBuffer, 0, 0, ms);
+/**
+ * Synchronous sleep: the store's API is synchronous (`SqliteConnection`), so a promise would not do.
+ *
+ * **Portable by construction (#187).** It derefs neither of the globals the device and the browser
+ * take away: `SharedArrayBuffer` is undefined outside a cross-origin-isolated page, and
+ * `Atomics.wait` throws `TypeError: Atomics.wait cannot be called in this context` on the **web main
+ * thread** — even inside a COI page, which is where this guard runs. `expo-sqlite` may block with
+ * `Atomics.wait` because it does so *inside a Worker* (`connection.ts:35`); a retry on the caller's
+ * thread cannot.
+ *
+ * The cost is a bounded spin: this is a **guard, not a routine cost** (a second in-process writer is
+ * the only way in), and the whole ladder is at most four waits of at most `maxDelayMs`.
+ */
+function spinSleep(ms: number): void {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    // Spin on the clock: no timer, no worker, no global — just the deadline.
+  }
 }
 
 /**
@@ -49,7 +62,7 @@ export function withRetry<T>(fn: () => T, options: RetryOptions = {}): T {
   const attempts = options.attempts ?? DEFAULTS.attempts;
   const baseDelayMs = options.baseDelayMs ?? DEFAULTS.baseDelayMs;
   const maxDelayMs = options.maxDelayMs ?? DEFAULTS.maxDelayMs;
-  const sleep = options.sleep ?? blockingSleep;
+  const sleep = options.sleep ?? spinSleep;
   if (!Number.isInteger(attempts) || attempts < 1) throw new RangeError("attempts must be >= 1");
 
   for (let attempt = 0; ; attempt++) {
