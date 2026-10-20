@@ -9,6 +9,14 @@ in W7.
 The file is the artifact of record, and the acceptance oracle is `test/o1_check.py` run on **this file**
 (its own CI job, `o1-taxonomy`). The loader adds only what the harness cannot see: the SQL it writes.
 
+**The app cannot read this file (#184).** A device bundle has no filesystem — Metro resolves `node:fs` to an
+empty module — so the loader takes the taxonomy as **text**, and the text the bundle carries is
+`src/seed/domain-taxonomy.ts`, **generated** from this YAML by `node scripts/gen-taxonomy-text.mjs` and
+drift-checked by `test/taxonomy-text.test.ts` (the shipped constant must equal these bytes). Editing the YAML
+without regenerating is a red test, not a silent divergence. Node-side readers — the harness, the scripts and
+the loader's own tests — go through `src/seed/taxonomy-file.node.ts`, which is deliberately not on the package
+entry (`core/test/boundary-node-adapter.test.ts` walks the entry's closure).
+
 ## The curation rule (artifact v1.2, unchanged)
 
 1. **28 clusters**, named at the level a person picks as *"the domain I'm working in"* — market/industry

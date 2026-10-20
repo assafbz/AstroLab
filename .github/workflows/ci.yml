@@ -21,14 +21,20 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      # The seed resolves from `src/` under tsx and from `dist/` under the built entry the app
-      # imports — a path that only works under tsx passes every test and dies in the bundle. Prove it.
-      - name: the built core still resolves its seed file
+      # The seed ships as **text in the bundle** (#184): a device has no filesystem, so the entry must
+      # seed without reading one. Prove it on the *built* entry — the import and the seed that only work
+      # under tsx are exactly what this catches.
+      - name: the built entry seeds a vault from the bundled taxonomy, with no filesystem
         run: |
           node --input-type=module -e "
-            const { readFileSync } = await import('node:fs');
-            const { TAXONOMY_PATH } = await import('@astrolab/core');
-            console.log('built core reads', TAXONOMY_PATH, readFileSync(TAXONOMY_PATH).length, 'bytes');
+            const core = await import('@astrolab/core');
+            const { openNodeStore } = await import('@astrolab/core/dist/store/connection.node.js');
+            const db = openNodeStore(':memory:');
+            core.migrate(db, core.MIGRATIONS);
+            core.seedDomainTaxonomy(db);
+            const n = Number(db.prepare('SELECT count(*) AS n FROM domain_map').get().n);
+            if (n !== 264) throw new Error('bundled taxonomy seeded ' + n + ' rows, expected 264');
+            console.log('built entry seeded', n, 'domain_map rows from the bundled taxonomy');
           "
 
   o1-taxonomy:

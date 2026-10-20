@@ -1,3 +1,4 @@
+import { newId as mintId } from "../store/ids.js";
 import type { Decision } from "../types.js";
 import type { ResolutionKind } from "./deck-interaction.js";
 
@@ -76,8 +77,10 @@ export interface DecisionResolverDeps {
   /** A resolution that did not commit — the caller draws the non-destructive Retry (T29). */
   onFailed(sparkId: string, error: ResolutionError): void;
   /**
-   * Mint a decision id (§2.2). Defaults to `crypto.randomUUID`; injected so a test's keys are
-   * deterministic and the module's *reuse* is observable rather than merely plausible.
+   * Mint a decision id (§2.2). Defaults to the installed id source (`../store/ids.js`) — the standard
+   * global unless the composition root installed the platform's (an `expo-crypto` source on a device,
+   * where there is no `crypto` global at all — #184); injected so a test's keys are deterministic and
+   * the module's *reuse* is observable rather than merely plausible.
    */
   newId?: () => string;
 }
@@ -98,7 +101,7 @@ interface Pending {
 }
 
 export function createDecisionResolver(deps: DecisionResolverDeps): DecisionResolver {
-  const newId = deps.newId ?? (() => crypto.randomUUID());
+  const newId = deps.newId ?? mintId;
   const live = new Map<string, Pending>();
 
   function send(sparkId: string, pending: Pending): void {

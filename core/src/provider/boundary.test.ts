@@ -658,12 +658,14 @@ describe("Done 5 — no synthetic seeds, no note import (ARCH §7; PRD §3.4 ite
 
   test("B: the only file-reading call in a shipped src/ is the shipped taxonomy", () => {
     // "Imports existing notes" (`PRD.md` §3.4 item 3) is a file *read*. A live product can read exactly
-    // one file — `core/src/store/domain-seed.ts`'s shipped taxonomy (`ARCHITECTURE.md` §3.2). The build
-    // scripts under `scripts/` are tooling, not a package's `src/`. The **call**, not the name:
+    // one file — the shipped taxonomy (`ARCHITECTURE.md` §3.2). Since #184 the read lives in the
+    // Node-only helper (`core/src/seed/taxonomy-file.node.ts`, tests/CI/scripts) and the **app** takes
+    // the same artifact as bundled text, so the reading module is not even on the entry's closure. The
+    // build scripts under `scripts/` are tooling, not a package's `src/`. The **call**, not the name:
     // importing `readFileSync` reads nothing, and a comment mentioning it is not a read.
     const READ = /(?:readFileSync|readFile|createReadStream|readdirSync)\s*\(/;
     expect(FILES.filter((file) => READ.test(file.text)).map(relOf)).toEqual([
-      "core/src/store/domain-seed.ts",
+      "core/src/seed/taxonomy-file.node.ts",
     ]);
     // Non-vacuity: the walk excludes test files, and every other reader in the repo is a test — so if
     // the walk ever started including one, this list would grow and the test would say so.

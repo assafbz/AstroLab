@@ -1,23 +1,26 @@
-import { readFileSync } from "node:fs";
+import { DOMAIN_TAXONOMY_TEXT } from "../seed/domain-taxonomy.js";
 import type { SqliteConnection } from "./connection.js";
-import { fileURLToPath } from "node:url";
 
 import { parse as parseYaml } from "yaml";
 
 import { writeTransaction } from "./store.js";
 
 /**
- * The shipped seed taxonomy is **data, not code** (`ARCHITECTURE.md` §2.4, §3.2): one YAML file the
- * loader reads at boot and upserts, so `domain_map` resolves the ordinary tags the S0 picker and the
- * spread gate count. The curation rule lives in `seed/README.md`; the file itself is the artifact.
+ * The shipped seed taxonomy is **data, not code** (`ARCHITECTURE.md` §2.4, §3.2, §3.4): the loader
+ * upserts it at boot, so `domain_map` resolves the ordinary tags the S0 picker and the spread gate
+ * count. The curation rule lives in `seed/README.md`; `seed/domain-taxonomy.yaml` is the artifact of
+ * record.
  *
- * `seed/` sits at the **package root**, so `../../seed/…` resolves from `src/store/` (tsx) and from
- * `dist/store/` (the built entry the app imports) alike. Moving it under `src/` would break the
- * `dist/` half, which only the post-`build` CI step would catch.
+ * **The loader takes the text, not a path** (#184). It used to read the file with `node:fs` at module
+ * evaluation, which Metro resolves to an **empty module** — so `import "@astrolab/core"` threw on
+ * device and web while every suite stayed green on Node. §3.4 is explicit that the seed "ships **in
+ * the app bundle** and is applied at first launch", and a bundle has no filesystem to read it from:
+ * the bundled text is `DOMAIN_TAXONOMY_TEXT` (`src/seed/domain-taxonomy.ts`, **generated** from the
+ * YAML and drift-checked by `test/taxonomy-text.test.ts`), and it is this function's default. Node
+ * callers that want the file itself use `src/seed/taxonomy-file.node.ts`, which is deliberately off
+ * the package entry (`core/test/boundary-node-adapter.test.ts` walks the entry's closure).
  */
-export const TAXONOMY_PATH = fileURLToPath(
-  new URL("../../seed/domain-taxonomy.yaml", import.meta.url),
-);
+export const TAXONOMY_SOURCE = "core/seed/domain-taxonomy.yaml";
 
 /** Reserved top-level keys — every other top-level key names a cluster (the harness's file contract). */
 const META = new Set(["adjacency", "version", "corrections"]);
@@ -157,12 +160,18 @@ function adjacencyJson(map: Map<string, number>): string {
 }
 
 /**
- * Applies the shipped taxonomy. **Idempotent** (`INSERT … ON CONFLICT DO UPDATE` guarded so a repeat
- * writes nothing), **forward-only** (it never deletes), and it refuses a **silent re-point** — a tag
- * that already maps elsewhere must be declared in `corrections`. Safe to call at every boot.
+ * Applies the shipped taxonomy, from `text` — the bundled seed by default (#184), or a caller's own
+ * document (the loader's own tests pass variants of the shipped bytes).
+ *
+ * **Idempotent** (`INSERT … ON CONFLICT DO UPDATE` guarded so a repeat writes nothing),
+ * **forward-only** (it never deletes), and it refuses a **silent re-point** — a tag that already maps
+ * elsewhere must be declared in `corrections`. Safe to call at every boot.
  */
-export function seedDomainTaxonomy(db: SqliteConnection, path: string = TAXONOMY_PATH): void {
-  const taxonomy = parseTaxonomy(readFileSync(path, "utf8"), path);
+export function seedDomainTaxonomy(
+  db: SqliteConnection,
+  text: string = DOMAIN_TAXONOMY_TEXT,
+): void {
+  const taxonomy = parseTaxonomy(text, TAXONOMY_SOURCE);
   const declared = new Set(
     taxonomy.corrections
       .filter((c) => c.kind === "repoint")

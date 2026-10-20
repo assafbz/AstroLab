@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import type { SqliteConnection } from "./connection.js";
+import { newId } from "./ids.js";
 
 import { isoTimestamp } from "./iso.js";
 import { writeTransaction } from "./store.js";
@@ -67,7 +67,7 @@ export function enqueueRun(db: SqliteConnection, revision: number): SparkRun {
   if (existing !== undefined) return existing;
 
   const run: SparkRun = {
-    id: randomUUID(),
+    id: newId(),
     vault_revision: revision,
     status: "PENDING",
     started_at: null,
