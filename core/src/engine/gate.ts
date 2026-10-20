@@ -1,0 +1,202 @@
+import type { SqliteConnection } from "../store/connection.js";
+
+import { readGateConfig, type GateConfig } from "../store/index.js";
+
+import type { MechanismDescriptor } from "../provider/index.js";
+import type { VaultCut } from "./queue.js";
+import { descriptorSimilarity } from "./alignment.js";
+import type { DomainDistance } from "./domain.js";
+import type { MechanismCache } from "./mechanism.js";
+
+/**
+ * The gate — Axis 2's cheap, local filter (`ARCHITECTURE.md` §3.1, §3.3 step 2). For a `VaultCut` it
+ * materialises each idea's descriptor **once** and each idea's tag-set **once**, then runs the **pure**
+ * pairwise loop comparing every pair against **both** thresholds. A pair is *offered* only when it
+ * clears both. Nothing is written, nothing is adjudicated (W6), nothing is suppressed (W7).
+ *
+ * ## The seam
+ *
+ * This is a **socket**: W6's adjudicator consumes `gatedPairs`, W8's run body calls this. Like W3's
+ * cache and W4's distance, it ships unwired — `worker/src/queue.ts`'s default body stays `stubRunBody`
+ * — so no unruled surface reaches `main`.
+ *
+ * ## What a "pair" is (D6)
+ *
+ * `key = [aId, bId].sort().join("|")` — the same canonical key `spark` / `suppressed_pair` use
+ * (§2.3), so W8 stores it without re-deriving it and a re-run at one revision yields a byte-identical
+ * list. The result is **sorted by `key`**; the pairwise loop's order is irrelevant to it.
+ *
+ * ## The comparator is W4's pinned predicate (D2)
+ *
+ * `distance === null || distance >= minDomainDistance` for the distance axis, `alignment >=
+ * minAlignment` for the alignment axis, and a pair is gated iff **both** hold. `null` (W4: *"no path
+ * among the shipped hops"*) reads as **farthest**, never `Number(distance)`: coercing `null → 0` would
+ * read an unconnected pair as same-domain → cliché → silently dropped.
+ *
+ * ## Cost posture (§3.1, D4)
+ *
+ * Extraction is O(N) and is **not** the scan. The pairwise loop calls neither the extractor, the
+ * adjudicator, nor (once a tag has been seen) the normaliser. The load-bearing claim is **AI calls per
+ * pair = 0**: an unmapped tag's normalisation fires once, inside `between`, on first sight — a cost
+ * bounded by **distinct tags**, never by pair count. `gate.test.ts` asserts that in call-count terms,
+ * independently of how many pairs the scan visits.
+ *
+ * ## Three deliberate properties
+ *
+ * - **The distance axis runs on clusters post-normalisation (Q2, accepted).** By gate time W4 has
+ *   already normalised any provisional tag, so `between` sees clusters, not raw tags. That is intended
+ *   behaviour, not an artifact: the distance axis measures *domain*, and a raw tag has none until
+ *   resolved.
+ * - **A pair is never lineage-related (§3.5, `#141`).** An idea and its own ancestor/descendant is the
+ *   same idea copied, so a fork of its parent would clear both axes by construction (§4.7 copies the
+ *   text, refuses the same domain). `sameLineage` drops such a pair at candidate generation, beside
+ *   `NEEDS_COMPLETION` / domain-less, before the distance axis runs.
+ * - **No write.** The gate reads `idea` (as `cutVault` does) and writes nothing — no `spark`, no
+ *   `suppressed_pair`, no revision bump. Recording an outcome is W7/W8.
+ */
+
+/** One offered pair, with the evidence that cleared it — W6 adjudicates, W8 stores. */
+export interface GatedPair {
+  /** `[aId, bId].sort().join("|")` (D6). */
+  key: string;
+  aId: string;
+  bId: string;
+  a: MechanismDescriptor;
+  b: MechanismDescriptor;
+  /** W4's `between()`; `null` = no listed path (far), which the comparator reads as distant. */
+  distance: number | null;
+  /** `descriptorSimilarity()`, `[0,1]`. */
+  alignment: number;
+}
+
+export interface Gate {
+  /** Deterministic, `pair_key`-sorted, AI-free over the pairwise loop (D4/D6). */
+  gatedPairs(cut: VaultCut): Promise<GatedPair[]>;
+}
+
+/**
+ * The candidate set, in the cut's `id ASC` order: `ACTIVE` ideas carrying at least one domain tag
+ * (§3.5 excludes `NEEDS_COMPLETION` and domain-less ideas from candidate generation). One `SELECT`.
+ */
+function candidates(db: SqliteConnection, cut: VaultCut): Array<{ id: string; tags: string[] }> {
+  if (cut.ideaIds.length === 0) return [];
+  const placeholders = cut.ideaIds.map(() => "?").join(", ");
+  const rows = db
+    .prepare(
+      `SELECT id, domain_tags FROM idea
+       WHERE id IN (${placeholders}) AND status = 'ACTIVE'
+       ORDER BY id ASC`,
+    )
+    .all(...cut.ideaIds) as Array<{ id: string; domain_tags: string }>;
+  return rows
+    .map((row) => ({ id: row.id, tags: JSON.parse(row.domain_tags) as unknown }))
+    .filter(
+      (row): row is { id: string; tags: string[] } =>
+        Array.isArray(row.tags) && row.tags.length > 0,
+    );
+}
+
+/**
+ * The lineage relation among a pair of idea ids (§3.5, `#141`). `idea.lineage_parent_id` is a
+ * **single-parent** chain (`lineage_kind = FORK`, only a fork carries one), so "x is an ancestor of y"
+ * is a membership test on y's parent walk. A pair where either id is the other's **ancestor or
+ * descendant** is the same idea copied — §4.7 copies the parent's mechanism text verbatim while
+ * refusing a same-domain fork, so such a pair clears both thresholds *by construction* and would
+ * present as a fake cross-domain spark. It is excluded alongside §3.5's `NEEDS_COMPLETION` /
+ * domain-less exclusions, before the distance axis is asked.
+ *
+ * The walk reads the whole `idea` table, not just the cut: an intermediate generation may be
+ * `NEEDS_COMPLETION` (or otherwise outside the candidate window) and still bridge an ancestor to a
+ * descendant. `memo` is shared across the run's pairs so each id's chain is walked once.
+ */
+function sameLineage(
+  parentOf: { get(id: string): unknown },
+  memo: Map<string, Set<string>>,
+  x: string,
+  y: string,
+): boolean {
+  const ancestorsOf = (id: string): Set<string> => {
+    const cached = memo.get(id);
+    if (cached !== undefined) return cached;
+    const chain = new Set<string>([id]); // self, so a direct child's walk contains its parent
+    let current = id;
+    for (;;) {
+      const row = parentOf.get(current) as { parent: string | null } | undefined;
+      const parent = row?.parent ?? null;
+      if (parent === null || chain.has(parent)) break; // `chain.has` guards a malformed cycle
+      chain.add(parent);
+      current = parent;
+    }
+    memo.set(id, chain);
+    return chain;
+  };
+  return ancestorsOf(x).has(y) || ancestorsOf(y).has(x);
+}
+
+/**
+ * The **candidate ids** at a cut (§3.5) — the same predicate `gatedPairs`'s Stage 1 uses, since a
+ * sweep that read a *different* set would retract an offer whose idea the gate would still consider.
+ *
+ * W8's sweep (`core/src/store/sparks.ts`'s `retractOffersOutside`) takes exactly this list: a **live**
+ * offer whose ideas are no longer both candidates is retracted (§4's recompute; V5 `#16` ⑤). A
+ * resolved spark is history and is untouched by the sweep, which filters `status = 'OFFERED'`.
+ */
+export function candidateIds(db: SqliteConnection, cut: VaultCut): string[] {
+  return candidates(db, cut).map((row) => row.id);
+}
+
+export function createGate(
+  db: SqliteConnection,
+  mechanisms: MechanismCache,
+  distance: DomainDistance,
+  config?: GateConfig,
+): Gate {
+  return {
+    async gatedPairs(cut) {
+      const limits = config ?? readGateConfig(db);
+
+      // Stage 1, materialised once per candidate — O(N), and not part of the scan (§3.1).
+      const materialised: Array<{ id: string; descriptor: MechanismDescriptor; tags: string[] }> =
+        [];
+      for (const candidate of candidates(db, cut)) {
+        const descriptor = await mechanisms.descriptorFor(candidate.id);
+        if (descriptor === null) continue; // deleted between the cut and now
+        materialised.push({ id: candidate.id, descriptor, tags: candidate.tags });
+      }
+
+      // The lineage exclusion (§3.5, #141) reads `lineage_parent_id` from the whole table — a chain
+      // can pass through a node outside the cut. The statement and the per-id chain memo are built
+      // once per run; the pairwise loop itself stays AI-free and unadjudicated.
+      const parentOf = db.prepare("SELECT lineage_parent_id AS parent FROM idea WHERE id = ?");
+      const lineageMemo = new Map<string, Set<string>>();
+
+      const pairs: GatedPair[] = [];
+      for (let i = 0; i < materialised.length; i++) {
+        for (let j = i + 1; j < materialised.length; j++) {
+          const a = materialised[i]!;
+          const b = materialised[j]!;
+          // A copy of an idea is not a cross-domain discovery: drop it before the distance axis is
+          // asked (both orders of the ancestor relation), and never offer it as a spark.
+          if (sameLineage(parentOf, lineageMemo, a.id, b.id)) continue;
+          const gap = await distance.between(a.tags, b.tags);
+          const alignment = descriptorSimilarity(a.descriptor, b.descriptor);
+          // D2: `null` is farthest, never 0; both axes must clear.
+          const passesDistance = gap === null || gap >= limits.minDomainDistance;
+          if (!passesDistance || alignment < limits.minAlignment) continue;
+          const [first, second] = [a.id, b.id].sort();
+          pairs.push({
+            key: `${first}|${second}`,
+            aId: a.id,
+            bId: b.id,
+            a: a.descriptor,
+            b: b.descriptor,
+            distance: gap,
+            alignment,
+          });
+        }
+      }
+
+      return pairs.sort((x, y) => (x.key < y.key ? -1 : x.key > y.key ? 1 : 0));
+    },
+  };
+}

@@ -7,7 +7,7 @@
  * POST is still in flight is ignored**, so a rapid double-press cannot enqueue two runs.
  *
  * Why a guard at all, when §4.16 is "idempotent per revision": the dedup is per **`PENDING`** run at a
- * revision (`store/src/runs.ts`), and a second POST while a run at that stamp is already `RUNNING`
+ * revision (`core/src/store/runs.ts`), and a second POST while a run at that stamp is already `RUNNING`
  * inserts a second row. Re-running one revision is sanctioned (`ARCHITECTURE.md` §4) — the cost is a
  * duplicated run, never a wrong deck — so the client carries this guard rather than a server change. A
  * revision-keyed guard is not available to the client: no read it may call *before firing* returns

@@ -59,20 +59,47 @@ skills."* Applied to this repo's harness, that means:
    convention rather than two. The threshold detects, it never licenses: the
    reviewer still performs the merge.
 3. **A PR closes its issue with a closing keyword, on the closing PR only.** GitHub
-   closes an issue when the PR body contains a closing keyword followed by an issue
-   reference — `#<n>`, `owner/repo#<n>`, or a full issue URL — **anywhere** in the body;
-   markdown does **not** shield it (prose, code spans and quotes all fire).
-   **Incident-verified** is the `Closes #<n>` form (2026-10-16: #42 auto-closed 2 s after
-   PR #138 merged, from a backticked `Closes #42` in the body's prose — the author meant
-   it inert as discussion). **Documented, not tested here** is the full keyword set
-   GitHub recognises, case-insensitive: `close`/`closes`/`closed`, `fix`/`fixes`/`fixed`,
-   `resolve`/`resolves`/`resolved`. A **held-lane** PR — the one that deliberately must
-   *not* close its issue yet — therefore leaves the placeholder untouched **and contains
-   no literal closing-keyword + reference at all** (write `Part of #<n>` throughout).
-   An unreplaced `#<n>` closes nothing, but that is **necessary, not sufficient**: any
-   other literal closing keyword in the body still fires. Only the **closing** PR writes
-   `Closes #<n>`, with `<n>` replaced by its own issue number. A missing keyword has left
-   a finished lane's issue OPEN twice (#94 / PR #96, #37 / PR #128).
+   links an issue when the PR body contains a closing keyword followed by an issue
+   reference — `#<n>`, `owner/repo#<n>`, or a full issue URL — **anywhere** in the body:
+   prose, quotes and parentheses all fire; **code spans and fenced code blocks do not**
+   (measured 2026-10-17 on throwaway PR #175 — one form per line, a distinct
+   already-closed issue each; reading `closingIssuesReferences` back gave
+   `[94,129,141,151]` for the prose, parenthesised and block-quoted forms and nothing for
+   the backticked and fenced ones). Position is irrelevant — mid-sentence and own line
+   both fire — and **negation is not read**: `this does **not** close #42` fires.
+   **Incident-verified** is the `Closes #<n>` form (`[169]` pre-merge on #170, `[171]` on
+   #172, `[]` on #173 with no keyword written). The #42 close of 2026-10-16 is
+   **re-attributed**: #138's body held *two* matches, and the one that fired was the plain
+   prose `deliberately does **not** close #42`; the backticked `Closes #42` beside it was
+   inert. That is the shape to watch — a sentence *denying* the close still performs it.
+   **Read `closingIssuesReferences` back after opening a PR** — it is what caught this. It
+   reads the **body**, not the commits: all **three** of #175's commits were read back —
+   one carries a plain-prose keyword + reference, the same shape that fires in a body, and
+   the field did not return it (`n=1`, unmerged, so it separates nothing about post-merge
+   behaviour; what it does establish is that the read-back **does not clear the commit
+   vector**). The other keyword-bearing commit is **not** a second firing shape: its
+   subject separates the keyword from its reference, and that separation measures **inert** —
+   the keyword must sit **immediately** before its reference (PR #179 split the pair with a
+   paren; PR #180 split it with a word and no paren, still inert, so the paren is one *way*
+   to split a pair, not the cause). Body arm E1's `(Closes #94)` *wraps* an adjacent pair,
+   which is why it fires. And read history as history:
+   these fields are **current state**. `gh issue view 42 --json closedAt` returns
+   `16:35:39Z`, the *last* close, which reads as *"5.5 h after #138 merged, so #138 did
+   not do it"*; the record is the `closed → reopened` pair — closed `11:04:45Z`, reopened
+   by hand `11:05:20Z`, closed `16:35:39Z` by #139. **Documented, not tested here** is the
+   full keyword set GitHub recognises, case-insensitive: `close`/`closes`/`closed`,
+   `fix`/`fixes`/`fixed`, `resolve`/`resolves`/`resolved`. A **held-lane** PR — the one that
+   deliberately must *not* close its issue yet — therefore leaves the placeholder untouched
+   **and carries no literal closing-keyword + reference anywhere in its body or in its
+   commit messages** (write `Part of #<n>` throughout). Commits count because the parser
+   reads them **where they land on the default branch**, and a lane's do at merge: a keyword
+   parked in a commit message executes precisely the close the body was written to avoid,
+   and the read-back above cannot see it (*documented, not measured here* — #175 carried
+   them and, unmerged, closed nothing). An unreplaced `#<n>` closes nothing, but that is
+   **necessary, not sufficient**: any other literal closing keyword in the body or in a
+   commit message still fires. Only the **closing** PR writes `Closes #<n>`, with `<n>`
+   replaced by its own issue number. A missing keyword has left a finished lane's issue OPEN
+   twice (#94 / PR #96, #37 / PR #128).
 
 4. **`main` carries a repository ruleset, and the committed definition is the source of truth.**
    The `main-gate` ruleset (`bypass_actors: []` — no actor, the owner included, can bypass it) is
@@ -90,6 +117,21 @@ the violation, watch the suite fail, restore. The guard carries its own **non-va
 assertion too, so it cannot quietly scan nothing, miss the files it exists for, or guard the
 wrong package — and a structural claim asserted only in prose (a PR body, a JSDoc line) is not
 a check at all.
+
+**A matcher is only as wide as the spellings it normalises.** Where a guard's anchor is *text* — a
+declaration, a specifier, a call site — one planted form proves nothing about the others: run the
+mutation across the **spelling space** of the thing matched (a rename · a local alias · a qualified
+`import("…").X` · an identifier the pattern does not actually bound), keep a **near-miss control**
+that must stay green, so the guard cannot buy its reds by over-matching, and pin whatever the matcher
+still cannot reach as a **case that asserts the count is 0** rather than as prose.
+
+The failure is one level in from instance 3 below — that one is a matcher blind to an import
+**form**, this is a matcher blind to an annotation's **spelling**. **#171** (2026-10-17): the EV6
+call-site anchor `\b<receiver>\s*:\s*<InterfaceName>\b` bit for `ex: MechanismExtractor` and let six
+spellings of the same declaration through — a qualified import · a local alias · a renamed import · a
+rename-then-alias chain · the interface module's own aggregate alias · a `$`-named receiver (whose
+`\b` never holds, so that spelling matched nothing at all). Fixed in **#172**; its near-miss control
+is the engine's own `Adjudicator`-typed stage, which shares the method name and stays uncounted.
 
 Five instances in one day (2026-10-14, the W1/W2 lane). All five were found in review, not by
 the check itself, except the third, which its own mutation check caught:

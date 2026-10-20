@@ -4,7 +4,7 @@ import type { Idea } from "../types.js";
  * The lineage chain's **tombstone** rule (V8 `#19`'s follow-up, on S4).
  *
  * §4.5's `lineage` is the **live** ancestor chain, root-first. A parent that no longer exists ends the
- * walk (`api/src/ideas.ts` `ancestorChain` breaks rather than failing), so a fork child whose parent was
+ * walk (`core/src/vault/ideas.ts` `ancestorChain` breaks rather than failing), so a fork child whose parent was
  * deleted reads `lineage: []` while its `lineage_parent_id` still names the parent — §4.8's *"fork
  * children keep their parent reference"*, the dangling ref the contract tolerates on purpose.
  *

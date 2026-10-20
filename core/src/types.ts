@@ -1,3 +1,5 @@
+import type { RunFailureCause } from "./failure.js";
+
 /**
  * The response and request shapes the client consumes, as `docs/API.md` §3.1 / §4.2 / §4.5 spell
  * them. Field names are the contract's, verbatim — the client never renames or re-shapes a payload,
@@ -51,7 +53,7 @@ export interface IdeaDetail {
  * `docs/API.md` §4.2 / §4.6 — the four mandatory fields (`PRD.md` §2), spelled **once**.
  *
  * Both the blank capture (§4.2) and the iterate (§4.6) carry exactly this set, and §4.6's clear of
- * `NEEDS_COMPLETION` is decided from it (`derivedStatus`, `api/src/decision.ts`). Two spellings of
+ * `NEEDS_COMPLETION` is decided from it (`derivedStatus`, `core/src/vault/decision.ts`). Two spellings of
  * "the mandatory four" would be two places for the set to drift.
  */
 export interface IdeaFields {
@@ -210,7 +212,7 @@ export interface EngineRun {
  * `docs/API.md` §3.6 / §4.10 — `GET /v1/sparks/state`. **The deck's only state input.**
  *
  * `state` is the precedence-resolved ladder (`E0 → E4 → E1 → E2 → E3`, computed once in
- * `api/src/engine-state.ts`) and `unreviewed` is the count of `OFFERED` sparks **in every state** —
+ * `core/src/vault/engine-state.ts`) and `unreviewed` is the count of `OFFERED` sparks **in every state** —
  * so `E1` coexists with a renderable deck without the count going missing. The client composes around
  * this; it never re-derives it (§4.9: *"the deck read does not re-derive it"*).
  */
@@ -218,6 +220,12 @@ export interface EngineState {
   state: EngineStateName;
   unreviewed: number;
   run: EngineRun | null;
+  /**
+   * `FLOW.md` §4.1 / §4.3 — **why** the engine is Exhausted, when it is: E4's arms are the copy the
+   * deck shows (`core/src/failure.ts` owns the vocabulary, `core/src/vault/engine-state.ts` reads it off
+   * the failed row). `null` in every other state, and for an E4 whose row carries no tag.
+   */
+  cause: RunFailureCause | null;
 }
 
 /**

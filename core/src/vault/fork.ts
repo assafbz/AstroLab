@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import type { SqliteConnection } from "../store/connection.js";
+import { newId } from "../store/ids.js";
 
 import { isoTimestamp, newDomainFlag, vaultMutation } from "../store/index.js";
 
@@ -72,7 +72,7 @@ export function forkIdea(db: SqliteConnection, id: string, input: ForkInput): Id
 
     const now = isoTimestamp();
     const idea: Idea = {
-      id: randomUUID(),
+      id: newId(),
       ...content,
       domain_tags: input.domain_tags,
       lineage_kind: "FORK",
