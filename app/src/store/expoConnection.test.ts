@@ -1,11 +1,16 @@
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 // `expo-sqlite` is a native module: loading it here would fail in CI. The adapter's *mapping* — the
 // part that is green in CI and wrong on the device when it drifts — needs no engine, so the module is
-// stubbed and only its call shape is asserted.
-vi.mock("expo-sqlite", () => ({ openDatabaseSync: vi.fn(() => ({ marker: "db" })) }));
+// stubbed and only its call shape is asserted. **Both openers are stubbed** so the test can assert *which*
+// one the adapter uses: on web the sync opener cannot be answered by a cold worker (#186), so `openDatabase`
+// must go through the async opener.
+vi.mock("expo-sqlite", () => ({
+  openDatabaseAsync: vi.fn(async () => ({ marker: "db" })),
+  openDatabaseSync: vi.fn(() => ({ marker: "db" })),
+}));
 
-import { openDatabaseSync } from "expo-sqlite";
+import { openDatabaseAsync, openDatabaseSync } from "expo-sqlite";
 
 import {
   createExpoConnection,
@@ -108,14 +113,19 @@ describe("createExpoConnection — the three pinned mappings", () => {
 });
 
 describe("openDatabase", () => {
-  test("opens the named file through expo-sqlite's sync opener", () => {
-    const conn = openDatabase("vault.db");
-    expect(openDatabaseSync).toHaveBeenCalledWith("vault.db");
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  test("opens the named file through expo-sqlite's async opener — never the cold sync one (#186)", async () => {
+    const conn = await openDatabase("vault.db");
+    expect(openDatabaseAsync).toHaveBeenCalledWith("vault.db");
+    expect(openDatabaseSync).not.toHaveBeenCalled();
     expect(typeof conn.prepare).toBe("function");
   });
 
-  test("defaults to the app's vault file name", () => {
-    openDatabase();
-    expect(openDatabaseSync).toHaveBeenCalledWith("astrolab.db");
+  test("defaults to the app's vault file name", async () => {
+    await openDatabase();
+    expect(openDatabaseAsync).toHaveBeenCalledWith("astrolab.db");
   });
 });

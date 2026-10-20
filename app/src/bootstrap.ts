@@ -17,8 +17,13 @@ import { openDatabase } from "./store/expoConnection";
  * It holds **no business logic** — every rule it touches is a `core` function.
  *
  * The boot is **not a splash screen and does not await the engine** (§4.1): a read path never waits on
- * a run. `boot()` is deliberately synchronous and thin, and the only decision it makes — which screen
- * to open on — is extracted as {@link startScreen} so it can be asserted without a database.
+ * a run. `boot()` is thin — it awaits the open, then runs one synchronous sequence — and the only decision
+ * it makes, which screen to open on, is extracted as {@link startScreen} so it can be asserted without a
+ * database.
+ *
+ * **Only the open is async, and only because the platform's is (#186).** `expo-sqlite`'s web target cannot
+ * answer the first *sync* call from a cold worker, so the connection is awaited here and every rule after
+ * it stays synchronous — no async surface leaks into `core`'s read paths.
  */
 
 /** The shell's first two screens: S0 onboarding and S1 the deck (`FLOW.md` §2.1). */
@@ -46,8 +51,8 @@ export interface Booted {
  * `expo-sqlite`; the production path is the default. Order is load-bearing: pragmas before migrations
  * (a `foreign_keys`-off rebuild depends on them) and the taxonomy after the schema that holds it.
  */
-export function boot(open: () => SqliteConnection = openDatabase): Booted {
-  const conn = open();
+export async function boot(open: () => Promise<SqliteConnection> = openDatabase): Promise<Booted> {
+  const conn = await open();
   openStore(conn);
   migrate(conn, MIGRATIONS);
   seedDomainTaxonomy(conn);
