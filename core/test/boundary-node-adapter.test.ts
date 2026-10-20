@@ -1,21 +1,28 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { expect, test } from "vitest";
 
 /**
- * The `node:sqlite` adapter is for tests and CI only (plan invariant 5).
+ * The device bundle carries no `node:` specifier (plan invariant 5).
  *
  * `core/src/index.ts` is the package entry the Expo app resolves, so a single `export … from
  * "./store/connection.node.js"` would put a Node built-in into the device bundle — a failure that
  * typecheck, lint and the whole suite pass straight through (it is a *shipping* mistake, not a test
  * one). This guard reads the source tree and fails on it.
  *
+ * **Two scans, one principle.** The first is flat: no shipped `core/src` module imports the adapter.
+ * The second (and the one that would have caught #184) walks the **transitive closure of the entry**
+ * and fails on *any* `node:` specifier in it — `node:fs`/`node:url` in the taxonomy loader and
+ * `node:crypto` in the writers were reachable from the app while this file watched one module name.
+ * A flat grep cannot see a closure, which is exactly how four defects of this class shipped.
+ *
  * Both halves of the repo's guard discipline are here: the scanner is itself checked against all
- * three import forms (a silent regex is the classic false-green), and the scan asserts it read the
- * modules it exists for — including the one file that *does* import the adapter, so the pattern it
- * looks for is demonstrably live rather than merely absent.
+ * three import forms (a silent regex is the classic false-green), the scan asserts it read the
+ * modules it exists for, and the closure walk keeps a **positive control** — the adapter, which *does*
+ * reach `node:sqlite`, is walked by the same function and must be reported — so a green verdict is a
+ * verdict and not a walker that quietly stopped resolving.
  */
 
 const CORE = fileURLToPath(new URL("..", import.meta.url));
@@ -126,4 +133,82 @@ test("no shipped core/src module imports an expo package, or the async transacti
   // A unit control: the matcher bites on the call and not on a shorter name that contains it.
   expect(ASYNC_API.test("await db.withExclusiveTransactionAsync(async (tx) => tx);")).toBe(true);
   expect(ASYNC_API.test("db.withTransactionSync(() => {})")).toBe(false);
+});
+
+/**
+ * The **entry closure** — everything the app can reach by importing `core/src/index.ts` (#184).
+ *
+ * The walk resolves **relative** specifiers only, following `./x.js` → `x.ts`; a bare package
+ * (`yaml`) is a dependency Metro bundles, not a module of ours to inspect, and a `node:` specifier is
+ * the finding rather than an edge to follow.
+ */
+const ENTRY = join(SRC, "index.ts");
+
+/** `./x.js` → `x.ts` (NodeNext), and plainly `./x` → `x.ts`. `null` for a specifier we do not own. */
+function resolveSpecifier(from: string, specifier: string): string | null {
+  if (!specifier.startsWith(".")) return null;
+  const base = resolve(dirname(from), specifier);
+  for (const candidate of [base.replace(/\.js$/, ".ts"), `${base}.ts`, base]) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+/** Every file reachable from `entry` by relative imports, with the specifiers each one names. */
+function closureOf(entry: string): Map<string, string[]> {
+  const found = new Map<string, string[]>();
+  const queue = [entry];
+  while (queue.length > 0) {
+    const file = queue.shift()!;
+    if (found.has(file)) continue;
+    const specifiers = specifiersOf(readFileSync(file, "utf8"));
+    found.set(file, specifiers);
+    for (const specifier of specifiers) {
+      const next = resolveSpecifier(file, specifier);
+      if (next !== null && !found.has(next)) queue.push(next);
+    }
+  }
+  return found;
+}
+
+/** The `node:` specifiers a closure names, as `file → specifier` lines. */
+function nodeSpecifiersIn(closure: Map<string, string[]>): string[] {
+  return [...closure.entries()].flatMap(([file, specifiers]) =>
+    specifiers
+      .filter((specifier) => specifier.startsWith("node:"))
+      .map((specifier) => `${relative(CORE, file)} → ${specifier}`),
+  );
+}
+
+test("the entry's closure is actually walked — the modules the app ships are the ones inspected", () => {
+  const closure = closureOf(ENTRY);
+  const rel = [...closure.keys()].map((file) => relative(CORE, file)).sort();
+
+  // Non-vacuity: a walk that resolved nothing (a broken `./x.js` → `x.ts` rule) would report no
+  // offenders and read as green. It must contain the entry, the store it re-exports, and the four
+  // modules #184 was about.
+  expect(rel.length).toBeGreaterThanOrEqual(10);
+  expect(rel).toContain("src/index.ts");
+  expect(rel).toContain("src/store/index.ts");
+  expect(rel).toContain("src/store/domain-seed.ts");
+  expect(rel).toContain("src/store/runs.ts");
+  expect(rel).toContain("src/store/sparks.ts");
+  expect(rel).toContain("src/store/ids.ts");
+
+  // …and the two deliberate Node-only modules are *not* on it: they are how the tree talks to its
+  // filesystem, and `src/index.ts` must not re-export either.
+  expect(rel).not.toContain(ADAPTER);
+  expect(rel).not.toContain("src/seed/taxonomy-file.node.ts");
+});
+
+test("no module in the entry's closure names a node: specifier (#184)", () => {
+  expect(nodeSpecifiersIn(closureOf(ENTRY))).toEqual([]);
+});
+
+test("…and the walk bites: rooted at the adapter it reports node:sqlite (the positive control)", () => {
+  // The control that makes the test above a verdict: the same closure walk, the same extractor, over a
+  // file in this tree that *does* reach a Node built-in. If the walker stops resolving, this goes red.
+  const adapterClosure = closureOf(join(CORE, ADAPTER));
+  expect([...adapterClosure.keys()].map((file) => relative(CORE, file))).toContain(ADAPTER);
+  expect(nodeSpecifiersIn(adapterClosure)).toContain("src/store/connection.node.ts → node:sqlite");
 });

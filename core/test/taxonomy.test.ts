@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -6,7 +6,8 @@ import type { SqliteConnection } from "../src/store/connection.js";
 import { afterEach, expect, test } from "vitest";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 
-import { seedDomainTaxonomy, TAXONOMY_PATH } from "../src/store/domain-seed.js";
+import { seedDomainTaxonomy } from "../src/store/domain-seed.js";
+import { TAXONOMY_PATH } from "../src/seed/taxonomy-file.node.js";
 import { migrate } from "../src/store/migrate.js";
 import { MIGRATIONS } from "../src/store/migrations.js";
 import { openNodeStore } from "../src/store/connection.node.js";
@@ -54,13 +55,14 @@ function migrated(): SqliteConnection {
   return db;
 }
 
-/** Writes a variant of the shipped file, so the shipped bytes stay the one source of truth. */
+/**
+ * A variant of the shipped document, as **text** — the loader takes the taxonomy itself now, not a path
+ * (#184), and the shipped bytes stay the one source of truth: every variant is re-serialised from them.
+ */
 function variant(mutate: (doc: Record<string, unknown>) => void): string {
   const doc = parseYaml(SHIPPED) as Record<string, unknown>;
   mutate(doc);
-  const path = join(tempDir(), "domain-taxonomy.yaml");
-  writeFileSync(path, stringifyYaml(doc));
-  return path;
+  return stringifyYaml(doc);
 }
 
 function count(db: SqliteConnection, table: "domain_cluster" | "domain_map"): number {
@@ -213,7 +215,11 @@ test("rejects a non-slug tag and an unquoted version", () => {
   expect(() => seedDomainTaxonomy(migrated(), numeric)).toThrow(/version must be a quoted string/);
 });
 
-test("resolves the seed from the package root — one level under `core/` from src and dist alike", () => {
+test("the node-side file helper resolves the seed from the package root", () => {
+  // The *loader* no longer reads a file (#184 — it takes text, so the bundle ships the taxonomy); this
+  // is the path CI, the scripts and this suite read the artifact of record through. `seed/` sits at the
+  // package root, so `../../seed/…` resolves from `src/seed/` (tsx) and `dist/seed/` (the built tree)
+  // alike.
   expect(TAXONOMY_PATH.endsWith(join("core", "seed", "domain-taxonomy.yaml"))).toBe(true);
   expect(existsSync(TAXONOMY_PATH)).toBe(true);
 });

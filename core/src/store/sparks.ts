@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import type { SqliteConnection } from "./connection.js";
+import { newId } from "./ids.js";
 
 import { withRetry } from "./retry.js";
 
@@ -96,7 +96,7 @@ export function insertOfferedSparks(
     written += Number(
       withRetry(() =>
         insert.run(
-          randomUUID(),
+          newId(),
           spark.idea_a_id,
           spark.idea_b_id,
           spark.pair_key,

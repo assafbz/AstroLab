@@ -69,9 +69,21 @@ costs a lane.
    `KeyStore` (`get`/`set`/`clear`); `app/` supplies the native secure-store adapter and the web session-memory
    adapter. **`core/` never imports `expo-secure-store`.** The **composition root is `app/`** — it constructs the
    connection, the key store, and the engine driver.
-5. **Adapter isolation.** The `node:sqlite` adapter is imported **only by tests/CI**; the `expo-sqlite` adapter
-   **only by `app/`**. L2 checks the device bundle carries no `node:sqlite`; `core`'s vitest run never resolves
-   `expo-*`.
+5. **Adapter isolation — the whole `node:` space, on the entry's transitive closure (#184).** The
+   `node:sqlite` adapter is imported **only by tests/CI**; the `expo-sqlite` adapter **only by `app/`**. L2
+   checks the device bundle carries no `node:sqlite`; `core`'s vitest run never resolves `expo-*`.
+   **Correction (2026-10-20, #184):** the rule was implemented as one watched specifier name, and the defect
+   was wider than the name. `core/src/index.ts` reached `node:fs`/`node:url` (the taxonomy loader, at module
+   evaluation) and `node:crypto` (`randomUUID` in `store/runs.ts` · `store/sparks.ts` · `vault/capture.ts` ·
+   `vault/fork.ts`), plus a **bare global** `crypto.randomUUID` in `domain/decision.ts` that no specifier walk
+   can see; Metro resolves all of them to empty modules, so the entry could not be imported on device or web
+   while the suite stayed green on Node. The taxonomy now ships as **text in the bundle**
+   (`core/src/seed/domain-taxonomy.ts`, generated from `core/seed/domain-taxonomy.yaml` — still the artifact of
+   record — and drift-checked by `core/test/taxonomy-text.test.ts`), the file-reading helper
+   (`core/src/seed/taxonomy-file.node.ts`) sits deliberately off the entry, and every id comes from the
+   **`IdSource` port** (`core/src/store/ids.ts`), which defaults to the standard global and fails **by name**
+   when the platform has none. The guard is `core/test/boundary-node-adapter.test.ts`'s **closure walk**, seen
+   failing on a planted `node:` import.
 6. **`core/` is a TS workspace package consumed by Metro and compiled by `tsc`** (the v1 `@astrolab/store` shape:
    `main: dist/index.js`, `types: src/index.ts`), so the **required `build` check stays real** (spec §12 item 15).
 7. **The taxonomy has one source.** The picker reads the **seeded `domain_cluster` rows**; `core/domain/taxonomy.ts`

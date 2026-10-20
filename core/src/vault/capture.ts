@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
 import type { SqliteConnection } from "../store/connection.js";
+import { newId } from "../store/ids.js";
 
 import { isoTimestamp, LIVE_STATUS, newDomainFlag, vaultMutation } from "../store/index.js";
 
@@ -281,7 +281,7 @@ export function insertRootIdea(
   newDomain: 0 | 1 | null = null,
 ): Idea {
   const idea: Idea = {
-    id: randomUUID(),
+    id: newId(),
     hypothesis: fields.hypothesis,
     problem: fields.problem,
     monetization: fields.monetization,

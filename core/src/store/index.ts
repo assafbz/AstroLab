@@ -37,7 +37,16 @@ export {
   setConfig,
   type GateConfig,
 } from "./config.js";
-export { parseTaxonomy, seedDomainTaxonomy, TAXONOMY_PATH, type Taxonomy } from "./domain-seed.js";
+export {
+  parseTaxonomy,
+  seedDomainTaxonomy,
+  TAXONOMY_SOURCE,
+  type Taxonomy,
+} from "./domain-seed.js";
+// The **id source** port (#184): the device has no `node:crypto`, so every id `core/` mints comes
+// from here and the composition root installs the platform's implementation. The reason, and the named
+// failure when nothing is installed, are in the module.
+export { globalIdSource, setIdSource, type IdSource } from "./ids.js";
 export { isoTimestamp } from "./iso.js";
 // The `idea_mechanism` cache writes directly, never through `vaultMutation` — it is derived state,
 // not a vault table. The reason is in the module: `core/src/store/mechanism.ts`.
