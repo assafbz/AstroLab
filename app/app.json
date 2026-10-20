@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "Astrolab",
+    "slug": "astrolab",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": ["expo-sqlite"]
+  }
+}

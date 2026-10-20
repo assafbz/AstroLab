@@ -499,10 +499,38 @@ convention.
 - **E4's cause vocabulary** (`RunFailureCause`: `no-key` · `invalid-key` · `offline` · `timeout` · `rate-limited` ·
   `cors-blocked` · `invalid-output`) lands in `core/src/types.ts` with L3's T4, because `vault → provider` is
   forbidden while `vault/engine-state.ts` is what reports E4. Task 5's arm consumes `keyPresent` until then.
+- **Task 1 — dependency versions, and two config shapes measured rather than guessed (2026-10-20).**
+  `app/package.json` deps are the ones `npx expo install` resolved for SDK 58 (`expo` `~58.0.16`, `react`/`react-dom`
+  `19.3.0`, `react-native` `0.88.0`, `expo-sqlite` `~58.0.13` under the root override, `react-native-web` `^0.21.4`,
+  `@expo/metro-runtime` `~58.0.14`, react-navigation 7.x, `react-native-screens` `~4.30.0`,
+  `react-native-safe-area-context` `~5.10.1`), plus `@types/react` / `@types/react-dom` `^19` — React 19 ships no
+  types, so JSX has none without them.
+  - **`web.output` is `single`, not `static`.** Static web rendering requires `expo-router`, which this app does not
+    use (react-navigation); `single` emits the SPA `index.html` Step 3 checks for.
+  - **The app tsconfig maps only `@astrolab/core/dist/*` → `../core/src/*`.** Mapping the bare `@astrolab/core` to
+    source makes Metro follow it into `core/src/**` and the bundle then fails on NodeNext `.js` specifiers — the exact
+    failure Step 3 exists to catch. Verified both planes: `tsc` resolves types from source with `core/dist` **absent**,
+    and the app bundle **fails** with `core/dist` absent (so the runtime takes the built entry, not source).
+  - **`app/tsconfig.json` extends `expo/tsconfig.base.json` — with the extension.** The extensionless form the Expo CLI
+    writes (`expo/tsconfig.base`) is unresolvable to vitest's oxc tsconfig loader (*Tsconfig not found*). `lib` is
+    `["ESNext"]` (not DOM) and `types: ["node"]`, both load-bearing: RN's global `URL` otherwise collides with
+    `node:url` inside `core`'s source.
+- **Task 1 deviations, recorded (2026-10-20).** (a) *Navigation deferred:* the shell renders S0/S1 placeholders with
+  no react-navigation frame; the bottom tab bar lands with the screens (Tasks 3–6). (b) *The parity test's device
+  half:* `expoConnection.test.ts` is the CI half (the port's pinned mappings, driven by a stub); the SQL round-trip
+  needs a real engine and belongs to Task 9's device row.
+- **Task 1 blocker — `core`'s entry is not device/web-portable (2026-10-20).** The Metro web bundle contains **one**
+  `fileURLToPath` / `readFileSync` occurrence (call sites only, no implementation) and core's `randomUUID` calls have
+  no implementation: the entry pulls `node:fs` · `node:url` (`domain-seed.ts`) and `node:crypto` (`randomUUID` in
+  `vault/capture.ts` · `vault/fork.ts` · `store/runs.ts` · `store/sparks.ts`) onto the app path, and Metro resolves
+  them to empty modules. Importing `@astrolab/core` therefore throws on web/device — the shell cannot reach S0/S1
+  there, though the same composition is green over `node:sqlite` in CI (`app/src/bootstrap.test.ts`). Reported to
+  David; the fix is `core`'s (a device-safe taxonomy source and a portable id source).
+- **`core/src/store/domain-seed.ts` — `TAXONOMY_PATH` recomputed (2026-10-20).** `join(dirname(fileURLToPath(import.meta.url)), "../../seed/…")`
+  replaces `fileURLToPath(new URL(…, import.meta.url))`, so the expression no longer names the global `URL` that RN
+  re-declares. Identical on Node; it removes a type-plane collision, **not** the runtime gap above.
 
 ## What this lane does not decide (and who does)
-
-| Item | Owner | Why it is not in this plan |
 | :--- | :--- | :--- |
 | `KeyStore` adapters (`expo-secure-store` / web session memory) and the foreground run driver | **L3** (`app/src/provider/*`, `app/src/engine/runScheduler.ts`) | L2 lands the seam (`keyPresent`, a no-op driver) so E4's no-key arm is exercisable before L3's app half; L3 replaces the stubs on the same branch ordering already agreed (`#166`). L3's app half imports the engine/provider through the ruled built door (`@astrolab/core/dist/{engine,provider}/…`, Task 1 Step 2); the E4 **cause** vocabulary (`RunFailureCause` in `core/src/types.ts`) is L3's, so Task 5's no-key arm keys off `keyPresent` until then |
 | `app/app.json` backup exclusion (`allowBackup=false`, `NSURLIsExcludedFromBackupKey`) | **L4** (`#167`) | L4 modifies this file; L2 must land it so the L4 edit is **additive** — flag in the PR |

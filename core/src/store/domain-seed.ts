@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { SqliteConnection } from "./connection.js";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parse as parseYaml } from "yaml";
@@ -15,8 +16,9 @@ import { writeTransaction } from "./store.js";
  * `dist/store/` (the built entry the app imports) alike. Moving it under `src/` would break the
  * `dist/` half, which only the post-`build` CI step would catch.
  */
-export const TAXONOMY_PATH = fileURLToPath(
-  new URL("../../seed/domain-taxonomy.yaml", import.meta.url),
+export const TAXONOMY_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../seed/domain-taxonomy.yaml",
 );
 
 /** Reserved top-level keys — every other top-level key names a cluster (the harness's file contract). */

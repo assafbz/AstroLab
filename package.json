@@ -4,8 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "workspaces": [
-    "app",
-    "core"
+    "core",
+    "app"
   ],
   "overrides": {
     "expo-sqlite": "58.0.13"
