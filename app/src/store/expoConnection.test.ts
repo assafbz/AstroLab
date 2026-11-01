@@ -13,8 +13,11 @@ vi.mock("expo-sqlite", () => ({
 import { openDatabaseAsync, openDatabaseSync } from "expo-sqlite";
 
 import {
+  createExpoAsyncConnection,
   createExpoConnection,
   openDatabase,
+  type ExpoAsyncDatabase,
+  type ExpoAsyncStatement,
   type ExpoDatabase,
   type ExpoStatement,
 } from "./expoConnection";
@@ -112,16 +115,84 @@ describe("createExpoConnection — the three pinned mappings", () => {
   });
 });
 
+/** A recording stub of the `expo-sqlite` **async** half — the plane the boot path runs on (#186). */
+function stubAsyncEngine(
+  result: Partial<{ first: unknown; rows: unknown[]; changes: number; id: number }>,
+): { db: ExpoAsyncDatabase; statements: string[]; finalized: number; throwOnExecute: boolean } {
+  const state = { statements: [] as string[], finalized: 0, throwOnExecute: false };
+  const db: ExpoAsyncDatabase = {
+    execAsync: async () => {},
+    closeAsync: async () => {},
+    prepareAsync: async (sql: string): Promise<ExpoAsyncStatement> => {
+      state.statements.push(sql);
+      return {
+        executeAsync: async () => {
+          if (state.throwOnExecute) throw new Error("engine failure");
+          return {
+            changes: result.changes ?? 0,
+            lastInsertRowId: result.id ?? 0,
+            getFirstAsync: async () => (result.first ?? null) as never,
+            getAllAsync: async () => (result.rows ?? []) as never,
+          };
+        },
+        finalizeAsync: async () => {
+          state.finalized += 1;
+        },
+      };
+    },
+  };
+  return Object.assign(state, { db }) as never;
+}
+
+describe("createExpoAsyncConnection — the same three mappings, no sync posts (#186)", () => {
+  test("a miss is undefined, not the engine's null (invariant 1c)", async () => {
+    const f = stubAsyncEngine({ first: null });
+    await expect(
+      createExpoAsyncConnection(f.db).get("SELECT 1 AS n WHERE 0"),
+    ).resolves.toBeUndefined();
+  });
+
+  test("run() answers lastInsertRowid, not the engine's lastInsertRowId", async () => {
+    const f = stubAsyncEngine({ changes: 3, id: 42 });
+    const out = await createExpoAsyncConnection(f.db).run("INSERT INTO t (v) VALUES (?)", ["x"]);
+    expect(out).toEqual({ changes: 3, lastInsertRowid: 42 });
+    expect(out).not.toHaveProperty("lastInsertRowId");
+  });
+
+  test("each call prepares and finalises its own statement, even when the call throws", async () => {
+    const f = stubAsyncEngine({ rows: [{ a: 1 }] });
+    expect(await createExpoAsyncConnection(f.db).all("SELECT a FROM t")).toEqual([{ a: 1 }]);
+    expect(f.finalized).toBe(1);
+
+    f.throwOnExecute = true;
+    await expect(createExpoAsyncConnection(f.db).get("SELECT a FROM t")).rejects.toThrow(
+      "engine failure",
+    );
+    expect(f.finalized).toBe(2);
+  });
+
+  test("only the async half is touched — the sync methods are never needed", async () => {
+    // The stub exposes only `execAsync`/`prepareAsync`/`closeAsync`; a stray sync call would throw.
+    const f = stubAsyncEngine({ rows: [] });
+    const conn = createExpoAsyncConnection(f.db);
+    await conn.exec("PRAGMA foreign_keys = ON");
+    expect(await conn.all("SELECT ? AS v", [7])).toEqual([]);
+    expect(f.statements).toEqual(["SELECT ? AS v"]);
+  });
+});
+
 describe("openDatabase", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   test("opens the named file through expo-sqlite's async opener — never the cold sync one (#186)", async () => {
-    const conn = await openDatabase("vault.db");
+    const { conn, async: plane } = await openDatabase("vault.db");
     expect(openDatabaseAsync).toHaveBeenCalledWith("vault.db");
     expect(openDatabaseSync).not.toHaveBeenCalled();
+    // Both planes over the one handle: the sync port for steady state, the async one for boot.
     expect(typeof conn.prepare).toBe("function");
+    expect(typeof plane.exec).toBe("function");
   });
 
   test("defaults to the app's vault file name", async () => {

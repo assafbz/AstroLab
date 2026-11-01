@@ -9,7 +9,9 @@
  * `core/test/vault-writes.test.ts` fails if this export comes back.
  */
 export {
+  asAsyncConnection,
   normalizeMiss,
+  type AsyncSqliteConnection,
   type SqlRow,
   type SqlRunResult,
   type SqlStatement,
@@ -40,6 +42,7 @@ export {
 export {
   parseTaxonomy,
   seedDomainTaxonomy,
+  seedDomainTaxonomyAsync,
   TAXONOMY_SOURCE,
   type Taxonomy,
 } from "./domain-seed.js";
@@ -55,9 +58,15 @@ export { readDescriptors, upsertDescriptor, type IdeaMechanism } from "./mechani
 // writers in two packages (the engine's noise, the vault's dismissal), so its SQL lives here too. The
 // reasons, including why `CLICHE` has no writer, are in the module: `core/src/store/suppression.ts`.
 export { clearSuppression, recordDismissal, recordNoise } from "./suppression.js";
-export { migrate, schemaVersion, type Migration } from "./migrate.js";
+export { migrate, migrateAsync, schemaVersion, type Migration } from "./migrate.js";
 export { MIGRATIONS, SCHEMA_VERSION } from "./migrations.js";
-export { isBusyError, withRetry, type RetryOptions } from "./retry.js";
+export {
+  isBusyError,
+  withRetry,
+  withRetryAsync,
+  type AsyncRetryOptions,
+  type RetryOptions,
+} from "./retry.js";
 export {
   claimNextRun,
   currentVaultRevision,
@@ -68,7 +77,8 @@ export {
   type RunStatus,
   type SparkRun,
 } from "./runs.js";
-export { openStore } from "./store.js";
+// `openStoreAsync` sits beside `openStore`; `writeTransactionAsync` stays off, for the reason above.
+export { openStore, openStoreAsync } from "./store.js";
 // The `spark` writes are the engine's, and like `domain_map` / `idea_mechanism` they are derived
 // engine state: written directly, never through `vaultMutation` (`core/src/store/sparks.ts`).
 // `liveOffers` is the read twin (the deck), and `LIVE_STATUS` is the one definition of "a live offer"

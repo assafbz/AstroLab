@@ -45,6 +45,46 @@ export function isBusyError(err: unknown): boolean {
   return code === "ERR_SQLITE_ERROR" && /lock|busy/i.test(String(message));
 }
 
+/** {@link RetryOptions}, with the sleep allowed to be awaited — the async channel's shape. */
+export interface AsyncRetryOptions extends Omit<RetryOptions, "sleep"> {
+  /** Injected by tests; defaults to a timer, **never** a blocking wait (see below). */
+  sleep?: (ms: number) => void | Promise<void>;
+}
+
+/**
+ * Async sleep. Deliberately **not** {@link blockingSleep}: an `Atomics.wait` on the web main thread
+ * throws (`Atomics.wait cannot be called in this context`), and the whole point of the async channel is
+ * to let the main thread yield. A timer does exactly that.
+ */
+function timerSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * {@link withRetry} for the async channel (#186) — the same bounded policy, the same `isBusyError` test,
+ * the same `DEFAULTS`, over awaited operations. Only the sleep differs, and it has to: the sync path's
+ * `Atomics.wait` cannot run on the web main thread.
+ */
+export async function withRetryAsync<T>(
+  fn: () => Promise<T>,
+  options: AsyncRetryOptions = {},
+): Promise<T> {
+  const attempts = options.attempts ?? DEFAULTS.attempts;
+  const baseDelayMs = options.baseDelayMs ?? DEFAULTS.baseDelayMs;
+  const maxDelayMs = options.maxDelayMs ?? DEFAULTS.maxDelayMs;
+  const sleep = options.sleep ?? timerSleep;
+  if (!Number.isInteger(attempts) || attempts < 1) throw new RangeError("attempts must be >= 1");
+
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= attempts - 1 || !isBusyError(err)) throw err;
+      await sleep(Math.min(maxDelayMs, baseDelayMs * 2 ** attempt));
+    }
+  }
+}
+
 export function withRetry<T>(fn: () => T, options: RetryOptions = {}): T {
   const attempts = options.attempts ?? DEFAULTS.attempts;
   const baseDelayMs = options.baseDelayMs ?? DEFAULTS.baseDelayMs;
