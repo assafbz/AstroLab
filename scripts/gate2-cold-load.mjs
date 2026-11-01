@@ -29,9 +29,19 @@ import { tmpdir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
-/** Write statements that must not appear on the sync channel. Anchored: `PRAGMA <name>` is a query. */
+/**
+ * Write statements that must not appear on the sync channel. Anchored: `PRAGMA <name>` is a query.
+ *
+ * `m` is load-bearing, not cosmetic. `migrate` execs each migration's whole DDL as **one** payload, and
+ * three of the six open with a `-- §…` comment line (`0001_init`, `0003_reference_actions`,
+ * `0004_retire_iteration_lineage_kind` — `core/src/store/migrations.ts`). Without `m`, `^` binds to the
+ * payload's first byte, so those three classify as reads: the unguarded shape is a *partial* refactor
+ * (transaction wrappers moved async, `exec(m.sql)` left on the sync port) that prints PASS while three
+ * DDL statements still post. Line-anchored still keeps out `-- COMMIT …` (a comment) and
+ * `PRAGMA foreign_keys` (a query, no `=`).
+ */
 export const WRITE =
-  /^\s*(BEGIN|COMMIT|ROLLBACK|CREATE|ALTER|DROP|INSERT|UPDATE|DELETE|REPLACE)\b|^\s*PRAGMA\s+\w+\s*=/i;
+  /^\s*(BEGIN|COMMIT|ROLLBACK|CREATE|ALTER|DROP|INSERT|UPDATE|DELETE|REPLACE)\b|^\s*PRAGMA\s+\w+\s*=/im;
 
 /** Is this logged sync post a gate-2 write? Input is `{ type, source }`; reads carry a SELECT source. */
 export function isWritePost(p) {
@@ -74,6 +84,26 @@ if (args.includes("--selftest")) {
       true,
     ],
     ["prepare", "DELETE FROM idea WHERE id = ?", true],
+    // Multi-line payloads: the shape `migrate` actually execs. These two fail under the pre-`m` flags
+    // (the payload opens with a `--` comment, so a single anchored `^` never reaches the DDL).
+    [
+      "exec",
+      "\n-- §2.1 Idea and its history\nCREATE TABLE idea (\n  id TEXT PRIMARY KEY\n);\n\n-- §2.2 Provenance — explicitly NOT lineage\nCREATE TABLE provenance_edge (\n  derived_idea_id TEXT NOT NULL\n);",
+      true,
+    ],
+    [
+      "exec",
+      "-- rebuild `child` with the reference dropped\nCREATE TABLE child_new (id TEXT PRIMARY KEY);\nINSERT INTO child_new SELECT * FROM child;\nDROP TABLE child;\nALTER TABLE child_new RENAME TO child;",
+      true,
+    ],
+    // Guards that line-anchoring did not over-widen: a comment keyword, and a multi-line read.
+    [
+      "exec",
+      "-- COMMIT and ROLLBACK belong to writeTransaction; this payload only reads\nSELECT 1",
+      false,
+    ],
+    ["prepare", "SELECT tag,\n       cluster_id\nFROM domain_map\nWHERE tag = ?", false],
+    ["prepare", "SELECT id\nFROM idea\n-- DELETE FROM idea is NOT executed here", false],
     ["prepare", "SELECT tag, cluster_id FROM domain_map", false],
     ["prepare", "PRAGMA foreign_keys", false],
     ["prepare", "PRAGMA user_version", false],
