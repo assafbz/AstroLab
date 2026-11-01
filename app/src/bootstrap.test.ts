@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 // `expo-sqlite` (imported by `bootstrap`'s default opener) pulls in `expo` → `react-native`, whose
 // Flow source vitest cannot parse. The boot test injects its own connection, so the module is stubbed
 // and never touched — the same reason `expoConnection.test.ts` stubs it.
-vi.mock("expo-sqlite", () => ({ openDatabaseSync: vi.fn() }));
+vi.mock("expo-sqlite", () => ({ openDatabaseAsync: vi.fn(async () => ({ marker: "db" })) }));
 
 // The `node:sqlite` adapter is for tests and CI only (invariant 5); the app supplies its own on device.
 // It is reached here by its deep specifier — the same rule the engine/provider door uses — so `boot`'s
@@ -21,15 +21,16 @@ import { boot, startScreen, type StartScreen } from "./bootstrap";
  * implements. That is the strongest evidence this box can produce, and it is the plan's own method for
  * the re-homed flow tests (Task 8 consumes a `node:sqlite` connection the same way).
  *
- * **A caveat this test does not carry, stated so it is not mistaken for one:** green here does *not*
- * mean the web/device bundle runs. `core`'s entry pulls in `node:fs`/`node:url` (`domain-seed.ts`) and
- * `node:crypto` (`randomUUID`), which Metro resolves to empty modules on web — see the M1 report. This
- * test isolates the composition; the portability gap is a separate, reported finding.
+ * **What green here does and does not mean.** The `node:fs`/`node:url`/`node:crypto` portability gap this
+ * test used to flag is closed (#184 · #185 — the entry carries a bundled taxonomy and an id port), and the
+ * web boot's remaining blocker, the cold-worker open, is fixed in `openDatabase` (#186). This test still
+ * isolates the *composition* over `node:sqlite`; the browser run is the only evidence for the web bundle
+ * itself and is recorded separately (`app/README.md`).
  */
 describe("boot — brought up over node:sqlite", () => {
-  test("a fresh vault boots to S0, with the taxonomy seeded", () => {
+  test("a fresh vault boots to S0, with the taxonomy seeded", async () => {
     const conn = openNodeConnection(":memory:");
-    const booted = boot(() => conn);
+    const booted = await boot(async () => conn);
     expect(booted.start).toBe<StartScreen>("S0");
 
     // Non-vacuity: the seed must have written clusters, or "S0" could be S0 for the wrong reason
@@ -40,10 +41,18 @@ describe("boot — brought up over node:sqlite", () => {
     expect(clusters).toBeGreaterThan(0);
   });
 
-  test("the sequence is idempotent — a second boot on the same connection is still S0", () => {
+  test("the sequence is idempotent — a second boot on the same connection is still S0", async () => {
     const conn = openNodeConnection(":memory:");
-    boot(() => conn);
-    expect(boot(() => conn).start).toBe<StartScreen>("S0");
+    await boot(async () => conn);
+    expect((await boot(async () => conn)).start).toBe<StartScreen>("S0");
+  });
+
+  test("the open is awaited — a refused open rejects, and does not half-run the sequence (#186)", async () => {
+    await expect(
+      boot(async () => {
+        throw new Error("open refused");
+      }),
+    ).rejects.toThrow("open refused");
   });
 });
 

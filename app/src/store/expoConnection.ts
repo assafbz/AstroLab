@@ -1,4 +1,4 @@
-import { openDatabaseSync } from "expo-sqlite";
+import { openDatabaseAsync } from "expo-sqlite";
 
 import {
   normalizeMiss,
@@ -106,7 +106,16 @@ export function createExpoConnection(db: ExpoDatabase): SqliteConnection {
  * Opens the app's on-device database and returns it as the port. The file lives in the app sandbox
  * (`expo-sqlite`'s default `documentDirectory`); the path is a name, not a route, and the pragmas are
  * `core`'s (`openStore`), never this module's.
+ *
+ * **The open is async, and on web that is load-bearing (#186).** `expo-sqlite`'s web target runs SQLite in a
+ * worker that boots lazily, and the *sync* opener's first call asks that cold worker to answer inside a
+ * main-thread busy-wait (`expo-sqlite/web/WorkerChannel.ts` `invokeWorkerSync`) — measured at ~133 ms of
+ * budget against a worker that needs ~200 ms to exist, so the first sync open threw `Sync operation
+ * timeout` on every cold load. Awaiting the async opener starts the worker and lets the main thread yield
+ * while it loads, so every sync call this port makes afterwards lands on a warm worker. It is one handle,
+ * not a warm-up beside it: the async handle is a `SQLiteDatabase`, which carries the same sync methods the
+ * port uses (`execSync` · `prepareSync` · `closeSync`).
  */
-export function openDatabase(name = "astrolab.db"): SqliteConnection {
-  return createExpoConnection(openDatabaseSync(name) as unknown as ExpoDatabase);
+export async function openDatabase(name = "astrolab.db"): Promise<SqliteConnection> {
+  return createExpoConnection((await openDatabaseAsync(name)) as unknown as ExpoDatabase);
 }
