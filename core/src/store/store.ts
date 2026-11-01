@@ -1,6 +1,10 @@
-import type { SqliteConnection } from "./connection.js";
+import type { AsyncSqliteConnection, SqliteConnection } from "./connection.js";
 
-import { withRetry, type RetryOptions } from "./retry.js";
+import { withRetry, withRetryAsync, type AsyncRetryOptions, type RetryOptions } from "./retry.js";
+
+/** The two pragmas, named once so the sync and async openers cannot drift apart. */
+const JOURNAL_MODE_WAL = "PRAGMA journal_mode = WAL";
+const FOREIGN_KEYS_ON = "PRAGMA foreign_keys = ON";
 
 /**
  * Opening the store: the pragmas the schema and every write depend on (`ARCHITECTURE.md` §2, §9;
@@ -24,8 +28,20 @@ import { withRetry, type RetryOptions } from "./retry.js";
  *   (`docs/SCHEMA.md`).
  */
 export function openStore(conn: SqliteConnection): void {
-  withRetry(() => conn.exec("PRAGMA journal_mode = WAL"));
-  conn.exec("PRAGMA foreign_keys = ON");
+  withRetry(() => conn.exec(JOURNAL_MODE_WAL));
+  conn.exec(FOREIGN_KEYS_ON);
+}
+
+/**
+ * {@link openStore} on the async channel (#186) — the same two pragmas, in the same order, against the
+ * same statements (the strings are shared constants above, so a change lands on both channels or
+ * neither). `journal_mode = WAL` is a **write** (it takes the write lock and fsyncs), which is why the
+ * boot path cannot leave it on the capped sync channel; `foreign_keys` is per-connection and cheap, but
+ * it belongs with the pragma it is paired with rather than on a second channel.
+ */
+export async function openStoreAsync(conn: AsyncSqliteConnection): Promise<void> {
+  await withRetryAsync(() => conn.exec(JOURNAL_MODE_WAL));
+  await conn.exec(FOREIGN_KEYS_ON);
 }
 
 /**
@@ -52,6 +68,37 @@ export function writeTransaction<T>(
       return result;
     } catch (err) {
       if (open) conn.exec("ROLLBACK");
+      throw err;
+    }
+  }, options);
+}
+
+/**
+ * {@link writeTransaction} on the async channel (#186): **the same body** — `BEGIN IMMEDIATE`, run,
+ * `COMMIT`, `ROLLBACK`-if-open — awaited at each step. `IMMEDIATE` takes the write lock up front so a
+ * collision surfaces before any work, and the `catch` rolls back only a transaction that actually
+ * opened, which is what keeps a *failed rollback* from masking the original error.
+ *
+ * Kept off the package surface for the same reason as its sync twin: with it unexported, `vaultMutation`
+ * stays the only transaction primitive a caller outside the store can reach. This one is not reachable
+ * by `app/` either — the boot rules call it in-module.
+ */
+export async function writeTransactionAsync<T>(
+  conn: AsyncSqliteConnection,
+  fn: () => Promise<T>,
+  options?: AsyncRetryOptions,
+): Promise<T> {
+  return withRetryAsync(async () => {
+    let open = false;
+    try {
+      await conn.exec("BEGIN IMMEDIATE");
+      open = true;
+      const result = await fn();
+      await conn.exec("COMMIT");
+      open = false;
+      return result;
+    } catch (err) {
+      if (open) await conn.exec("ROLLBACK");
       throw err;
     }
   }, options);

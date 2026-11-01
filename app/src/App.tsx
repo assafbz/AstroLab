@@ -9,10 +9,11 @@ import { tokens } from "./theme/tokens";
  * The shell: it runs the boot sequence and renders the screen the vault answers for
  * (`docs/ARCHITECTURE.md` v2 §1; `FLOW.md` §2.1, §4.1).
  *
- * **The boot is not a splash screen and does not await the engine.** It opens the vault, migrates and
- * seeds, and picks S0 or S1 — all local reads. There is no spinner (banned, `DESIGN.md` §4 *Loaders*),
- * no timer, and no provider on this path: a run is never awaited by a read path (§4.1), which is also
- * why the shell renders while the engine is down.
+ * **The boot is not a splash screen and does not await the engine.** It awaits the vault open — the web
+ * target's open is async because its first *sync* call cannot be answered by a cold worker (#186) — then
+ * migrates and seeds and picks S0 or S1, all local reads. There is no spinner (banned, `DESIGN.md` §4
+ * *Loaders*), no timer, and no provider on this path: a run is never awaited by a read path (§4.1), which
+ * is also why the shell renders while the engine is down.
  *
  * Task 1 renders **S0 and S1 only**, with placeholders. The bottom tab bar and the remaining surfaces
  * (S2–S6) land with Tasks 3–6; the navigation frame is deferred until there are screens to frame — a
@@ -24,11 +25,9 @@ export default function App(): React.JSX.Element {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    try {
-      setBooted(boot());
-    } catch (cause) {
+    boot().then(setBooted, (cause: unknown) => {
       setError(cause instanceof Error ? cause.message : String(cause));
-    }
+    });
   }, []);
 
   if (error !== null) {

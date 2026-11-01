@@ -425,6 +425,7 @@ Load-bearing decisions, one file each, in `docs/adr/`:
 | **0004** | Async in-process queue; vault never imports the AI boundary | **Amended** — the queue is in the app process; the boundary rule carries to `core/vault` vs `core/provider` | §4, NFR-A1/P1 |
 | **0005** | React/TS mobile-first **PWA** client | **Superseded** by ADR-0006 | v1 §9 |
 | **0006** | **Local-only Expo app · on-device SQLite · device-direct provider on the user's key · no server tier** | **New** — this revision | §1, §5, §9 |
+| **0007** | **The web boot's writes run on `expo-sqlite`'s async channel** | **New** (amends the L1–L4 plan's interface invariant 1, not this document) — the sync port stays the steady-state API; the boot's WAL conversion · DDL · `COMMIT`/`ROLLBACK` · seed move to the uncapped async channel | §2, §9 · #186 |
 
 ---
 
@@ -541,6 +542,7 @@ possibly with a stated edit), **re-authored** (the artifact's *intent* survives 
 | 0004 async-spark-pipeline | **amended** (in-process in the app) |
 | 0005 client-stack | **superseded** by 0006 |
 | **0006** (new) | the local-only rebuild |
+| **0007** (new) | the web boot's async channel (#186) |
 
 ### 13.3 Code & packages
 

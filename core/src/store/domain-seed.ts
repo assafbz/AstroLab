@@ -1,9 +1,9 @@
 import { DOMAIN_TAXONOMY_TEXT } from "../seed/domain-taxonomy.js";
-import type { SqliteConnection } from "./connection.js";
+import type { AsyncSqliteConnection, SqliteConnection } from "./connection.js";
 
 import { parse as parseYaml } from "yaml";
 
-import { writeTransaction } from "./store.js";
+import { writeTransaction, writeTransactionAsync } from "./store.js";
 
 /**
  * The shipped seed taxonomy is **data, not code** (`ARCHITECTURE.md` §2.4, §3.2, §3.4): the loader
@@ -160,6 +160,54 @@ function adjacencyJson(map: Map<string, number>): string {
 }
 
 /**
+ * The two upserts, named once so the sync and async seeders cannot drift. Both are the idempotent,
+ * `IS NOT`-guarded form that makes a repeat boot a true no-op.
+ */
+const CLUSTER_UPSERT = `INSERT INTO domain_cluster (id, name, adjacency) VALUES (?, ?, ?)
+   ON CONFLICT(id) DO UPDATE SET name = excluded.name, adjacency = excluded.adjacency
+   WHERE domain_cluster.name IS NOT excluded.name
+      OR domain_cluster.adjacency IS NOT excluded.adjacency`;
+const TAG_UPSERT = `INSERT INTO domain_map (tag, cluster_id) VALUES (?, ?)
+   ON CONFLICT(tag) DO UPDATE SET cluster_id = excluded.cluster_id
+   WHERE domain_map.cluster_id IS NOT excluded.cluster_id`;
+
+/** The declared `repoint` corrections, as `tag\u0000from\u0000to` keys — the silent-re-point allowlist. */
+function declaredRepoints(taxonomy: Taxonomy): Set<string> {
+  return new Set(
+    taxonomy.corrections
+      .filter((c) => c.kind === "repoint")
+      .map((c) => `${c.tag}\u0000${c.from}\u0000${c.to}`),
+  );
+}
+
+/** The silent-re-point refusal, shared by both channels. */
+function requireDeclaredRepoint(
+  declared: Set<string>,
+  tag: string,
+  owner: string,
+  to: string,
+): void {
+  if (!declared.has(`${tag}\u0000${owner}\u0000${to}`)) {
+    fail(`re-point ${tag}: ${owner} -> ${to} is not declared in "corrections"`);
+  }
+}
+
+/** The rows the seeder upserts, in write order — the rules, independent of which channel runs them. */
+function seedRows(taxonomy: Taxonomy): Array<[string, string[]]> {
+  const rows: Array<[string, string[]]> = [];
+  for (const cluster of taxonomy.clusters) {
+    rows.push([
+      CLUSTER_UPSERT,
+      [cluster.id, cluster.name, adjacencyJson(taxonomy.adjacency.get(cluster.id)!)],
+    ]);
+  }
+  // Rule 4: each cluster's **key** — and only the key — is a tag in its own cluster, so the picker's
+  // own value resolves by construction. The display name is a label, never vocabulary.
+  for (const cluster of taxonomy.clusters) rows.push([TAG_UPSERT, [cluster.id, cluster.id]]);
+  return rows;
+}
+
+/**
  * Applies the shipped taxonomy, from `text` — the bundled seed by default (#184), or a caller's own
  * document (the loader's own tests pass variants of the shipped bytes).
  *
@@ -172,11 +220,7 @@ export function seedDomainTaxonomy(
   text: string = DOMAIN_TAXONOMY_TEXT,
 ): void {
   const taxonomy = parseTaxonomy(text, TAXONOMY_SOURCE);
-  const declared = new Set(
-    taxonomy.corrections
-      .filter((c) => c.kind === "repoint")
-      .map((c) => `${c.tag}\u0000${c.from}\u0000${c.to}`),
-  );
+  const declared = declaredRepoints(taxonomy);
 
   writeTransaction(db, () => {
     const existing = new Map<string, string>();
@@ -187,37 +231,49 @@ export function seedDomainTaxonomy(
       existing.set(row.tag, row.cluster_id);
     }
 
-    const upsertCluster = db.prepare(
-      `INSERT INTO domain_cluster (id, name, adjacency) VALUES (?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET name = excluded.name, adjacency = excluded.adjacency
-       WHERE domain_cluster.name IS NOT excluded.name
-          OR domain_cluster.adjacency IS NOT excluded.adjacency`,
-    );
-    const upsertTag = db.prepare(
-      `INSERT INTO domain_map (tag, cluster_id) VALUES (?, ?)
-       ON CONFLICT(tag) DO UPDATE SET cluster_id = excluded.cluster_id
-       WHERE domain_map.cluster_id IS NOT excluded.cluster_id`,
-    );
-
-    for (const cluster of taxonomy.clusters) {
-      upsertCluster.run(
-        cluster.id,
-        cluster.name,
-        adjacencyJson(taxonomy.adjacency.get(cluster.id)!),
-      );
-    }
-    // Rule 4: each cluster's **key** — and only the key — is a tag in its own cluster, so the picker's
-    // own value resolves by construction. The display name is a label, never vocabulary.
-    for (const cluster of taxonomy.clusters) upsertTag.run(cluster.id, cluster.id);
+    for (const [sql, params] of seedRows(taxonomy)) db.prepare(sql).run(...params);
     for (const cluster of taxonomy.clusters) {
       for (const tag of cluster.tags) {
         const owner = existing.get(tag);
         if (owner !== undefined && owner !== cluster.id) {
-          if (!declared.has(`${tag}\u0000${owner}\u0000${cluster.id}`)) {
-            fail(`re-point ${tag}: ${owner} -> ${cluster.id} is not declared in "corrections"`);
-          }
+          requireDeclaredRepoint(declared, tag, owner, cluster.id);
         }
-        upsertTag.run(tag, cluster.id);
+        db.prepare(TAG_UPSERT).run(tag, cluster.id);
+      }
+    }
+  });
+}
+
+/**
+ * {@link seedDomainTaxonomy} on the async channel (#186) — the same taxonomy, the same upserts, the
+ * same silent-re-point refusal; only the channel differs. The write set is a few hundred idempotent
+ * upserts issued as awaited `run`s: uncapped, so correct, and the round-trip cost is measured rather
+ * than assumed (`docs/adr/0007-web-boot-async-channel.md`).
+ */
+export async function seedDomainTaxonomyAsync(
+  db: AsyncSqliteConnection,
+  text: string = DOMAIN_TAXONOMY_TEXT,
+): Promise<void> {
+  const taxonomy = parseTaxonomy(text, TAXONOMY_SOURCE);
+  const declared = declaredRepoints(taxonomy);
+
+  await writeTransactionAsync(db, async () => {
+    const existing = new Map<string, string>();
+    for (const row of (await db.all("SELECT tag, cluster_id FROM domain_map")) as Array<{
+      tag: string;
+      cluster_id: string;
+    }>) {
+      existing.set(row.tag, row.cluster_id);
+    }
+
+    for (const [sql, params] of seedRows(taxonomy)) await db.run(sql, params);
+    for (const cluster of taxonomy.clusters) {
+      for (const tag of cluster.tags) {
+        const owner = existing.get(tag);
+        if (owner !== undefined && owner !== cluster.id) {
+          requireDeclaredRepoint(declared, tag, owner, cluster.id);
+        }
+        await db.run(TAG_UPSERT, [tag, cluster.id]);
       }
     }
   });
