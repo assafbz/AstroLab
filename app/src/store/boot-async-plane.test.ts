@@ -31,7 +31,11 @@ const SYNC_BOOT_CALLS: readonly { name: string; pattern: RegExp }[] = [
 ];
 
 /** The async twins — the non-vacuity half: these *are* the boot, and they must be present. */
-const ASYNC_BOOT_CALLS = [/\bopenStoreAsync\s*\(/, /\bmigrateAsync\s*\(/, /\bseedDomainTaxonomyAsync\s*\(/];
+const ASYNC_BOOT_CALLS = [
+  /\bopenStoreAsync\s*\(/,
+  /\bmigrateAsync\s*\(/,
+  /\bseedDomainTaxonomyAsync\s*\(/,
+];
 
 function shippedSources(dir: string, found: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

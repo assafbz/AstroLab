@@ -4,7 +4,11 @@ import { join } from "node:path";
 
 import { afterEach, expect, test } from "vitest";
 
-import { asAsyncConnection, type AsyncSqliteConnection, type SqliteConnection } from "./connection.js";
+import {
+  asAsyncConnection,
+  type AsyncSqliteConnection,
+  type SqliteConnection,
+} from "./connection.js";
 import { openNodeStore } from "./connection.node.js";
 import { DOMAIN_TAXONOMY_TEXT } from "../seed/domain-taxonomy.js";
 import { migrate, migrateAsync, schemaVersion, type Migration } from "./migrate.js";
@@ -67,9 +71,7 @@ const REBUILD_FIXTURES: Migration[] = [
 
 /** The database's structural identity: every object type, name and the `sql` that created it. */
 function schemaDump(db: SqliteConnection): unknown[] {
-  return db
-    .prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name")
-    .all();
+  return db.prepare("SELECT type, name, sql FROM sqlite_master ORDER BY type, name").all();
 }
 
 function seedRows(db: SqliteConnection): unknown[] {
@@ -86,9 +88,9 @@ test("migrate and migrateAsync land on an identical schema, including a rebuild 
     expect(migrate(sync, REBUILD_FIXTURES)).toBe(3);
     expect(schemaVersion(sync)).toBe(3);
     // Non-vacuity: the rebuild really happened — the FK action is CASCADE, not the RESTRICT it replaced.
-    const childSql = schemaDump(sync).find(
-      (row) => (row as { name: string }).name === "child",
-    ) as { sql: string };
+    const childSql = schemaDump(sync).find((row) => (row as { name: string }).name === "child") as {
+      sql: string;
+    };
     expect(childSql.sql).toContain("CASCADE");
     // …and its rows survived the create-new/copy/drop/rename.
     expect(sync.prepare("SELECT id, parent_id FROM child").all()).toEqual([
@@ -205,8 +207,12 @@ test("both channels reject a duplicate migration version with the same error", a
       (syncError as Error).message,
     );
     // The duplicate check runs before any statement: neither channel created a table.
-    expect(sync.prepare("SELECT name FROM sqlite_master WHERE name IN ('a','b')").all()).toEqual([]);
-    expect(async.prepare("SELECT name FROM sqlite_master WHERE name IN ('a','b')").all()).toEqual([]);
+    expect(sync.prepare("SELECT name FROM sqlite_master WHERE name IN ('a','b')").all()).toEqual(
+      [],
+    );
+    expect(async.prepare("SELECT name FROM sqlite_master WHERE name IN ('a','b')").all()).toEqual(
+      [],
+    );
   } finally {
     sync.close();
     async.close();

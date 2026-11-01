@@ -1,11 +1,6 @@
 import type { AsyncSqliteConnection, SqliteConnection } from "./connection.js";
 
-import {
-  withRetry,
-  withRetryAsync,
-  type AsyncRetryOptions,
-  type RetryOptions,
-} from "./retry.js";
+import { withRetry, withRetryAsync, type AsyncRetryOptions, type RetryOptions } from "./retry.js";
 
 /** The two pragmas, named once so the sync and async openers cannot drift apart. */
 const JOURNAL_MODE_WAL = "PRAGMA journal_mode = WAL";

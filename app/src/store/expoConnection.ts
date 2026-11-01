@@ -105,7 +105,9 @@ export function createExpoConnection(db: ExpoDatabase): SqliteConnection {
 
 /** The slice of `expo-sqlite`'s async statement the async plane uses (structurally, as above). */
 export interface ExpoAsyncStatement {
-  executeAsync<T = SqlRow>(...params: ExpoBindValue[]): Promise<{
+  executeAsync<T = SqlRow>(
+    ...params: ExpoBindValue[]
+  ): Promise<{
     readonly changes: number;
     readonly lastInsertRowId: number;
     getFirstAsync(): Promise<T | null>;

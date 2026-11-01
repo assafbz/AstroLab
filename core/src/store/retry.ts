@@ -65,9 +65,9 @@ export interface AsyncRetryOptions extends Omit<RetryOptions, "sleep"> {
 }
 
 /**
- * Async sleep. Deliberately **not** {@link blockingSleep}: an `Atomics.wait` on the web main thread
- * throws (`Atomics.wait cannot be called in this context`), and the whole point of the async channel is
- * to let the main thread yield. A timer does exactly that.
+ * Async sleep. Deliberately **not** the sync path's {@link spinSleep} either: a spin burns the main
+ * thread for the whole backoff, and the point of the async channel is to let it yield — a timer does
+ * exactly that. (The sync path cannot use a timer: its retry wraps a synchronous callback.)
  */
 function timerSleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -75,8 +75,8 @@ function timerSleep(ms: number): Promise<void> {
 
 /**
  * {@link withRetry} for the async channel (#186) — the same bounded policy, the same `isBusyError` test,
- * the same `DEFAULTS`, over awaited operations. Only the sleep differs, and it has to: the sync path's
- * `Atomics.wait` cannot run on the web main thread.
+ * the same `DEFAULTS`, over awaited operations. Only the sleep differs, and it has to: the sync path
+ * spins (it has no way to yield), and the async path must yield.
  */
 export async function withRetryAsync<T>(
   fn: () => Promise<T>,

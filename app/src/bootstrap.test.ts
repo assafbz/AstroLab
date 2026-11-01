@@ -35,7 +35,10 @@ import { boot, startScreen, type StartScreen } from "./bootstrap";
  * promise deep. That is exactly the point: the **rules** are channel-independent, so the composition
  * under test is the one the web app runs, and only the transport differs.
  */
-function opened(conn: SqliteConnection): { conn: SqliteConnection; async: ReturnType<typeof asAsyncConnection> } {
+function opened(conn: SqliteConnection): {
+  conn: SqliteConnection;
+  async: ReturnType<typeof asAsyncConnection>;
+} {
   return { conn, async: asAsyncConnection(conn) };
 }
 
