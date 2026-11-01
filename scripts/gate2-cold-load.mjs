@@ -16,13 +16,17 @@
  *
  *   npm run build -w app
  *   node scripts/gate2-cold-load.mjs [n] [dir] [port]      # defaults: 25, app/dist, 8090
- *   node scripts/gate2-cold-load.mjs --selftest            # prove the classifier, no browser
+ *   node scripts/gate2-cold-load.mjs --selftest            # classifier · verdict · arg parsing, no browser
+ *     also: --url <url> (serve elsewhere) · --chromium <path> · --wait <ms> (settle window)
+ *
+ * A `PASS` is only printed for a run in which **every** load booted (rendered S0) and none posted a
+ * write; the word is never printed for a run that measured nothing. Exit 0 iff PASS.
  *
  * Node built-ins only, by the house pattern for `scripts/` — no driver dependency to install. The
  * Chromium is discovered (flag → env → the shared Playwright/Puppeteer caches → PATH); `--url` skips
  * serving if you already have a COI host up.
  */
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -48,6 +52,63 @@ export function isWritePost(p) {
   return (p.type === "exec" || p.type === "prepare") && Boolean(p.source) && WRITE.test(p.source);
 }
 
+/**
+ * The verdict line, and it is not allowed to be vacuous. A load that never rendered S0 never reached
+ * the boot's write set, so its silence is *no evidence* — not a pass. `badLoads === 0` alone printed
+ * `gate 2 PASS` on **0/n green** loads, which is reachable two ways, both cheap: the served root is
+ * wrong (every load 404s) or the boot is slower than the settle window. `PASS` therefore requires
+ * every load to have booted *and* no load to have posted a write; anything else is `FAIL` or
+ * `NOT MEASURED`, and the word PASS is never printed for an unmeasured run.
+ */
+export function verdictOf(green, badLoads, n) {
+  if (badLoads > 0)
+    return { pass: false, line: `gate 2 FAIL on ${badLoads}/${n} loads (sync write posted)` };
+  if (green === n) return { pass: true, line: "gate 2 PASS (no sync write on any load)" };
+  return {
+    pass: false,
+    line: `gate 2 NOT MEASURED — ${n - green}/${n} loads never rendered S0, so no write evidence`,
+  };
+}
+
+/** Flags that take a value. Their value is not a positional — it used to land in the served `dir`. */
+const VALUE_FLAGS = new Set(["--url", "--chromium", "--wait"]);
+
+/** `[n] [dir] [port]`, plus `--url <url>` · `--chromium <path>` · `--wait <ms>` · `--selftest`. */
+export function parseArgs(argv) {
+  const out = { selftest: false, url: null, chromium: null, wait: 9000, positional: [] };
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i];
+    if (!VALUE_FLAGS.has(a)) {
+      if (a === "--selftest") out.selftest = true;
+      else out.positional.push(a);
+      continue;
+    }
+    const v = argv[++i];
+    if (a === "--url") out.url = v ?? null;
+    else if (a === "--chromium") out.chromium = v ?? null;
+    else if (Number(v) > 0) out.wait = Number(v);
+  }
+  let i = 0;
+  if (/^\d+$/.test(out.positional[0] ?? "")) i = 1;
+  out.n = i ? Number(out.positional[0]) : 25;
+  out.dir = out.positional[i] ?? "app/dist";
+  out.port = out.positional[i + 1] ?? "8090";
+  return out;
+}
+
+/** The commit under test, so a row reads *which* state produced its numbers. Best-effort, never fatal. */
+function resolveHead() {
+  try {
+    const r = spawnSync("git", ["rev-parse", "HEAD"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+    return r.status === 0 ? r.stdout.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The one line injected before any page script, so the worker channel is wrapped before it is used. */
 const INIT = `(() => {
   const wpost = Worker.prototype.postMessage;
@@ -66,8 +127,9 @@ const INIT = `(() => {
 /** S0 renders this only once the vault can spread — the pass/fail arm of the same cold load. */
 export const GREEN_S0 = "Add a few ideas across unrelated domains to see sparks.";
 
-const args = process.argv.slice(2);
-if (args.includes("--selftest")) {
+const argv = process.argv.slice(2);
+const opts = parseArgs(argv);
+if (opts.selftest) {
   // The real hazard statements, and the read shapes that must NOT match. Assert, don't eyeball.
   const cases = [
     ["exec", "PRAGMA journal_mode = WAL", true],
@@ -116,26 +178,58 @@ if (args.includes("--selftest")) {
   const bad = cases.filter(([type, source, want]) => isWritePost({ type, source }) !== want);
   for (const [type, source, want] of bad)
     console.error(`misclassified: want=${want} ${type} ${source}`);
-  console.log(
-    bad.length
-      ? `selftest FAILED (${bad.length}/${cases.length})`
-      : `selftest OK (${cases.length} cases)`,
+
+  // The verdict must not be satisfiable by a run that measured nothing: 0 green with 0 write posts is
+  // the vacuous shape, and it is what a wrong `dir` (or a boot slower than the settle window) produces.
+  const verdictCases = [
+    ["all loads booted, no writes", 5, 0, 5, true],
+    ["one load posted a write", 4, 1, 5, false],
+    ["no writes, but nothing booted", 0, 0, 5, false],
+    ["writes on every load", 0, 5, 5, false],
+  ];
+  const badVerdicts = verdictCases.filter(
+    ([, green, badLoads, n, want]) => verdictOf(green, badLoads, n).pass !== want,
   );
-  process.exit(bad.length ? 1 : 0);
+  for (const [label, green, badLoads, n, want] of badVerdicts)
+    console.error(`misverdict: want=${want} ${label} (green=${green} writes=${badLoads}/${n})`);
+
+  // A flag's value is never a positional. `[n] [dir] [port]` with a value flag interleaved.
+  const parseCases = [
+    [
+      ["25", "--chromium", "/opt/chrome"],
+      { n: 25, dir: "app/dist", port: "8090", chromium: "/opt/chrome" },
+    ],
+    [
+      ["--chromium", "/opt/chrome", "25", "app/dist", "8090"],
+      { n: 25, dir: "app/dist", port: "8090", chromium: "/opt/chrome" },
+    ],
+    [["--wait", "20000", "3"], { n: 3, dir: "app/dist", wait: 20000 }],
+    [["--url", "http://127.0.0.1:1/"], { n: 25, url: "http://127.0.0.1:1/" }],
+    [[], { n: 25, dir: "app/dist", port: "8090", wait: 9000, chromium: null }],
+  ];
+  const badParses = parseCases.filter(([a, want]) =>
+    Object.entries(want).some(([k, v]) => parseArgs(a)[k] !== v),
+  );
+  for (const [a, want] of badParses)
+    console.error(`misparsed: ${JSON.stringify(a)} want ${JSON.stringify(want)}`);
+
+  const badCount = bad.length + badVerdicts.length + badParses.length;
+  const total = cases.length + verdictCases.length + parseCases.length;
+  console.log(
+    badCount
+      ? `selftest FAILED (${total - badCount}/${total})`
+      : `selftest OK (${total} cases: ${cases.length} classifier · ${verdictCases.length} verdict · ${parseCases.length} parse)`,
+  );
+  process.exit(badCount ? 1 : 0);
 }
 
-const n = Number(args.find((a) => /^\d+$/.test(a)) ?? 25);
 // `--url` means the caller already serves the build; else [dir] [port] go to scripts/serve-web.mjs.
-const urlArg = args[args.indexOf("--url") + 1];
-const url = urlArg && args.includes("--url") ? urlArg : null;
-const [dir = "app/dist", port = "8090"] = url
-  ? []
-  : args.filter((a) => !a.startsWith("--")).slice(1);
+const { n, dir, port, url, wait } = opts;
+const head = resolveHead();
 
 function findChromium() {
-  const exeArg = args[args.indexOf("--chromium") + 1];
   const candidates = [
-    args.includes("--chromium") ? exeArg : process.env.ASTROLAB_CHROMIUM,
+    opts.chromium ?? process.env.ASTROLAB_CHROMIUM,
     ...["ms-playwright", "puppeteer"].flatMap((cache) =>
       [
         process.env.PLAYWRIGHT_BROWSERS_PATH,
@@ -211,6 +305,13 @@ if (!chromium) {
   );
   process.exit(2);
 }
+
+// Attribute the run to the state that produced it. The pin requires the gated run at the merged head;
+// printing the commit and the served root is what lets the row read that back instead of trusting it.
+console.log(
+  `gate2-cold-load · n=${n} · ${url ? `url=${url}` : `dir=${resolve(dir)}`} · wait=${wait}ms\n` +
+    `  HEAD=${head ?? "unknown"} (resolved from ${process.cwd()}; nothing in the output is a claim about any other commit)`,
+);
 
 let server = null;
 if (!url) {
@@ -315,7 +416,7 @@ for (let i = 1; i <= n; i++) {
     const loaded = cdp.once((m) => m.method === "Page.loadEventFired" && m.sessionId === sessionId);
     await cdp.send("Page.navigate", { url: url ?? `http://127.0.0.1:${port}/` }, sessionId);
     await loaded;
-    await new Promise((r) => setTimeout(r, 9000)); // the boot is async; let it play out in real time
+    await new Promise((r) => setTimeout(r, wait)); // the boot is async; let it play out in real time
     const read = async (expression) =>
       (await cdp.send("Runtime.evaluate", { expression, returnByValue: true }, sessionId)).result
         .value;
@@ -325,8 +426,11 @@ for (let i = 1; i <= n; i++) {
     const ok = text.includes(GREEN_S0);
     if (ok) green++;
     if (writes.length) badLoads++;
+    // A RED load with no posts is not evidence of absence: the boot never reached the write set.
+    const inert = !ok && !writes.length;
     console.log(
-      `#${i} ${ok ? "S0" : "RED"}  sync_posts=${log.length}  write_posts=${writes.length}${writes.length ? "  <<<< FAIL" : ""}`,
+      `#${i} ${ok ? "S0" : "RED"}  sync_posts=${log.length}  write_posts=${writes.length}` +
+        `${writes.length ? "  <<<< FAIL" : ""}${inert ? "  (not evidence — this load never booted)" : ""}`,
     );
     for (const w of writes.slice(0, 5))
       console.log(`      ${w.type} ${w.source.replace(/\s+/g, " ").slice(0, 80)}`);
@@ -335,8 +439,7 @@ for (let i = 1; i <= n; i++) {
   }
 }
 
-console.log(
-  `\n${green}/${n} cold loads green · ${badLoads === 0 ? "gate 2 PASS (no sync write on any load)" : `gate 2 FAIL on ${badLoads}/${n}`}`,
-);
+const verdict = verdictOf(green, badLoads, n);
+console.log(`\n${green}/${n} cold loads green · ${verdict.line}`);
 cdp.close();
-process.exit(badLoads === 0 && green === n ? 0 : 1);
+process.exit(verdict.pass ? 0 : 1);
