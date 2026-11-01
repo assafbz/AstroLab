@@ -454,7 +454,11 @@ async function main() {
       const read = async (expression) =>
         (await cdp.send("Runtime.evaluate", { expression, returnByValue: true }, sessionId)).result
           .value;
-      const text = await read("document.body.innerText");
+      // `textContent`, not `innerText` — measured on this box's chromium-1248: `innerText` reads
+      // `""` for the whole document here, including a node injected by the test itself, while
+      // `textContent` carries the rendered S0 string. An `innerText` predicate therefore never fires
+      // and every load reads "never booted" — a false NOT MEASURED, not a false pass. See #194.
+      const text = await read("document.body.textContent");
       const log = JSON.parse((await read("JSON.stringify(globalThis.__gate2 || [])")) || "[]");
       const writes = log.filter(isWritePost);
       const ok = text.includes(GREEN_S0);
