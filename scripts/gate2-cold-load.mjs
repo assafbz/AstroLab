@@ -19,6 +19,12 @@
  *   node scripts/gate2-cold-load.mjs --selftest            # classifier · verdict · arg parsing, no browser
  *     also: --url <url> (serve elsewhere) · --chromium <path> · --wait <ms> (settle window)
  *
+ * Importing is side-effect free — the browser run is the CLI's, not the module's. The pure exports
+ * (`WRITE` · `isWritePost` · `verdictOf` · `parseArgs` · `GREEN_S0`) are therefore usable from a
+ * test or another script; the guard that enforces it is checkable in one line, from any home:
+ *
+ *   node -e "import('./scripts/gate2-cold-load.mjs').then(m => console.log(Object.keys(m)))"
+ *
  * A `PASS` is only printed for a run in which **every** load booted (rendered S0) and none posted a
  * write; the word is never printed for a run that measured nothing. Exit 0 iff PASS.
  *
@@ -27,7 +33,15 @@
  * serving if you already have a COI host up.
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { extname, join, resolve, sep } from "node:path";
@@ -127,319 +141,342 @@ const INIT = `(() => {
 /** S0 renders this only once the vault can spread — the pass/fail arm of the same cold load. */
 export const GREEN_S0 = "Add a few ideas across unrelated domains to see sparks.";
 
-const argv = process.argv.slice(2);
-const opts = parseArgs(argv);
-if (opts.selftest) {
-  // The real hazard statements, and the read shapes that must NOT match. Assert, don't eyeball.
-  const cases = [
-    ["exec", "PRAGMA journal_mode = WAL", true],
-    ["exec", "PRAGMA foreign_keys = ON", true],
-    ["exec", "BEGIN IMMEDIATE", true],
-    ["exec", "COMMIT", true],
-    ["exec", "ROLLBACK", true],
-    ["exec", "CREATE TABLE idea (id TEXT PRIMARY KEY)", true],
-    ["exec", "PRAGMA user_version = 7", true],
-    ["exec", "INSERT INTO vault_meta (id, revision) VALUES (1, 0);", true],
-    [
-      "prepare",
-      "INSERT INTO domain_map (tag, cluster_id) VALUES (?, ?) ON CONFLICT(tag) DO UPDATE SET cluster_id = excluded.cluster_id",
-      true,
-    ],
-    ["prepare", "DELETE FROM idea WHERE id = ?", true],
-    // Multi-line payloads: the shape `migrate` actually execs. These two fail under the pre-`m` flags
-    // (the payload opens with a `--` comment, so a single anchored `^` never reaches the DDL).
-    [
-      "exec",
-      "\n-- §2.1 Idea and its history\nCREATE TABLE idea (\n  id TEXT PRIMARY KEY\n);\n\n-- §2.2 Provenance — explicitly NOT lineage\nCREATE TABLE provenance_edge (\n  derived_idea_id TEXT NOT NULL\n);",
-      true,
-    ],
-    [
-      "exec",
-      "-- rebuild `child` with the reference dropped\nCREATE TABLE child_new (id TEXT PRIMARY KEY);\nINSERT INTO child_new SELECT * FROM child;\nDROP TABLE child;\nALTER TABLE child_new RENAME TO child;",
-      true,
-    ],
-    // Guards that line-anchoring did not over-widen: a comment keyword, and a multi-line read.
-    [
-      "exec",
-      "-- COMMIT and ROLLBACK belong to writeTransaction; this payload only reads\nSELECT 1",
-      false,
-    ],
-    ["prepare", "SELECT tag,\n       cluster_id\nFROM domain_map\nWHERE tag = ?", false],
-    ["prepare", "SELECT id\nFROM idea\n-- DELETE FROM idea is NOT executed here", false],
-    ["prepare", "SELECT tag, cluster_id FROM domain_map", false],
-    ["prepare", "PRAGMA foreign_keys", false],
-    ["prepare", "PRAGMA user_version", false],
-    ["prepare", "SELECT * FROM idea WHERE id = ?", false],
-    ["run", null, false],
-    ["step", null, false],
-    ["getAll", null, false],
-    ["finalize", null, false],
-  ];
-  const bad = cases.filter(([type, source, want]) => isWritePost({ type, source }) !== want);
-  for (const [type, source, want] of bad)
-    console.error(`misclassified: want=${want} ${type} ${source}`);
-
-  // The verdict must not be satisfiable by a run that measured nothing: 0 green with 0 write posts is
-  // the vacuous shape, and it is what a wrong `dir` (or a boot slower than the settle window) produces.
-  const verdictCases = [
-    ["all loads booted, no writes", 5, 0, 5, true],
-    ["one load posted a write", 4, 1, 5, false],
-    ["no writes, but nothing booted", 0, 0, 5, false],
-    ["writes on every load", 0, 5, 5, false],
-  ];
-  const badVerdicts = verdictCases.filter(
-    ([, green, badLoads, n, want]) => verdictOf(green, badLoads, n).pass !== want,
-  );
-  for (const [label, green, badLoads, n, want] of badVerdicts)
-    console.error(`misverdict: want=${want} ${label} (green=${green} writes=${badLoads}/${n})`);
-
-  // A flag's value is never a positional. `[n] [dir] [port]` with a value flag interleaved.
-  const parseCases = [
-    [
-      ["25", "--chromium", "/opt/chrome"],
-      { n: 25, dir: "app/dist", port: "8090", chromium: "/opt/chrome" },
-    ],
-    [
-      ["--chromium", "/opt/chrome", "25", "app/dist", "8090"],
-      { n: 25, dir: "app/dist", port: "8090", chromium: "/opt/chrome" },
-    ],
-    [["--wait", "20000", "3"], { n: 3, dir: "app/dist", wait: 20000 }],
-    [["--url", "http://127.0.0.1:1/"], { n: 25, url: "http://127.0.0.1:1/" }],
-    [[], { n: 25, dir: "app/dist", port: "8090", wait: 9000, chromium: null }],
-  ];
-  const badParses = parseCases.filter(([a, want]) =>
-    Object.entries(want).some(([k, v]) => parseArgs(a)[k] !== v),
-  );
-  for (const [a, want] of badParses)
-    console.error(`misparsed: ${JSON.stringify(a)} want ${JSON.stringify(want)}`);
-
-  const badCount = bad.length + badVerdicts.length + badParses.length;
-  const total = cases.length + verdictCases.length + parseCases.length;
-  console.log(
-    badCount
-      ? `selftest FAILED (${total - badCount}/${total})`
-      : `selftest OK (${total} cases: ${cases.length} classifier · ${verdictCases.length} verdict · ${parseCases.length} parse)`,
-  );
-  process.exit(badCount ? 1 : 0);
-}
-
-// `--url` means the caller already serves the build; else [dir] [port] go to scripts/serve-web.mjs.
-const { n, dir, port, url, wait } = opts;
-const head = resolveHead();
-
-function findChromium() {
-  const candidates = [
-    opts.chromium ?? process.env.ASTROLAB_CHROMIUM,
-    ...["ms-playwright", "puppeteer"].flatMap((cache) =>
-      [
-        process.env.PLAYWRIGHT_BROWSERS_PATH,
-        process.env.PUPPETEER_CACHE_DIR,
-        `/var/cache/buzz/browsers/${cache}`,
-        join(process.env.HOME ?? "", `.cache/${cache}`),
-      ]
-        .filter(Boolean)
-        .flatMap((base) => {
-          if (!existsSync(base)) return [];
-          return readdirSync(base)
-            .filter((d) => /^(chromium|chrome)/.test(d))
-            .flatMap((d) =>
-              [
-                "chrome-linux64/chrome",
-                "chrome-linux/chrome",
-                "chrome-headless-shell-linux64/chrome-headless-shell",
-              ].map((s) => join(base, d, s)),
-            );
-        }),
-    ),
-    ...["chromium", "chromium-browser", "google-chrome", "chrome"].map((c) => {
-      const p = (process.env.PATH ?? "").split(":").find((d) => existsSync(join(d, c)));
-      return p ? join(p, c) : null;
-    }),
-  ].filter(Boolean);
-  return candidates.find((c) => existsSync(c)) ?? null;
-}
-
-/** Minimal CDP client over Node's global WebSocket — enough for one isolated page per load. */
-function connect(wsUrl) {
-  const ws = new WebSocket(wsUrl);
-  const pending = new Map();
-  const waiters = new Set();
-  let id = 0;
-  ws.addEventListener("message", (ev) => {
-    const msg = JSON.parse(ev.data);
-    if (msg.id !== undefined && pending.has(msg.id)) {
-      const { resolve, reject } = pending.get(msg.id);
-      pending.delete(msg.id);
-      if (msg.error) reject(new Error(`${msg.error.message} (${msg.error.code})`));
-      else resolve(msg.result);
-    } else if (msg.method) {
-      for (const w of [...waiters]) {
-        if (!w.test(msg)) continue;
-        waiters.delete(w);
-        w.resolve(msg);
-      }
-    }
-  });
-  const ready = new Promise((resolve, reject) => {
-    ws.addEventListener("open", resolve, { once: true });
-    ws.addEventListener("error", () => reject(new Error("CDP socket error")), { once: true });
-  });
-  return {
-    ready,
-    send: (method, params = {}, sessionId) =>
-      new Promise((resolve, reject) => {
-        const mid = ++id;
-        pending.set(mid, { resolve, reject });
-        ws.send(JSON.stringify({ id: mid, method, params, ...(sessionId ? { sessionId } : {}) }));
-      }),
-    once: (test) => new Promise((resolve) => waiters.add({ test, resolve })),
-    close: () => ws.close(),
-  };
-}
-
-const chromium = findChromium();
-if (!chromium) {
-  console.error(
-    "gate2-cold-load: no Chromium found. Pass --chromium <path>, set ASTROLAB_CHROMIUM, or install one\n" +
-      "  (the shared caches under /var/cache/buzz/browsers and ~/.cache/ms-playwright are searched).",
-  );
-  process.exit(2);
-}
-
-// Attribute the run to the state that produced it. The pin requires the gated run at the merged head;
-// printing the commit and the served root is what lets the row read that back instead of trusting it.
-console.log(
-  `gate2-cold-load · n=${n} · ${url ? `url=${url}` : `dir=${resolve(dir)}`} · wait=${wait}ms\n` +
-    `  HEAD=${head ?? "unknown"} (resolved from ${process.cwd()}; nothing in the output is a claim about any other commit)`,
-);
-
-let server = null;
-if (!url) {
-  const serveScript = fileURLToPath(new URL("./serve-web.mjs", import.meta.url));
-  if (existsSync(serveScript)) {
-    // The lane's own COI host, when this branch has it (#186). Spawned, not copied.
-    server = spawn(process.execPath, [serveScript, dir, port], {
-      stdio: ["ignore", "pipe", "inherit"],
-    });
-    await new Promise((resolve, reject) => {
-      // It prints its ready line once listening — wait on that, never on a timer.
-      server.stdout.on("data", (b) => b.toString().includes("serving") && resolve());
-      server.on("exit", (code) => reject(new Error(`serve-web exited (${code})`)));
-    });
-  } else {
-    // shortcut: minimal COI host until scripts/serve-web.mjs is on this branch (#186); then it takes over.
-    const root = resolve(dir);
-    const TYPES = {
-      ".html": "text/html; charset=utf-8",
-      ".js": "text/javascript; charset=utf-8",
-      ".mjs": "text/javascript; charset=utf-8",
-      ".css": "text/css; charset=utf-8",
-      ".json": "application/json",
-      ".map": "application/json",
-      ".wasm": "application/wasm",
-      ".svg": "image/svg+xml",
-      ".png": "image/png",
-      ".ico": "image/x-icon",
-      ".ttf": "font/ttf",
-      ".woff2": "font/woff2",
-    };
-    server = createServer((req, res) => {
-      const pathname = decodeURIComponent((req.url ?? "/").split("?")[0]);
-      const file = join(root, pathname.endsWith("/") ? `${pathname}index.html` : pathname);
-      if (!file.startsWith(root + sep) || !existsSync(file) || !statSync(file).isFile()) {
-        res.writeHead(404).end("not found");
-        return;
-      }
-      res.writeHead(200, {
-        "content-type": TYPES[extname(file)] ?? "application/octet-stream",
-        "Cross-Origin-Opener-Policy": "same-origin",
-        "Cross-Origin-Embedder-Policy": "credentialless",
-      });
-      res.end(readFileSync(file));
-    });
-    await new Promise((r) => server.listen(Number(port), "127.0.0.1", r));
-  }
-}
-
-const profile = mkdtempSync(join(tmpdir(), "gate2-cold-load-"));
-const chrome = spawn(
-  chromium,
-  [
-    "--headless=new",
-    "--remote-debugging-port=0",
-    `--user-data-dir=${profile}`,
-    "--no-sandbox",
-    "--disable-dev-shm-usage",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--mute-audio",
-    "about:blank",
-  ],
-  { stdio: ["ignore", "ignore", "pipe"] },
-);
-
-const cleanup = () => {
-  chrome.kill("SIGKILL");
-  if (server) {
-    if (server.kill) server.kill("SIGKILL");
-    else server.close();
-  }
-  rmSync(profile, { recursive: true, force: true });
-};
-process.on("exit", cleanup);
-
-// Chrome prints the DevTools endpoint to stderr once the port is bound.
-const wsUrl = await new Promise((resolve, reject) => {
-  chrome.stderr.on("data", (b) => {
-    const m = /(ws:\/\/\S+)/.exec(b.toString());
-    if (m) resolve(m[1]);
-  });
-  chrome.on("exit", (code) => reject(new Error(`chromium exited (${code})`)));
-});
-
-const cdp = connect(wsUrl);
-await cdp.ready;
-
-let green = 0;
-let badLoads = 0;
-for (let i = 1; i <= n; i++) {
-  const { browserContextId } = await cdp.send("Target.createBrowserContext");
-  const { targetId } = await cdp.send("Target.createTarget", {
-    url: "about:blank",
-    browserContextId,
-  });
-  const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
+/**
+ * Importing this module must not run the gate. `main()` ends in `process.exit`, and the browser run
+ * is a side effect of *being* the CLI — not of being imported. The pure exports (`WRITE`,
+ * `isWritePost`, `verdictOf`, `parseArgs`, `GREEN_S0`) are this file's test surface; before the
+ * guard a bare `import { parseArgs } from "./gate2-cold-load.mjs"` spawned a browser, ran n loads
+ * and then exited the *importer's* process with the gate's status.
+ */
+function isEntrypoint() {
+  const entry = process.argv[1];
+  if (!entry) return false; // `node -e` / `node --input-type=module -e`: no script path
   try {
-    await cdp.send("Page.enable", {}, sessionId);
-    // Must precede the navigation: the wrap has to exist before the app builds its worker.
-    await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: INIT }, sessionId);
-    const loaded = cdp.once((m) => m.method === "Page.loadEventFired" && m.sessionId === sessionId);
-    await cdp.send("Page.navigate", { url: url ?? `http://127.0.0.1:${port}/` }, sessionId);
-    await loaded;
-    await new Promise((r) => setTimeout(r, wait)); // the boot is async; let it play out in real time
-    const read = async (expression) =>
-      (await cdp.send("Runtime.evaluate", { expression, returnByValue: true }, sessionId)).result
-        .value;
-    const text = await read("document.body.innerText");
-    const log = JSON.parse((await read("JSON.stringify(globalThis.__gate2 || [])")) || "[]");
-    const writes = log.filter(isWritePost);
-    const ok = text.includes(GREEN_S0);
-    if (ok) green++;
-    if (writes.length) badLoads++;
-    // A RED load with no posts is not evidence of absence: the boot never reached the write set.
-    const inert = !ok && !writes.length;
-    console.log(
-      `#${i} ${ok ? "S0" : "RED"}  sync_posts=${log.length}  write_posts=${writes.length}` +
-        `${writes.length ? "  <<<< FAIL" : ""}${inert ? "  (not evidence — this load never booted)" : ""}`,
-    );
-    for (const w of writes.slice(0, 5))
-      console.log(`      ${w.type} ${w.source.replace(/\s+/g, " ").slice(0, 80)}`);
-  } finally {
-    await cdp.send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
+    return fileURLToPath(import.meta.url) === realpathSync(entry);
+  } catch {
+    return false;
   }
 }
 
-const verdict = verdictOf(green, badLoads, n);
-console.log(`\n${green}/${n} cold loads green · ${verdict.line}`);
-cdp.close();
-process.exit(verdict.pass ? 0 : 1);
+async function main() {
+  const argv = process.argv.slice(2);
+  const opts = parseArgs(argv);
+  if (opts.selftest) {
+    // The real hazard statements, and the read shapes that must NOT match. Assert, don't eyeball.
+    const cases = [
+      ["exec", "PRAGMA journal_mode = WAL", true],
+      ["exec", "PRAGMA foreign_keys = ON", true],
+      ["exec", "BEGIN IMMEDIATE", true],
+      ["exec", "COMMIT", true],
+      ["exec", "ROLLBACK", true],
+      ["exec", "CREATE TABLE idea (id TEXT PRIMARY KEY)", true],
+      ["exec", "PRAGMA user_version = 7", true],
+      ["exec", "INSERT INTO vault_meta (id, revision) VALUES (1, 0);", true],
+      [
+        "prepare",
+        "INSERT INTO domain_map (tag, cluster_id) VALUES (?, ?) ON CONFLICT(tag) DO UPDATE SET cluster_id = excluded.cluster_id",
+        true,
+      ],
+      ["prepare", "DELETE FROM idea WHERE id = ?", true],
+      // Multi-line payloads: the shape `migrate` actually execs. These two fail under the pre-`m` flags
+      // (the payload opens with a `--` comment, so a single anchored `^` never reaches the DDL).
+      [
+        "exec",
+        "\n-- §2.1 Idea and its history\nCREATE TABLE idea (\n  id TEXT PRIMARY KEY\n);\n\n-- §2.2 Provenance — explicitly NOT lineage\nCREATE TABLE provenance_edge (\n  derived_idea_id TEXT NOT NULL\n);",
+        true,
+      ],
+      [
+        "exec",
+        "-- rebuild `child` with the reference dropped\nCREATE TABLE child_new (id TEXT PRIMARY KEY);\nINSERT INTO child_new SELECT * FROM child;\nDROP TABLE child;\nALTER TABLE child_new RENAME TO child;",
+        true,
+      ],
+      // Guards that line-anchoring did not over-widen: a comment keyword, and a multi-line read.
+      [
+        "exec",
+        "-- COMMIT and ROLLBACK belong to writeTransaction; this payload only reads\nSELECT 1",
+        false,
+      ],
+      ["prepare", "SELECT tag,\n       cluster_id\nFROM domain_map\nWHERE tag = ?", false],
+      ["prepare", "SELECT id\nFROM idea\n-- DELETE FROM idea is NOT executed here", false],
+      ["prepare", "SELECT tag, cluster_id FROM domain_map", false],
+      ["prepare", "PRAGMA foreign_keys", false],
+      ["prepare", "PRAGMA user_version", false],
+      ["prepare", "SELECT * FROM idea WHERE id = ?", false],
+      ["run", null, false],
+      ["step", null, false],
+      ["getAll", null, false],
+      ["finalize", null, false],
+    ];
+    const bad = cases.filter(([type, source, want]) => isWritePost({ type, source }) !== want);
+    for (const [type, source, want] of bad)
+      console.error(`misclassified: want=${want} ${type} ${source}`);
+
+    // The verdict must not be satisfiable by a run that measured nothing: 0 green with 0 write posts is
+    // the vacuous shape, and it is what a wrong `dir` (or a boot slower than the settle window) produces.
+    const verdictCases = [
+      ["all loads booted, no writes", 5, 0, 5, true],
+      ["one load posted a write", 4, 1, 5, false],
+      ["no writes, but nothing booted", 0, 0, 5, false],
+      ["writes on every load", 0, 5, 5, false],
+    ];
+    const badVerdicts = verdictCases.filter(
+      ([, green, badLoads, n, want]) => verdictOf(green, badLoads, n).pass !== want,
+    );
+    for (const [label, green, badLoads, n, want] of badVerdicts)
+      console.error(`misverdict: want=${want} ${label} (green=${green} writes=${badLoads}/${n})`);
+
+    // A flag's value is never a positional. `[n] [dir] [port]` with a value flag interleaved.
+    const parseCases = [
+      [
+        ["25", "--chromium", "/opt/chrome"],
+        { n: 25, dir: "app/dist", port: "8090", chromium: "/opt/chrome" },
+      ],
+      [
+        ["--chromium", "/opt/chrome", "25", "app/dist", "8090"],
+        { n: 25, dir: "app/dist", port: "8090", chromium: "/opt/chrome" },
+      ],
+      [["--wait", "20000", "3"], { n: 3, dir: "app/dist", wait: 20000 }],
+      [["--url", "http://127.0.0.1:1/"], { n: 25, url: "http://127.0.0.1:1/" }],
+      [[], { n: 25, dir: "app/dist", port: "8090", wait: 9000, chromium: null }],
+    ];
+    const badParses = parseCases.filter(([a, want]) =>
+      Object.entries(want).some(([k, v]) => parseArgs(a)[k] !== v),
+    );
+    for (const [a, want] of badParses)
+      console.error(`misparsed: ${JSON.stringify(a)} want ${JSON.stringify(want)}`);
+
+    const badCount = bad.length + badVerdicts.length + badParses.length;
+    const total = cases.length + verdictCases.length + parseCases.length;
+    console.log(
+      badCount
+        ? `selftest FAILED (${total - badCount}/${total})`
+        : `selftest OK (${total} cases: ${cases.length} classifier · ${verdictCases.length} verdict · ${parseCases.length} parse)`,
+    );
+    process.exit(badCount ? 1 : 0);
+  }
+
+  // `--url` means the caller already serves the build; else [dir] [port] go to scripts/serve-web.mjs.
+  const { n, dir, port, url, wait } = opts;
+  const head = resolveHead();
+
+  function findChromium() {
+    const candidates = [
+      opts.chromium ?? process.env.ASTROLAB_CHROMIUM,
+      ...["ms-playwright", "puppeteer"].flatMap((cache) =>
+        [
+          process.env.PLAYWRIGHT_BROWSERS_PATH,
+          process.env.PUPPETEER_CACHE_DIR,
+          `/var/cache/buzz/browsers/${cache}`,
+          join(process.env.HOME ?? "", `.cache/${cache}`),
+        ]
+          .filter(Boolean)
+          .flatMap((base) => {
+            if (!existsSync(base)) return [];
+            return readdirSync(base)
+              .filter((d) => /^(chromium|chrome)/.test(d))
+              .flatMap((d) =>
+                [
+                  "chrome-linux64/chrome",
+                  "chrome-linux/chrome",
+                  "chrome-headless-shell-linux64/chrome-headless-shell",
+                ].map((s) => join(base, d, s)),
+              );
+          }),
+      ),
+      ...["chromium", "chromium-browser", "google-chrome", "chrome"].map((c) => {
+        const p = (process.env.PATH ?? "").split(":").find((d) => existsSync(join(d, c)));
+        return p ? join(p, c) : null;
+      }),
+    ].filter(Boolean);
+    return candidates.find((c) => existsSync(c)) ?? null;
+  }
+
+  /** Minimal CDP client over Node's global WebSocket — enough for one isolated page per load. */
+  function connect(wsUrl) {
+    const ws = new WebSocket(wsUrl);
+    const pending = new Map();
+    const waiters = new Set();
+    let id = 0;
+    ws.addEventListener("message", (ev) => {
+      const msg = JSON.parse(ev.data);
+      if (msg.id !== undefined && pending.has(msg.id)) {
+        const { resolve, reject } = pending.get(msg.id);
+        pending.delete(msg.id);
+        if (msg.error) reject(new Error(`${msg.error.message} (${msg.error.code})`));
+        else resolve(msg.result);
+      } else if (msg.method) {
+        for (const w of [...waiters]) {
+          if (!w.test(msg)) continue;
+          waiters.delete(w);
+          w.resolve(msg);
+        }
+      }
+    });
+    const ready = new Promise((resolve, reject) => {
+      ws.addEventListener("open", resolve, { once: true });
+      ws.addEventListener("error", () => reject(new Error("CDP socket error")), { once: true });
+    });
+    return {
+      ready,
+      send: (method, params = {}, sessionId) =>
+        new Promise((resolve, reject) => {
+          const mid = ++id;
+          pending.set(mid, { resolve, reject });
+          ws.send(JSON.stringify({ id: mid, method, params, ...(sessionId ? { sessionId } : {}) }));
+        }),
+      once: (test) => new Promise((resolve) => waiters.add({ test, resolve })),
+      close: () => ws.close(),
+    };
+  }
+
+  const chromium = findChromium();
+  if (!chromium) {
+    console.error(
+      "gate2-cold-load: no Chromium found. Pass --chromium <path>, set ASTROLAB_CHROMIUM, or install one\n" +
+        "  (the shared caches under /var/cache/buzz/browsers and ~/.cache/ms-playwright are searched).",
+    );
+    process.exit(2);
+  }
+
+  // Attribute the run to the state that produced it. The pin requires the gated run at the merged head;
+  // printing the commit and the served root is what lets the row read that back instead of trusting it.
+  console.log(
+    `gate2-cold-load · n=${n} · ${url ? `url=${url}` : `dir=${resolve(dir)}`} · wait=${wait}ms\n` +
+      `  HEAD=${head ?? "unknown"} (resolved from ${process.cwd()}; nothing in the output is a claim about any other commit)`,
+  );
+
+  let server = null;
+  if (!url) {
+    const serveScript = fileURLToPath(new URL("./serve-web.mjs", import.meta.url));
+    if (existsSync(serveScript)) {
+      // The lane's own COI host, when this branch has it (#186). Spawned, not copied.
+      server = spawn(process.execPath, [serveScript, dir, port], {
+        stdio: ["ignore", "pipe", "inherit"],
+      });
+      await new Promise((resolve, reject) => {
+        // It prints its ready line once listening — wait on that, never on a timer.
+        server.stdout.on("data", (b) => b.toString().includes("serving") && resolve());
+        server.on("exit", (code) => reject(new Error(`serve-web exited (${code})`)));
+      });
+    } else {
+      // shortcut: minimal COI host until scripts/serve-web.mjs is on this branch (#186); then it takes over.
+      const root = resolve(dir);
+      const TYPES = {
+        ".html": "text/html; charset=utf-8",
+        ".js": "text/javascript; charset=utf-8",
+        ".mjs": "text/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".json": "application/json",
+        ".map": "application/json",
+        ".wasm": "application/wasm",
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".ico": "image/x-icon",
+        ".ttf": "font/ttf",
+        ".woff2": "font/woff2",
+      };
+      server = createServer((req, res) => {
+        const pathname = decodeURIComponent((req.url ?? "/").split("?")[0]);
+        const file = join(root, pathname.endsWith("/") ? `${pathname}index.html` : pathname);
+        if (!file.startsWith(root + sep) || !existsSync(file) || !statSync(file).isFile()) {
+          res.writeHead(404).end("not found");
+          return;
+        }
+        res.writeHead(200, {
+          "content-type": TYPES[extname(file)] ?? "application/octet-stream",
+          "Cross-Origin-Opener-Policy": "same-origin",
+          "Cross-Origin-Embedder-Policy": "credentialless",
+        });
+        res.end(readFileSync(file));
+      });
+      await new Promise((r) => server.listen(Number(port), "127.0.0.1", r));
+    }
+  }
+
+  const profile = mkdtempSync(join(tmpdir(), "gate2-cold-load-"));
+  const chrome = spawn(
+    chromium,
+    [
+      "--headless=new",
+      "--remote-debugging-port=0",
+      `--user-data-dir=${profile}`,
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--no-first-run",
+      "--no-default-browser-check",
+      "--mute-audio",
+      "about:blank",
+    ],
+    { stdio: ["ignore", "ignore", "pipe"] },
+  );
+
+  const cleanup = () => {
+    chrome.kill("SIGKILL");
+    if (server) {
+      if (server.kill) server.kill("SIGKILL");
+      else server.close();
+    }
+    rmSync(profile, { recursive: true, force: true });
+  };
+  process.on("exit", cleanup);
+
+  // Chrome prints the DevTools endpoint to stderr once the port is bound.
+  const wsUrl = await new Promise((resolve, reject) => {
+    chrome.stderr.on("data", (b) => {
+      const m = /(ws:\/\/\S+)/.exec(b.toString());
+      if (m) resolve(m[1]);
+    });
+    chrome.on("exit", (code) => reject(new Error(`chromium exited (${code})`)));
+  });
+
+  const cdp = connect(wsUrl);
+  await cdp.ready;
+
+  let green = 0;
+  let badLoads = 0;
+  for (let i = 1; i <= n; i++) {
+    const { browserContextId } = await cdp.send("Target.createBrowserContext");
+    const { targetId } = await cdp.send("Target.createTarget", {
+      url: "about:blank",
+      browserContextId,
+    });
+    const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
+    try {
+      await cdp.send("Page.enable", {}, sessionId);
+      // Must precede the navigation: the wrap has to exist before the app builds its worker.
+      await cdp.send("Page.addScriptToEvaluateOnNewDocument", { source: INIT }, sessionId);
+      const loaded = cdp.once(
+        (m) => m.method === "Page.loadEventFired" && m.sessionId === sessionId,
+      );
+      await cdp.send("Page.navigate", { url: url ?? `http://127.0.0.1:${port}/` }, sessionId);
+      await loaded;
+      await new Promise((r) => setTimeout(r, wait)); // the boot is async; let it play out in real time
+      const read = async (expression) =>
+        (await cdp.send("Runtime.evaluate", { expression, returnByValue: true }, sessionId)).result
+          .value;
+      const text = await read("document.body.innerText");
+      const log = JSON.parse((await read("JSON.stringify(globalThis.__gate2 || [])")) || "[]");
+      const writes = log.filter(isWritePost);
+      const ok = text.includes(GREEN_S0);
+      if (ok) green++;
+      if (writes.length) badLoads++;
+      // A RED load with no posts is not evidence of absence: the boot never reached the write set.
+      const inert = !ok && !writes.length;
+      console.log(
+        `#${i} ${ok ? "S0" : "RED"}  sync_posts=${log.length}  write_posts=${writes.length}` +
+          `${writes.length ? "  <<<< FAIL" : ""}${inert ? "  (not evidence — this load never booted)" : ""}`,
+      );
+      for (const w of writes.slice(0, 5))
+        console.log(`      ${w.type} ${w.source.replace(/\s+/g, " ").slice(0, 80)}`);
+    } finally {
+      await cdp.send("Target.disposeBrowserContext", { browserContextId }).catch(() => {});
+    }
+  }
+
+  const verdict = verdictOf(green, badLoads, n);
+  console.log(`\n${green}/${n} cold loads green · ${verdict.line}`);
+  cdp.close();
+  process.exit(verdict.pass ? 0 : 1);
+}
+
+if (isEntrypoint()) await main();
