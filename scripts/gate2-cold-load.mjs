@@ -44,7 +44,7 @@ import {
 } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
-import { extname, join, resolve, sep } from "node:path";
+import { dirname, extname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -291,6 +291,34 @@ async function main() {
     return candidates.find((c) => existsSync(c)) ?? null;
   }
 
+  /**
+   * The child's environment, with a shared cache's sibling `chrome-libs` prepended to `LD_LIBRARY_PATH`.
+   *
+   * A Chromium installed under a shared browser cache (`/var/cache/buzz/browsers/…`) needs
+   * `libatk-1.0.so.0`, `libgbm.so.1`, `libcups.so.2`, … that this box neither registers with `ldconfig`
+   * nor ships in the loader path; they live beside the cache as an FHS tree
+   * (`…/chrome-libs/usr/lib/x86_64-linux-gnu`). Without it the binary dies at exec with `exited (127)`.
+   * Walk the resolved binary's ancestors (`chrome-linux64` → `chromium-1248` → `ms-playwright` → the
+   * cache root) and use the first `chrome-libs/usr/lib/<arch>` that exists. A system Chromium has no such
+   * sibling and its environment is returned untouched; a caller's own `LD_LIBRARY_PATH` always stays
+   * after ours. Only the browser child is affected — `serve-web.mjs`'s Node children need no libs.
+   */
+  function chromiumEnv(binary) {
+    const arches = ["x86_64-linux-gnu", "aarch64-linux-gnu"];
+    for (let dir = dirname(resolve(binary)); ;) {
+      for (const arch of arches) {
+        const libs = join(dir, "chrome-libs", "usr", "lib", arch);
+        if (existsSync(libs)) {
+          const prev = process.env.LD_LIBRARY_PATH;
+          return { ...process.env, LD_LIBRARY_PATH: prev ? `${libs}:${prev}` : libs };
+        }
+      }
+      const parent = dirname(dir);
+      if (parent === dir) return process.env;
+      dir = parent;
+    }
+  }
+
   /** Minimal CDP client over Node's global WebSocket — enough for one isolated page per load. */
   function connect(wsUrl) {
     const ws = new WebSocket(wsUrl);
@@ -337,6 +365,7 @@ async function main() {
     );
     process.exit(2);
   }
+  const chromeEnv = chromiumEnv(chromium);
 
   // Attribute the run to the state that produced it. The pin requires the gated run at the merged head;
   // printing the commit and the served root is what lets the row read that back instead of trusting it.
@@ -407,7 +436,7 @@ async function main() {
       "--mute-audio",
       "about:blank",
     ],
-    { stdio: ["ignore", "ignore", "pipe"] },
+    { stdio: ["ignore", "ignore", "pipe"], env: chromeEnv },
   );
 
   const cleanup = () => {
@@ -426,7 +455,17 @@ async function main() {
       const m = /(ws:\/\/\S+)/.exec(b.toString());
       if (m) resolve(m[1]);
     });
-    chrome.on("exit", (code) => reject(new Error(`chromium exited (${code})`)));
+    chrome.on("exit", (code) =>
+      reject(
+        new Error(
+          code === 127
+            ? "chromium exited (127) — the binary could not load its shared libraries. If it came from a\n" +
+                "  shared cache, check that its sibling chrome-libs/usr/lib/<arch> is on LD_LIBRARY_PATH\n" +
+                "  (the script does this automatically when the directory exists)."
+            : `chromium exited (${code})`,
+        ),
+      ),
+    );
   });
 
   const cdp = connect(wsUrl);
