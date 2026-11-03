@@ -35,6 +35,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -64,6 +65,34 @@ export const WRITE =
 /** Is this logged sync post a gate-2 write? Input is `{ type, source }`; reads carry a SELECT source. */
 export function isWritePost(p) {
   return (p.type === "exec" || p.type === "prepare") && Boolean(p.source) && WRITE.test(p.source);
+}
+
+/**
+ * The child's environment, with a shared cache's sibling `chrome-libs` prepended to `LD_LIBRARY_PATH`.
+ *
+ * A Chromium installed under a shared browser cache (`/var/cache/buzz/browsers/…`) needs
+ * `libatk-1.0.so.0`, `libgbm.so.1`, `libcups.so.2`, … that this box neither registers with `ldconfig`
+ * nor ships in the loader path; they live beside the cache as an FHS tree
+ * (`…/chrome-libs/usr/lib/x86_64-linux-gnu`). Without it the binary dies at exec with `exited (127)`.
+ * Walk the resolved binary's ancestors (`chrome-linux64` → `chromium-1248` → `ms-playwright` → the
+ * cache root) and use the first `chrome-libs/usr/lib/<arch>` that exists. A system Chromium has no such
+ * sibling and its environment is returned untouched; a caller's own `LD_LIBRARY_PATH` always stays
+ * after ours. Only the browser child is affected — `serve-web.mjs`'s Node children need no libs.
+ */
+export function chromiumEnv(binary) {
+  const arches = ["x86_64-linux-gnu", "aarch64-linux-gnu"];
+  for (let dir = dirname(resolve(binary)); ;) {
+    for (const arch of arches) {
+      const libs = join(dir, "chrome-libs", "usr", "lib", arch);
+      if (existsSync(libs)) {
+        const prev = process.env.LD_LIBRARY_PATH;
+        return { ...process.env, LD_LIBRARY_PATH: prev ? `${libs}:${prev}` : libs };
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) return process.env;
+    dir = parent;
+  }
 }
 
 /**
@@ -245,12 +274,39 @@ async function main() {
     for (const [a, want] of badParses)
       console.error(`misparsed: ${JSON.stringify(a)} want ${JSON.stringify(want)}`);
 
-    const badCount = bad.length + badVerdicts.length + badParses.length;
-    const total = cases.length + verdictCases.length + parseCases.length;
+    // `chromiumEnv` is scoped to the cache layout it was written for. A tree with no sibling
+    // `chrome-libs/usr/lib/<arch>` — or a directory of that name that is not a libs tree — leaves the
+    // environment **untouched**, so a system Chromium's loader path is never polluted.
+    const envRoot = mkdtempSync(join(tmpdir(), "gate2-env-"));
+    const bareRoot = mkdtempSync(join(tmpdir(), "gate2-bare-"));
+    const libsDir = join(envRoot, "chrome-libs", "usr", "lib", "aarch64-linux-gnu");
+    mkdirSync(libsDir, { recursive: true });
+    mkdirSync(join(bareRoot, "notlibs", "chrome-libs"), { recursive: true });
+    const envCases = [
+      [
+        "sibling chrome-libs is prepended",
+        chromiumEnv(
+          join(envRoot, "ms-playwright", "chromium-1", "chrome-linux64", "chrome"),
+        ).LD_LIBRARY_PATH?.split(":")[0] ?? null,
+        libsDir,
+      ],
+      [
+        "chrome-libs that is not a libs tree ⇒ untouched",
+        chromiumEnv(join(bareRoot, "notlibs", "chrome")) === process.env,
+        true,
+      ],
+    ];
+    const badEnv = envCases.filter(([, got, want]) => got !== want);
+    for (const [label] of badEnv) console.error(`mis-env: ${label}`);
+    rmSync(envRoot, { recursive: true, force: true });
+    rmSync(bareRoot, { recursive: true, force: true });
+
+    const badCount = bad.length + badVerdicts.length + badParses.length + badEnv.length;
+    const total = cases.length + verdictCases.length + parseCases.length + envCases.length;
     console.log(
       badCount
         ? `selftest FAILED (${total - badCount}/${total})`
-        : `selftest OK (${total} cases: ${cases.length} classifier · ${verdictCases.length} verdict · ${parseCases.length} parse)`,
+        : `selftest OK (${total} cases: ${cases.length} classifier · ${verdictCases.length} verdict · ${parseCases.length} parse · ${envCases.length} env)`,
     );
     process.exit(badCount ? 1 : 0);
   }
@@ -289,34 +345,6 @@ async function main() {
       }),
     ].filter(Boolean);
     return candidates.find((c) => existsSync(c)) ?? null;
-  }
-
-  /**
-   * The child's environment, with a shared cache's sibling `chrome-libs` prepended to `LD_LIBRARY_PATH`.
-   *
-   * A Chromium installed under a shared browser cache (`/var/cache/buzz/browsers/…`) needs
-   * `libatk-1.0.so.0`, `libgbm.so.1`, `libcups.so.2`, … that this box neither registers with `ldconfig`
-   * nor ships in the loader path; they live beside the cache as an FHS tree
-   * (`…/chrome-libs/usr/lib/x86_64-linux-gnu`). Without it the binary dies at exec with `exited (127)`.
-   * Walk the resolved binary's ancestors (`chrome-linux64` → `chromium-1248` → `ms-playwright` → the
-   * cache root) and use the first `chrome-libs/usr/lib/<arch>` that exists. A system Chromium has no such
-   * sibling and its environment is returned untouched; a caller's own `LD_LIBRARY_PATH` always stays
-   * after ours. Only the browser child is affected — `serve-web.mjs`'s Node children need no libs.
-   */
-  function chromiumEnv(binary) {
-    const arches = ["x86_64-linux-gnu", "aarch64-linux-gnu"];
-    for (let dir = dirname(resolve(binary)); ;) {
-      for (const arch of arches) {
-        const libs = join(dir, "chrome-libs", "usr", "lib", arch);
-        if (existsSync(libs)) {
-          const prev = process.env.LD_LIBRARY_PATH;
-          return { ...process.env, LD_LIBRARY_PATH: prev ? `${libs}:${prev}` : libs };
-        }
-      }
-      const parent = dirname(dir);
-      if (parent === dir) return process.env;
-      dir = parent;
-    }
   }
 
   /** Minimal CDP client over Node's global WebSocket — enough for one isolated page per load. */
