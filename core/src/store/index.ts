@@ -36,6 +36,7 @@ export {
   MIN_DOMAIN_DISTANCE_KEY,
   readGateConfig,
   seedGateConfig,
+  seedGateConfigAsync,
   setConfig,
   type GateConfig,
 } from "./config.js";
@@ -73,6 +74,7 @@ export {
   enqueueRun,
   finishRun,
   requeueOrphanedRuns,
+  requeueOrphanedRunsAsync,
   stampAndEnqueue,
   type RunStatus,
   type SparkRun,

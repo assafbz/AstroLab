@@ -1,8 +1,8 @@
-import type { SqliteConnection } from "./connection.js";
+import type { AsyncSqliteConnection, SqliteConnection } from "./connection.js";
 import { newId } from "./ids.js";
 
 import { isoTimestamp } from "./iso.js";
-import { writeTransaction } from "./store.js";
+import { writeTransaction, writeTransactionAsync } from "./store.js";
 
 /**
  * The run queue, as SQL over `spark_run` + `vault_meta` (`ARCHITECTURE.md` §4; `ADR-0004`).
@@ -146,11 +146,29 @@ export function finishRun(
  */
 export function requeueOrphanedRuns(db: SqliteConnection): number {
   return writeTransaction(db, () => {
-    const result = db
-      .prepare(
-        "UPDATE spark_run SET status = 'PENDING', started_at = NULL WHERE status = 'RUNNING'",
-      )
-      .run();
+    const result = db.prepare(REQUEUE_ORPHANED_SQL).run();
+    return Number(result.changes);
+  });
+}
+
+/** The requeue statement, named once so both channels run the *same* SQL (`#190`). */
+const REQUEUE_ORPHANED_SQL =
+  "UPDATE spark_run SET status = 'PENDING', started_at = NULL WHERE status = 'RUNNING'";
+
+/**
+ * {@link requeueOrphanedRuns} on the async channel (`#190`) — the same `RUNNING → PENDING` update, in
+ * the same one-transaction shell, awaited. It is boot's fourth write and the resume path itself
+ * (ADR-0004, invariant 16), so it belongs on the boot channel beside the seeds: the statement is a
+ * write, and the web boot's writes must stay off `expo-sqlite`'s capped sync channel
+ * (`docs/adr/0007-web-boot-async-channel.md`).
+ *
+ * The rule — *which* rows are orphaned, and that the stamp is kept — is not restated here: the SQL is
+ * the sync function's own constant and the transaction shell is `writeTransactionAsync`. `#190`'s parity
+ * suite drives both channels over the same fixture and requires the same rows and the same count.
+ */
+export async function requeueOrphanedRunsAsync(db: AsyncSqliteConnection): Promise<number> {
+  return writeTransactionAsync(db, async () => {
+    const result = await db.run(REQUEUE_ORPHANED_SQL);
     return Number(result.changes);
   });
 }

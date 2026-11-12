@@ -1,6 +1,6 @@
-import type { SqliteConnection } from "./connection.js";
+import type { AsyncSqliteConnection, SqliteConnection } from "./connection.js";
 
-import { withRetry } from "./retry.js";
+import { withRetry, withRetryAsync } from "./retry.js";
 
 /**
  * The two gate thresholds (`ARCHITECTURE.md` §3.4): `min_domain_distance` and `min_alignment`.
@@ -138,17 +138,47 @@ export function readGateConfig(db: SqliteConnection): GateConfig {
   };
 }
 
+/** The seed's upsert, named once so both channels run the *same* statement (`#190`). */
+const SEED_CONFIG_UPSERT =
+  "INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING";
+
+/**
+ * The shipped defaults as `(key, value)` pairs — one list, so the two channels cannot seed different
+ * keys (the `seedRows` shape `domain-seed.ts` uses for the same reason).
+ */
+function seedPairs(): ReadonlyArray<readonly [string, string]> {
+  return [
+    [MIN_DOMAIN_DISTANCE_KEY, String(GATE_CONFIG_DEFAULTS.minDomainDistance)],
+    [MIN_ALIGNMENT_KEY, String(GATE_CONFIG_DEFAULTS.minAlignment)],
+  ];
+}
+
 /**
  * Seed the shipped defaults **insert-only** — a no-op on any key already present, so a tuned value
  * survives every later boot. Called beside `seedDomainTaxonomy` at both boot sites.
  */
 export function seedGateConfig(db: SqliteConnection): void {
   withRetry(() => {
-    const insert = db.prepare(
-      "INSERT INTO config (key, value) VALUES (?, ?) ON CONFLICT(key) DO NOTHING",
-    );
-    insert.run(MIN_DOMAIN_DISTANCE_KEY, String(GATE_CONFIG_DEFAULTS.minDomainDistance));
-    insert.run(MIN_ALIGNMENT_KEY, String(GATE_CONFIG_DEFAULTS.minAlignment));
+    const insert = db.prepare(SEED_CONFIG_UPSERT);
+    for (const [key, value] of seedPairs()) insert.run(key, value);
+  });
+}
+
+/**
+ * {@link seedGateConfig} on the async channel (`#190`) — the same insert-only upsert, over the same two
+ * defaults, awaited. It joins `openStoreAsync` · `migrateAsync` · `seedDomainTaxonomyAsync` on the boot
+ * path for the one reason that puts a rule on this channel: **a seed is a write**, and a write on the
+ * web boot must not reach `expo-sqlite`'s capped sync channel
+ * (`docs/adr/0007-web-boot-async-channel.md`).
+ *
+ * The SQL and the key/value list are the sync path's own constants, so a change to the seeded defaults
+ * reaches both channels or neither. The async port has no statement handle — each call names its own SQL
+ * — so the two rows are two awaited `run`s inside the sync path's one `withRetry` shell; `#190`'s parity
+ * suite drives both and requires the same `config` rows.
+ */
+export async function seedGateConfigAsync(db: AsyncSqliteConnection): Promise<void> {
+  await withRetryAsync(async () => {
+    for (const [key, value] of seedPairs()) await db.run(SEED_CONFIG_UPSERT, [key, value]);
   });
 }
 

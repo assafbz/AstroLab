@@ -16,6 +16,18 @@
  */
 export * from "./store/index.js";
 
+/**
+ * The **async** boot entry, and only that half of `boot.ts` (`#190`).
+ *
+ * The app's composition root runs the boot on the async plane — every step it takes is a write, and on
+ * web a write loses `expo-sqlite`'s ~133 ms sync busy-wait race on a cold worker
+ * (`docs/adr/0007-web-boot-async-channel.md`). So this door carries `bootVaultAsync` **by name** rather
+ * than `export * from "./boot.js"`: the sync `bootVault` is for tests, scripts and CI, and putting it on
+ * the app's own import surface would make the wrong one just as reachable as the right one.
+ * `app/src/store/boot-async-plane.test.ts` is the walk that keeps an `app/` call site from appearing.
+ */
+export { bootVaultAsync } from "./boot.js";
+
 // The vault use-cases (`ARCHITECTURE.md` §6 — v1's HTTP surface, transport stripped): create / read /
 // iterate / fork / delete, decisions, undo, the deck read, the state read, the summary, inspire.
 export * from "./vault/capture.js";

@@ -1,11 +1,15 @@
-import type { SqliteConnection } from "./store/connection.js";
+import type { AsyncSqliteConnection, SqliteConnection } from "./store/connection.js";
 
 import {
   MIGRATIONS,
   migrate,
+  migrateAsync,
   requeueOrphanedRuns,
+  requeueOrphanedRunsAsync,
   seedDomainTaxonomy,
+  seedDomainTaxonomyAsync,
   seedGateConfig,
+  seedGateConfigAsync,
 } from "./store/index.js";
 
 /**
@@ -31,4 +35,39 @@ export function bootVault(conn: SqliteConnection): void {
   seedDomainTaxonomy(conn);
   seedGateConfig(conn);
   requeueOrphanedRuns(conn);
+}
+
+/**
+ * {@link bootVault} on the async channel (`#190`) — **the same four steps, in the same order, against
+ * the same rules**, awaited. Same contract as its sync twin: it takes a connection the caller already
+ * opened and applied the store's pragmas to (`openStore` / `openStoreAsync`), never a path, and it does
+ * not own the adapter choice. Keeping the two signatures the same kind is what lets `#190`'s parity suite
+ * drive both over one fixture and require an identical database.
+ *
+ * ## Why the app boot needs this twin
+ *
+ * On web, `expo-sqlite` implements a **sync** call as a main-thread busy-wait with a hard ~133 ms budget,
+ * and every one of these four steps is a **write** — DDL, `COMMIT`/`ROLLBACK`, `PRAGMA user_version`, the
+ * seed upserts, the requeue `UPDATE` — that fsyncs past it on a cold worker, so a cold load died with
+ * `Sync operation timeout` (measured: 18 red / 19 loads). The async plane posts `isSync: false` and
+ * awaits, with no cap, so the hazard is **removed rather than won**
+ * (`docs/adr/0007-web-boot-async-channel.md`; `#186` moved the first three steps, `#190` moves the rest).
+ *
+ * ## What the twin is not
+ *
+ * It is not a re-implementation: every step is the async twin of a `core` rule — `migrateAsync` ·
+ * `seedDomainTaxonomyAsync` · `seedGateConfigAsync` · `requeueOrphanedRunsAsync` — and the shared
+ * definitions (migration ordering, the seed's SQL, the requeue's SQL, the transaction shell) are named
+ * once and used by both channels. The duplication that remains is the two imperative shells, and it is
+ * **guarded, not asserted**: `core/test/vault-boot-async.test.ts` drives `bootVault` and `bootVaultAsync`
+ * over the same fixtures and requires an identical database (`migrate-parity.test.ts` is the pattern).
+ *
+ * `bootVault` itself stays **sync** for tests, scripts and CI — the device's steady state, and the only
+ * channel `scripts/w9-calibrate.ts` uses.
+ */
+export async function bootVaultAsync(conn: AsyncSqliteConnection): Promise<void> {
+  await migrateAsync(conn, MIGRATIONS);
+  await seedDomainTaxonomyAsync(conn);
+  await seedGateConfigAsync(conn);
+  await requeueOrphanedRunsAsync(conn);
 }
