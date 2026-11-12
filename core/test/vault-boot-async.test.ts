@@ -29,10 +29,21 @@ import { bootVault, bootVaultAsync } from "../src/boot.js";
  * `#186`'s parity suite uses, and the right fixture for the same reason: the **rules** are
  * channel-independent, so only the transport differs between this and the web app.
  *
- * What green here does and does not mean: it proves the two entries land on the same database, and that
- * each new twin behaves like its sync sibling. It does **not** prove the async plane reaches
- * `expo-sqlite`'s `isSync: false` path — that is the web instrument's claim
- * (`scripts/gate2-cold-load.mjs`, gate 2), and the app's own suite covers the composition.
+ * What green here does and does not mean — the guard's own scope, measured rather than assumed
+ * (2026-11-12, each mutation planted in the shells and reverted):
+ *
+ * - It **bites** on a step that stops running (dropping `await seedGateConfigAsync(conn)` from
+ *   `bootVaultAsync` → 2 red: the entry comparison and the gate-config case), on a step that writes
+ *   something different (the requeue without its `started_at` reset → 3 red; the seed writing one key →
+ *   3 red), and, one level in, on each twin body on its own.
+ * - It does **not** constrain the **order of two independent writes**: swapping the requeue and the seed
+ *   in `bootVaultAsync` stayed **green** (10/10) — the two touch different tables, so the final database
+ *   is identical and the comparison cannot see it. The guard's claim is *which steps run and what they
+ *   write*, not the sequence of steps that do not interact. The order is stated in both bodies and read
+ *   by a human; it is not a check.
+ * - It does **not** prove the async plane reaches `expo-sqlite`'s `isSync: false` path — that is the web
+ *   instrument's claim (`scripts/gate2-cold-load.mjs`, gate 2), and the app's own suite covers the
+ *   composition.
  */
 
 /** The connection pair a parity case runs over: the same open, pragma-applied store, two planes. */
