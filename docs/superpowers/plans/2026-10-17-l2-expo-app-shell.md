@@ -171,6 +171,17 @@ insert, read back, read a missing row) — plus the one assertion the parity tes
 `vaultSummary(db).resolved >= 2 ? S1 : S0`. The boot is not a splash screen and does not block on the engine
 (§4.1: a run is never awaited by a read path).
 
+> **Annotation (#190, 2026-11-12) — the three steps above are a SUBSET of the boot, not a redefinition of it.**
+> `core/src/boot.ts`'s `bootVault` is `migrate → seedDomainTaxonomy → seedGateConfig → requeueOrphanedRuns`
+> (§2, §4; ADR-0006). This task needed the steps that let the shell *render*, so it ran the first two and skipped
+> `seedGateConfig` + `requeueOrphanedRuns` — and the subset went unnoticed partly because the *Interfaces ·
+> Consumes* list above never named `bootVault`. Both skipped steps are inert while the engine is down and live the
+> moment L3 wires the driver: a run killed mid-run is then never requeued (ADR-0004, invariant 16).
+> **Ruling (Ari, 2026-11-01): `bootVault` governs.** #190 lands the reconciliation — `app/src/bootstrap.ts` now
+> calls `core`'s `bootVaultAsync` (+ `openStoreAsync` for the pragmas) and names no boot step itself, and
+> `app/src/store/boot-async-plane.test.ts` fails if one reappears. The paragraph above is history; read it with
+> this annotation. The async channel, and why the boot cannot run sync on web, is ADR-0007.
+
 Test (`tokens.test.ts` is the cheap first red; the boot assertion is a pure one): `expect(tokens.canvas).toBe("#080A12")`,
 `expect(tokens.radius).toBe(8)`, `expect(tokens.targetMin).toBe(44)`, and for each token in `DESIGN.md` §2 a value
 — a token list that drifts from the table is the failure this test exists for. **Deviation is a task, not a typo**:

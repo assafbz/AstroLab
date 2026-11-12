@@ -40,7 +40,10 @@ Two premises were tested and are **false**, and they are recorded here so no lan
   channel.
 - **Three rules get an async twin**, and only these: `openStoreAsync` · `migrateAsync` · `seedDomainTaxonomyAsync`
   — the sequence `app/src/bootstrap.ts` runs. `core/src/boot.ts`'s `bootVault` is untouched, and `app/` does not
-  route through it (see *Known divergence*).
+  route through it (see *Known divergence*). **Amended 2026-11-12 (#190):** the twins are now **five** plus the
+  boot entry — `seedGateConfigAsync` · `requeueOrphanedRunsAsync` · `bootVaultAsync` join them, and the app routes
+  through the entry. The rule this bullet states is unchanged (*a boot write runs on the async channel*); see
+  *Amendment — #190* below for what was added and what it cost.
 - **Reads stay synchronous.** `vaultSummary` is the composition root's first sync read and runs only after every
   async step has been awaited — `bootstrap.test.ts` pins that ordering with a boot held open mid-flight. The
   1 MiB sync result cap (invariant 10) is unchanged and still L4's business.
@@ -76,12 +79,42 @@ seen failing: perturbing the async channel's `user_version` write reddens two of
 - **`asAsyncConnection` is not the web path.** The app implements the async port directly over
   `expo-sqlite`'s `…Async` methods; the bridge exists for engines that are synchronous.
 
-### Known divergence, recorded not resolved (issue #190)
+### Known divergence — **RESOLVED** by #190 (2026-11-12)
 
-`core/src/boot.ts`'s `bootVault` — `migrate → seedDomainTaxonomy → seedGateConfig → requeueOrphanedRuns` — has
-**no caller in `app/` or in any shipped `core/src` module** (it is reached by tests and `scripts/w9-calibrate.ts`).
-`app/src/bootstrap.ts` runs the first two steps only, per the L2 plan's Task 1. Inert today (an absent gate config
-is filled from `GATE_CONFIG_DEFAULTS`, and no runs exist while the engine is down); live the moment L3 wires the
-driver, because a killed `RUNNING` run is then never requeued (invariant 16 / ADR-0004). #186 twins the steps that
-run today and does **not** widen boot behaviour; #190 owns the reconciliation (app boot becomes one
-`bootVaultAsync` in `core/`), sequenced after it.
+`core/src/boot.ts`'s `bootVault` — `migrate → seedDomainTaxonomy → seedGateConfig → requeueOrphanedRuns` — had
+**no caller in `app/` or in any shipped `core/src` module** (it was reached by tests and `scripts/w9-calibrate.ts`).
+`app/src/bootstrap.ts` ran the first two steps only, per the L2 plan's Task 1. Inert while the shell rendered with
+the engine down (an absent gate config is filled from `GATE_CONFIG_DEFAULTS`, and no runs existed); live the moment
+L3 wired the driver, because a killed `RUNNING` run was then never requeued (invariant 16 / ADR-0004). #186 twinned
+the steps that ran and did **not** widen boot behaviour; **#190** owns the reconciliation (app boot becomes one
+`bootVaultAsync` in `core/`), and landed it — this paragraph is kept as the record of the divergence, not as a
+description of `main`.
+
+### Amendment — #190 (2026-11-12): the twins are five, and the app routes through the entry
+
+Three things were added, each a consequence of the same rule rather than a new one:
+
+- **Two more rules get an async twin.** `seedGateConfigAsync` · `requeueOrphanedRunsAsync` — the two steps
+  `app/src/bootstrap.ts` had been skipping. A seed is a **write** and the requeue `UPDATE` is a write, so both are
+  subject to the ~133 ms sync cap this ADR exists for; leaving them sync would have meant the app's boot was
+  half-moved and the skipped steps were the half nobody watched.
+- **The boot itself gets one:** `bootVaultAsync(conn: AsyncSqliteConnection)`, the async twin of `bootVault` —
+  **the same four steps, in the same order, on the same rules**. Its contract is deliberately its sync twin's: it
+  takes a connection the caller already opened and applied the pragmas to (`openStoreAsync`), never a path. Folding
+  the opener in would have given it a *different* contract from `bootVault`, so *"the vault's boot is one
+  definition"* would stop being true and a parity comparison between the two would compare unlike shapes.
+- **`app/` calls the entry and names no step.** The composition root is `openStoreAsync` → `bootVaultAsync`;
+  `app/src/store/boot-async-plane.test.ts` walks the shipped source and fails if any module there names a boot
+  step — the sync ones *or* the async ones. That replaces a per-step habit with one call, which is the actual fix
+  for the divergence above: a step run "by hand" is a step that can be forgotten.
+
+**The duplication discipline is extended, not waived.** This ADR's parity table says the two channels' copies are
+*guarded, not asserted*; the two new twins and the entry are guarded the same way —
+`core/test/vault-boot-async.test.ts` drives `bootVault` and `bootVaultAsync` over one fixture (schema, taxonomy
+rows, `config` rows, `run` rows, `user_version`, `sqlite_master`) and requires an identical database, plus
+per-twin cases for the two new bodies (`migrate-parity.test.ts` is the pattern). A reader who changes one shell and
+not the other gets a red test, not a divergence to spot.
+
+**Cost, stated.** Five rules are now written twice — the same honest cost the original Decision records, one step
+further. The alternative (make the *port* async) still retires invariant 1 and is still declined.
+
