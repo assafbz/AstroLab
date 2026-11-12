@@ -45,6 +45,18 @@ costs a lane.
    `57.0.4` (SDK-57): the full sync surface is present, including a sync transaction wrapper
    (`withTransactionSync`). **No async variant is needed and the concurrency argument stands.** Three consequences,
    binding on L1:
+   > **Correction (2026-11-01, #186 · ADR-0007) — the verification was of the wrong thing, and the boot's WRITES
+   > must go async.** The typings prove the sync surface **exists**; they do not prove the web worker can **answer
+   > inside the busy-wait cap** the typings do not show. It cannot, for the writes: `invokeWorkerSync` spins at most
+   > `1_000_000` `Atomics.pause` iterations (~133 ms on a 2-core box), a read answers in 0–5 ms, and a **write** —
+   > the WAL conversion, DDL, `COMMIT`/`ROLLBACK`, `PRAGMA … = …` — fsyncs and routinely exceeds it (measured: 18
+   > red cold loads in 19 at the pre-fix head). **The port stays synchronous** — this is an amendment, not a
+   > retirement: `writeTransaction` · `vaultMutation` · every steady-state read are unchanged. Added: an
+   > `AsyncSqliteConnection` port and async twins of exactly the three rules the app's boot runs
+   > (`openStoreAsync` · `migrateAsync` · `seedDomainTaxonomyAsync`), with the rule *decisions* shared and the
+   > transaction shell guarded by a cross-channel parity suite. Whoever changes `migrate`'s rules must read
+   > `docs/adr/0007-web-boot-async-channel.md` first. *(The "warm the worker" and "raise the budget" routes were
+   > each tested and are dead — the ADR records why, so no lane re-tries them.)*
    - **1a — nothing was actually pinned.** Root `package.json` @`26811cb` has no expo dependency and `app/` does not
      exist, so *"the pinned `expo-sqlite`"* has **no referent**. **L1 creates the pin: `expo-sqlite@58.0.13`**
      (npm `latest`, SDK-58).
